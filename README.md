@@ -4,24 +4,22 @@ English | [简体中文](README.zh-CN.md)
 
 An OpenCode V2 plugin with file-based roles and delegation on demand. Root retains normal execution capabilities: do simple work directly, divide complex work as needed, and check results according to risk.
 
-## How it works and parallel execution
+## Role design and workflow
 
 ```mermaid
 flowchart TD
-    A[Plugin startup] --> B[Validate options and load and validate agents Markdown]
-    B --> C[Register five roles and /crew]
-    U[User] --> R[Root]
-    C -. Provides roles and command .-> R
-    R --> D[Clear local task: do and verify directly]
-    R --> S[Delegate as needed: architect / engineer / explorer / reviewer]
-    S -. Optional parallelism: subject to host capability and directory isolation .-> P[Independent tasks in different directories]
-    D --> V[Root checks actual changes and verification evidence]
-    S --> V
-    P --> V
-    V --> O[Delivery and remaining limitations]
+    U[User] <--> R[Root: decide, execute, coordinate and verify]
+    R <--> A[architect: planning and design]
+    R <--> E[engineer: implementation and testing]
+    R <--> X[explorer: read-only exploration]
+    R <--> V[reviewer: independent review]
 ```
 
-Specialists are selected as needed, not a fixed sequence or mandatory stages. Root's policy allows only one writer in the same cwd at a time; Root and engineer must not modify it simultaneously, and independent review follows completion of writes. Parallelism is considered only for independent tasks in different directories.
+Root completes and verifies simple, clear tasks directly. For complex tasks, it delegates to specialists as needed, checks the results and delivers the outcome. The four specialists are not a fixed pipeline and do not all need to participate in every task.
+
+### Parallel execution
+
+Root's policy allows only one writer in the same cwd at a time; Root and engineer must not modify it simultaneously, and independent review follows completion of writes. Parallelism is considered only for independent tasks in different directories.
 
 The plugin only registers roles and a command. It has no scheduler, queue, concurrency limit, lock, automatic worktree, dependency DAG, or conflict detection of its own. Actual subagent calls and concurrent execution depend on OpenCode host capabilities and Root's tool usage; parallel execution is not claimed to have been tested here.
 
