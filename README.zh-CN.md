@@ -94,6 +94,10 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 
 Root 的 Markdown 权限列表为空时，Crew 保留宿主提供的 Root 权限，不添加通配放行，也不绕过已有 ask/deny 规则；列表非空时则替换该权限列表。会话及其他宿主策略仍然生效。
 
+Engineer 则按原顺序保留宿主提供的权限规则，并在末尾追加其 Markdown 规则：禁止 `subagent`、`question` 和 `execute`。其他已有宿主 allow/ask/deny 规则仍然生效；Crew 不添加通配放行。Architect、explorer 和 reviewer 继续使用严格的替换策略。
+
+三个严格角色允许技能及外部目录检查，方便读取常规参考资料；读取 `.env`、`.env.*` 仍需询问，`.env.example` 放行。这不授予外部编辑或 shell 权限；除上表列出的规则外，其他操作仍禁止。OpenCode 的路径权限不是防符号链接的沙箱：`plans/` 内的符号链接可能破坏 architect 的预期写入边界，别名也可能隐藏敏感文件名。不能依靠这些角色规则隔离不可信的文件系统布局。
+
 不是固定流水线。Root 已掌握上下文，剩余修改和必要验证明确、局部，且无需进一步调查、设计测试或独立复核时可直做；否则优先委派。长任务才按需使用 `plans/`。同一 cwd 一次只能有一个写入者；直做不免验收。
 
 ## 文件即角色

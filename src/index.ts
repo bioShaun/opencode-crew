@@ -66,8 +66,9 @@ export default Plugin.define({
         agent.steps = config.steps[id] ?? role.steps
         agent.model = config.models[id]
         // An empty Root policy adds no rules; retain the host's existing permissions.
-        if (id !== "root" || role.permissions.length > 0) agent.permissions = role.permissions.map(rule => ({ ...rule }))
-        // Match resolved tool paths too; never allow architect to escape cwd/plans.
+        if (id === "engineer") agent.permissions = [...agent.permissions, ...role.permissions.map(rule => ({ ...rule }))]
+        else if (id !== "root" || role.permissions.length > 0) agent.permissions = role.permissions.map(rule => ({ ...rule }))
+        // Match absolute lexical tool paths too; this is not symlink isolation.
         if (id === "architect") agent.permissions.push({ action: "edit", resource: resolve(ctx.location.directory, "plans") + "/**", effect: "allow" })
       })
     })

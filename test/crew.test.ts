@@ -7,8 +7,8 @@ const entry = new URL("../src/index.ts", import.meta.url)
 async function plugin() {
   return existsSync(entry) ? (await import(entry.href)).default : { id: "not-implemented", setup: async () => {} }
 }
-function fixture(options: any = {}, rootPermissions: any[] = []) {
-  const agents = new Map<string, any>([["root", { id: "root", permissions: rootPermissions }]])
+function fixture(options: any = {}, rootPermissions: any[] = [], seeds: Record<string, any[]> = {}) {
+  const agents = new Map<string, any>([["root", { id: "root", permissions: rootPermissions }], ...Object.entries(seeds).map(([id, permissions]) => [id, { id, permissions }] as [string, any])])
   const commands: any[] = [], calls: any[] = []
   const ctx: any = {
     options, location: { directory: fileURLToPath(new URL("..", import.meta.url)) },
@@ -124,4 +124,70 @@ test("engineer has verification and BLOCKED rules and cannot recursively delegat
   expect(a.system).toContain("BLOCKED")
   expect(a.system).toContain("先只写测试")
   expect(a.steps).toBe(80)
+})
+test("engineer retains ordered host defaults and custom rules before Crew denies without mutating inputs", async () => {
+  const rules = [
+    { action: "*", resource: "*", effect: "allow" },
+    { action: "read", resource: "*.env", effect: "ask" },
+    { action: "read", resource: "*.env.*", effect: "ask" },
+    { action: "read", resource: "*.env.example", effect: "allow" },
+    { action: "shell", resource: "git push", effect: "deny" },
+    { action: "shell", resource: "sensitive", effect: "ask" },
+    { action: "subagent", resource: "*", effect: "allow" },
+    { action: "question", resource: "*", effect: "allow" },
+    { action: "execute", resource: "*", effect: "allow" },
+  ]
+  const original = structuredClone(rules)
+  const f = fixture({}, [], { engineer: rules }); await (await plugin()).setup(f.ctx)
+  const a = f.agents.get("engineer")
+  expect(a.permissions).toEqual([...original, ...["subagent", "question", "execute"].map(action => ({ action, resource: "*", effect: "deny" }))])
+  expect(rules).toEqual(original)
+  expect(effect(a, "shell", "git status")).toBe("allow")
+  expect(effect(a, "shell", "git push")).toBe("deny")
+  expect(effect(a, "shell", "sensitive")).toBe("ask")
+  expect(effect(a, "read", "*.env")).toBe("ask")
+  for (const action of ["subagent", "question", "execute"]) expect(effect(a, action)).toBe("deny")
+})
+test("strict roles still replace seeded host permissions", async () => {
+  const host = [{ action: "*", resource: "*", effect: "allow" }]
+  const f = fixture({}, [], { architect: structuredClone(host), explorer: structuredClone(host), reviewer: structuredClone(host) })
+  await (await plugin()).setup(f.ctx)
+  for (const id of ["architect", "explorer", "reviewer"]) {
+    const a = f.agents.get(id)
+    expect(effect(a, "execute")).toBe("deny")
+    expect(effect(a, "subagent")).toBe("deny")
+    expect(a.permissions[0]).not.toEqual(host[0])
+  }
+})
+
+// V2 whole-value wildcards, as documented; host path canonicalization is separate.
+function wildcardEffect(agent: any, action: string, resource: string) {
+  const match = (pattern: string, value: string) => new RegExp('^' + pattern.split('').map(c => c === '*' ? '.*' : c === '?' ? '.' : c.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')).join('') + '$').test(value)
+  return agent.permissions.filter((r: any) => match(r.action, action) && match(r.resource, resource)).at(-1)?.effect ?? 'ask'
+}
+test('strict roles allow routine external reads and skill discovery without relaxing sensitive reads or execution', async () => {
+  const f = fixture(); await (await plugin()).setup(f.ctx)
+  for (const id of ['architect', 'explorer', 'reviewer']) {
+    const a = f.agents.get(id)
+    expect(wildcardEffect(a, 'external_directory', '/home/user/.config/agents/*')).toBe('allow')
+    expect(wildcardEffect(a, 'skill', 'opencode')).toBe('allow')
+    for (const path of ['.env', 'nested/.env.production', '/outside/.env', '/outside/.env.local']) expect(wildcardEffect(a, 'read', path)).toBe('ask')
+    for (const path of ['src/index.ts', '/outside/AGENTS.md', '/outside/.env.example']) expect(wildcardEffect(a, 'read', path)).toBe('allow')
+    for (const action of ['glob', 'grep']) expect(wildcardEffect(a, action, 'example')).toBe('allow')
+    for (const action of ['execute', 'subagent', 'question']) expect(wildcardEffect(a, action, '*')).toBe('deny')
+  }
+})
+test('strict write and fixed shell rules enforce whole-value wildcard boundaries', async () => {
+  const f = fixture(); await (await plugin()).setup(f.ctx)
+  const architect = f.agents.get('architect'), reviewer = f.agents.get('reviewer'), explorer = f.agents.get('explorer')
+  const location = f.ctx.location.directory.replace(/\/$/, '')
+  for (const path of ['plans/a.md', `${location}/plans/a.md`]) expect(wildcardEffect(architect, 'edit', path)).toBe('allow')
+  for (const path of ['src/a.ts', '/outside/plans/a.md', `${location}/src/a.ts`]) expect(wildcardEffect(architect, 'edit', path)).toBe('deny')
+  expect(wildcardEffect(explorer, 'edit', 'plans/a.md')).toBe('deny')
+  expect(wildcardEffect(explorer, 'shell', 'git status')).toBe('deny')
+  for (const rule of reviewer.permissions.filter((r: any) => r.action === 'shell')) {
+    expect(wildcardEffect(reviewer, 'shell', rule.resource)).toBe('allow')
+    expect(wildcardEffect(reviewer, 'shell', rule.resource + ' --help')).toBe('deny')
+  }
+  for (const command of ['git status', 'git push', 'git reset --hard', 'sh -c id']) expect(wildcardEffect(reviewer, 'shell', command)).toBe('deny')
 })

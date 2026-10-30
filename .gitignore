@@ -6,4 +6,5 @@ node_modules/
 *.log
 coverage/
 test/.work/
+plans/evidence/worktree-stage0/
 .DS_Store

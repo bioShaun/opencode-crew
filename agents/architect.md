@@ -8,7 +8,8 @@ permissions:
   - { action: read, resource: "*.env", effect: ask }
   - { action: read, resource: "*.env.*", effect: ask }
   - { action: read, resource: "*.env.example", effect: allow }
-  - { action: external_directory, resource: "*", effect: ask }
+  - { action: external_directory, resource: "*", effect: allow }
+  - { action: skill, resource: "*", effect: allow }
   - { action: glob, resource: "*", effect: allow }
   - { action: grep, resource: "*", effect: allow }
   - { action: webfetch, resource: "*", effect: allow }
