@@ -65,7 +65,8 @@ export default Plugin.define({
         agent.system = role.system
         agent.steps = config.steps[id] ?? role.steps
         agent.model = config.models[id]
-        agent.permissions = role.permissions.map(rule => ({ ...rule }))
+        // An empty Root policy adds no rules; retain the host's existing permissions.
+        if (id !== "root" || role.permissions.length > 0) agent.permissions = role.permissions.map(rule => ({ ...rule }))
         // Match resolved tool paths too; never allow architect to escape cwd/plans.
         if (id === "architect") agent.permissions.push({ action: "edit", resource: resolve(ctx.location.directory, "plans") + "/**", effect: "allow" })
       })

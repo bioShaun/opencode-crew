@@ -7066,7 +7066,8 @@ var src_default = Plugin.define({
           agent.system = role.system;
           agent.steps = config.steps[id] ?? role.steps;
           agent.model = config.models[id];
-          agent.permissions = role.permissions.map((rule) => ({ ...rule }));
+          if (id !== "root" || role.permissions.length > 0)
+            agent.permissions = role.permissions.map((rule) => ({ ...rule }));
           if (id === "architect")
             agent.permissions.push({ action: "edit", resource: resolve(ctx.location.directory, "plans") + "/**", effect: "allow" });
         });

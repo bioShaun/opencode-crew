@@ -7,7 +7,7 @@
   "homepage": "https://github.com/bioShaun/opencode-crew#readme",
   "bugs": { "url": "https://github.com/bioShaun/opencode-crew/issues" },
   "exports": { ".": "./dist/index.js" },
-  "files": ["dist", "src", "agents", "README.md", "THIRD_PARTY_NOTICES.md"],
+  "files": ["dist", "src", "agents", "README.md", "README.zh-CN.md", "THIRD_PARTY_NOTICES.md"],
   "scripts": {
     "test": "bun test",
     "build": "bun build src/index.ts --target bun --external @opencode/plugin --outfile dist/index.js",

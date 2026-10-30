@@ -7,8 +7,8 @@ const entry = new URL("../src/index.ts", import.meta.url)
 async function plugin() {
   return existsSync(entry) ? (await import(entry.href)).default : { id: "not-implemented", setup: async () => {} }
 }
-function fixture(options: any = {}) {
-  const agents = new Map<string, any>()
+function fixture(options: any = {}, rootPermissions: any[] = []) {
+  const agents = new Map<string, any>([["root", { id: "root", permissions: rootPermissions }]])
   const commands: any[] = [], calls: any[] = []
   const ctx: any = {
     options, location: { directory: fileURLToPath(new URL("..", import.meta.url)) },
@@ -46,6 +46,23 @@ test("Root can edit, execute and delegate; native policy permits direct verified
   for (const tool of ["edit", "shell", "execute", "subagent"]) expect(effect(a, tool)).not.toBe("deny")
   expect(a.system).toContain("可直接完成修改与验证")
   expect(a.system).toContain("一次委派")
+})
+test("Root preserves host rules including asks and denies without adding an allow", async () => {
+  const rules = [
+    { action: "*", resource: "*", effect: "allow" },
+    { action: "read", resource: "secret.env", effect: "ask" },
+    { action: "shell", resource: "*", effect: "ask" },
+    { action: "execute", resource: "blocked", effect: "deny" },
+  ]
+  const f = fixture({}, structuredClone(rules)); await (await plugin()).setup(f.ctx)
+  const root = f.agents.get("root")
+  expect(root.permissions).toEqual(rules)
+  expect(effect(root, "read", "secret.env")).toBe("ask")
+  expect(effect(root, "shell", "git status")).toBe("ask")
+  expect(effect(root, "execute", "blocked")).toBe("deny")
+  for (const action of ["edit", "subagent", "execute"]) expect(effect(root, action, "ordinary")).toBe("allow")
+  const empty = fixture(); await (await plugin()).setup(empty.ctx)
+  expect(empty.agents.get("root").permissions).toEqual([])
 })
 test("configured models are parsed; omitted model inherits, no concrete defaults", async () => {
   const f = fixture({ models }); await (await plugin()).setup(f.ctx)
@@ -91,7 +108,8 @@ test("invalid or unknown options fail before registering any agent", async () =>
   for (const options of [{ models: { root: "bad" } }, { models: { typo: "p/m" } }, { models: { root: "/empty" } }, { workerSteps: 50 }]) {
     const f = fixture(options)
     await expect(p.setup(f.ctx)).rejects.toThrow("opencode-crew")
-    expect(f.agents.size).toBe(0)
+    expect(f.agents.size).toBe(1)
+    expect(f.agents.get("root")).toEqual({ id: "root", permissions: [] })
   }
 })
 test("bare /crew switches role without sending an empty model request", async () => {

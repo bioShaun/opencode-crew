@@ -1,24 +1,47 @@
 # OpenCode Crew
 
-OpenCode V2 插件：文件化角色、按需委派，Root 保持正常执行能力。简单事情直接做，复杂事情分工做，结果按风险核查。
+English | [简体中文](README.zh-CN.md)
 
-## 安装与配置
+An OpenCode V2 plugin with file-based roles and delegation on demand. Root retains normal execution capabilities: do simple work directly, divide complex work as needed, and check results according to risk.
 
-要求 OpenCode **2.2.3**（已验证版本）。无需手工复制角色或运行安装脚本。
+## How it works and parallel execution
 
-### 从 GitHub 安装（推荐）
+```mermaid
+flowchart TD
+    A[Plugin startup] --> B[Validate options and load and validate agents Markdown]
+    B --> C[Register five roles and /crew]
+    U[User] --> R[Root]
+    C -. Provides roles and command .-> R
+    R --> D[Clear local task: do and verify directly]
+    R --> S[Delegate as needed: architect / engineer / explorer / reviewer]
+    S -. Optional parallelism: subject to host capability and directory isolation .-> P[Independent tasks in different directories]
+    D --> V[Root checks actual changes and verification evidence]
+    S --> V
+    P --> V
+    V --> O[Delivery and remaining limitations]
+```
+
+Specialists are selected as needed, not a fixed sequence or mandatory stages. Root's policy allows only one writer in the same cwd at a time; Root and engineer must not modify it simultaneously, and independent review follows completion of writes. Parallelism is considered only for independent tasks in different directories.
+
+The plugin only registers roles and a command. It has no scheduler, queue, concurrency limit, lock, automatic worktree, dependency DAG, or conflict detection of its own. Actual subagent calls and concurrent execution depend on OpenCode host capabilities and Root's tool usage; parallel execution is not claimed to have been tested here.
+
+## Installation and configuration
+
+Requires OpenCode **2.2.3** (the verified version). No manual role copying or installation script is required.
+
+### Install from GitHub (recommended)
 
 ```sh
 opencode plugin add github:bioShaun/opencode-crew
 ```
 
-也支持完整 Git 地址：
+A full Git URL also works:
 
 ```sh
 opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 ```
 
-安装后，在已有 `opencode.json(c)` 中找到安装命令添加的 Crew 插件项，将它改成下方对象形式以配置模型。**替换该项，不要再追加第二份。** 仓库自带预构建入口，使用者无需手工创建角色或运行构建命令。
+After installation, find the Crew plugin entry added by the command in your existing `opencode.json(c)` and change it to the object form below to configure models. **Replace that entry; do not append a second copy.** The repository includes a prebuilt entry point; users do not need to create roles or run a build manually.
 
 ```jsonc
 {
@@ -42,44 +65,46 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 }
 ```
 
-以上是待替换的占位模型，provider、凭证和模型可用性由目标机配置提供，包内不包含密钥或具体模型默认值。`models` 可省略部分角色；省略表示遵循 OpenCode 原生模型继承规则，不是字符串 `inherit`。子代理继承父会话模型；主会话保持其已选模型。`/crew` 会显式选择已配置的 Root 模型，未配置则保留当前会话模型。
+These models are placeholders to replace. Providers, credentials and model availability come from the target machine's configuration; the package contains no keys or concrete model defaults. Roles may be omitted from `models`: omission follows native OpenCode model inheritance, not the string `inherit`. Subagents inherit the parent session model; the primary session keeps its selected model. `/crew` explicitly selects the configured Root model, or retains the current session model if none is configured.
 
-不要覆盖现有完整配置，保留 provider 和其他插件。不要再在 `agents` 配置或自动发现的 `agents/*.md` 中定义 Crew 的五个同名角色，否则宿主的合并规则可能覆盖模型/提示词或追加权限。旧 planner-only 用户先备份并移出旧角色文件，再删除其配置块，不能同时启用两个编排包。
+Do not overwrite your complete existing configuration; retain providers and other plugins. Do not also define Crew's five identically named roles in `agents` configuration or auto-discovered `agents/*.md`: host merge rules may override models or prompts or append permissions. Users migrating from the old planner-only setup should back up and move out the old role files, then remove their configuration blocks; do not enable both orchestration packages together.
 
-支持固定分支、标签或完整 commit，例如 `github:bioShaun/opencode-crew#main`。生产使用可固定经过验证的完整 commit。检查或更新可使用 `opencode plugin check` / `opencode plugin update`；完整 commit 固定的插件不随分支更新。
+You can pin a branch, tag or full commit, for example `github:bioShaun/opencode-crew#main`. For production, consider pinning a verified full commit. Use `opencode plugin check` / `opencode plugin update` to inspect or update; a plugin pinned to a full commit does not follow branch updates.
 
-### 本地目录 / 离线分发
+### Local directory / offline distribution
 
-也可将完整仓库放到任意固定位置，将 `package` 改为该目录的绝对路径（例如 `/home/you/opencode/opencode-crew`）。插件不依赖特定安装路径。
+You can place the complete repository at any fixed location and set `package` to its absolute path (for example `/home/you/opencode/opencode-crew`). The plugin does not depend on a particular installation path.
 
-可分发 `npm pack` 生成的 tgz，目标机解压到固定目录后按本地路径加载。`plugin add` 不接受 tgz 目标。归档与 Git 仓库均自带 `dist/index.js`，YAML 解析器已经打包，不要求额外安装解析依赖。从源码修改后分发前执行 `bun install && bun run build`。运行仍依赖宿主 OpenCode V2 的插件 SDK。当前没有发布 npm，不要用裸包名从 npm 安装。
+A tgz generated by `npm pack` can be distributed and extracted to a fixed directory on the target machine, then loaded by local path. `plugin add` does not accept a tgz target. Both the archive and Git repository include `dist/index.js` with the YAML parser bundled; no separate parser installation is required. After modifying source, run `bun install && bun run build` before distributing. Runtime still depends on the host OpenCode V2 plugin SDK. The package is not currently published to npm; do not install it from npm by bare package name.
 
-## 使用
+## Usage
 
-- `/crew`：切换到 Root 和已配置的 Root 模型，不发送空模型请求。
-- `/crew <任务>`：切换并提交任务；保留附件、技能和投递方式。
-- `default_agent: root` 用于未选角色的新会话，不强行改变已有会话；已有会话使用 `/crew`。
-- 模型/步数在插件 options 修改，按 OpenCode 配置热加载机制生效，无需重启服务。
+- `/crew`: switch to Root and the configured Root model, without sending an empty model request.
+- `/crew <task>`: switch and submit a task, preserving attachments, skills and delivery mode.
+- `default_agent: root` applies to new sessions without a selected agent; it does not forcibly change existing sessions. Use `/crew` in an existing session.
+- Change models/steps in plugin options; OpenCode's configuration hot reload mechanism applies them without restarting the service.
 
-## 角色
+## Roles
 
-| 角色 | 定位 | 权限边界 |
+| Role | Purpose | Permission boundary |
 |---|---|---|
-| root | 目标、决策、调度、验收；明确局部任务可直做并验证 | 不添加 planner-only 工具禁令，仍遵守宿主与会话策略 |
-| architect | 按需制定复杂方案、接口和验证契约 | 仅可写当前工作目录的 `plans/`，无 shell/Code Mode |
-| engineer | 按范围实现并自验证 | 不递归委派，默认 80 步 |
-| explorer | 只读检索、日志与调用链摘要 | 不写入、不执行命令 |
-| reviewer | 按风险独立核查 | 不写入；shell 仅五条固定只读 Git 命令 |
+| root | Goals, decisions, coordination and acceptance; may directly perform and verify clear local tasks | No planner-only tool prohibition; still subject to host and session policies |
+| architect | Design complex plans, interfaces and verification contracts as needed | Can write only cwd `plans/`; no shell or Code Mode |
+| engineer | Implement within scope and self-verify | No recursive delegation; default 80 steps |
+| explorer | Read-only searches, logs and call-chain summaries | No writes or command execution |
+| reviewer | Independent risk-based review | No writes; shell limited to five fixed read-only Git commands |
 
-不是固定流水线。Root 已掌握上下文，剩余修改和必要验证明确、局部，且无需进一步调查、设计测试或独立复核时可直做；否则优先委派。长任务才按需使用 `plans/`。同一 cwd 一次只能有一个写入者；直做不免验收。
+When Root's Markdown permission list is empty, Crew leaves the host-provided Root permissions unchanged; it does not add a wildcard allow or bypass existing ask/deny rules. Nonempty Root rules replace that list. Session and other host policies still apply.
 
-## 文件即角色
+This is not a fixed pipeline. Root may work directly when it already has context, the remaining changes and necessary verification are clear and local, and no further investigation, test design or independent review is needed; otherwise it prefers delegation. Use `plans/` as needed for long tasks. Only one writer may modify a cwd at a time; direct work still requires acceptance checks.
+
+## Roles as files
 
 ```text
 opencode-crew/
 ├── package.json
-├── src/index.ts           # 解析配置、加载角色、注册 /crew
-├── dist/index.js          # 分发入口，内含 YAML 解析器
+├── src/index.ts           # parse configuration, load roles, register /crew
+├── dist/index.js          # distribution entry, includes YAML parser
 └── agents/
     ├── root.md
     ├── architect.md
@@ -88,14 +113,14 @@ opencode-crew/
     └── reviewer.md
 ```
 
-角色提示词、权限和默认步数只存在于 Markdown，插件源码不再保存第二份。Frontmatter 支持 `description`、`mode`、`steps`、`permissions`，正文为 system prompt。模型只通过插件 options 设置，非法字段/角色/模型格式直接报错，所有输入验证完才注册。
+Role prompts, permissions and default steps live only in Markdown; plugin source does not maintain a second copy. Frontmatter supports `description`, `mode`, `steps` and `permissions`; the body is the system prompt. Models are set only through plugin options. Invalid fields, roles or model formats fail immediately; all input is validated before registration.
 
-修改包内 Markdown 后使用 OpenCode `/reload` 强制完整重载以重新读取角色；不承诺宿主会自动监视包内所有嵌套文件。升级包可能覆盖自定义 Markdown，升级前保留自定义文件。当前不提供另一套自定义目录/别名机制，以免产生重复定义。
+After changing packaged Markdown, use OpenCode `/reload` to force a full reload and reread roles; automatic host watching of all nested package files is not guaranteed. Package upgrades may overwrite customized Markdown, so preserve custom files before upgrading. There is currently no separate custom directory/alias mechanism, to avoid duplicate definitions.
 
-## 验证与限制
+## Verification and limitations
 
-`bun install` 后运行 `bun test`。验收覆盖模型解析、native Root、只读角色、plans 写入范围、命令切换和附件保留、非法配置及空命令。
+Run `bun test` after `bun install`. Acceptance tests cover model parsing, native Root, read-only roles, plans write scope, command switching and attachment preservation, invalid configuration and empty commands.
 
-配置/注册与权限回读不等于真实模型链路验证。未跑付费的 Root→子代理多轮任务；运行结果还受目标机 provider、全局/会话权限、项目指令影响。路径权限不是操作系统沙盒，对不可信项目仍需额外隔离。
+Configuration/registration and permission readback do not prove a real model execution path. Paid multi-turn Root→subagent tasks have not been run; results also depend on the target machine's provider, global/session permissions and project instructions. Path permissions are not an operating-system sandbox; untrusted projects require additional isolation.
 
-卸载：删除配置中的 Crew 插件项和 `default_agent: root`（或恢复之前的默认值）；本地包不再使用后自行移走。移除插件后已有会话不要继续选用 root，改选 build 或恢复的 planner。旧配置回滚应仅恢复迁移涉及项，避免覆盖后续无关修改。
+To uninstall, remove the Crew plugin entry and `default_agent: root` from configuration (or restore the previous default); remove the local package yourself when no longer used. After removal, do not continue using root in existing sessions; select build or the restored planner instead. Roll back only configuration items involved in the migration to avoid overwriting unrelated later changes.
