@@ -29,6 +29,8 @@ try {
   const dir=join(base,'target'), baseline='a'.repeat(40), scope=['src/']
   const input={key:'one',directory:dir,baseline,scope,goal:'goal',acceptance:'accept',check:'check'}
   new Ledger(identity).reserve('owner',input,()=>({...identity,directory:dir,baseline,scope}))
+ } else if(action==='migrate') {
+  new Ledger(identity).migrate('op_'+'1'.repeat(32),'2'.repeat(64))
  } else {
   new AtomicRegistry(commonDir,identity).withLock(store=>store.write({version:'new',payload:['full',42]}))
  }

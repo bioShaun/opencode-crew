@@ -50,7 +50,7 @@ export function normalizeScope(directory: string, scope: string[]): string[] {
   return normalized
 }
 
-export type TaskRegistryErrorCode = "INVALID_INPUT" | "IDEMPOTENCY_CONFLICT" | "WRITER_RESERVED" | "CAPACITY_RESERVED" | "INVALID_SCOPE" | "PROJECT_MISMATCH" | "DIRTY_PRIMARY" | "DIRTY_WORKTREE" | "BASELINE_MISMATCH" | "HOST_ERROR" | "REGISTRY_LOCKED" | "REGISTRY_INVALID"
+export type TaskRegistryErrorCode = "INVALID_INPUT" | "IDEMPOTENCY_CONFLICT" | "WRITER_RESERVED" | "CAPACITY_RESERVED" | "INVALID_SCOPE" | "PROJECT_MISMATCH" | "DIRTY_PRIMARY" | "DIRTY_WORKTREE" | "BASELINE_MISMATCH" | "HOST_ERROR" | "REGISTRY_LOCKED" | "REGISTRY_INVALID" | "OPERATION_CONFLICT"
 export interface ProjectIdentity { primaryDirectory: string; commonDir: string }
 export interface ValidatedWorktree extends ProjectIdentity { directory: string; baseline: string; scope: string[] }
 
