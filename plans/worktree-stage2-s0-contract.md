@@ -118,11 +118,17 @@ bun src/maintenance-cli.ts apply <plan.json>        # 提交，需 plan 内绑�
   operationID, operatorRef, authorizationRef, project: { primaryDirectory, commonDir },
   ...按 operation 追加：
   migrate:      {}
-  close:        { taskID, disposition, evidence: <EvidenceBundle 路径> }
+  close:        { taskID, disposition, evidence: <EvidenceBundle 路径>, integrationCommit? }
   open-period:  { baseline } }
 ```
 
 字段集按 `exact` 语义校验（未知键拒绝）。`close` 的 `disposition` 不含「释放名额」语义；`abandoned` 同样保留 worktree。规范化后的 `request` 全字段（含 `operatorRef`/`authorizationRef` 与操作参数）参与 `paramsDigest` 与 `planDigest`，不允许在 `apply` 阶段从 CLI 参数或环境临时补齐。
+
+**S3 实现评审修订（2026-10-31）。** 上文冻结的 closeout 已含 `integrationCommit?`，但原 close 请求没有该字段来源，导致 `disposition:"integrated"` 无法同时满足「closeout 必填」与「请求 exact 字段」两条规则。现显式补入可选 `integrationCommit`，规则为：
+
+- 仅 `disposition:"integrated"` 允许出现，且必须是当前仓库对象格式下合法的完整 commit OID（40 或 64 位小写十六进制）；格式非法或出现在其他 disposition 上均为 `INVALID_INPUT`。
+- `integrated` 缺失该字段判 `MAINTENANCE_EVIDENCE_INSUFFICIENT`，不得以占位值或空字符串提交。
+- 它只记录另行授权并已验证的整合事实，不触发 commit/merge；字段参与 `paramsDigest` 与归档，历史记录不可改写。
 
 ### 5.3 plan.json（plan 输出 / apply 输入）
 
@@ -262,7 +268,7 @@ S0-D（决策部分）通过条件——本次已满足：
 
 S0 尚未满足、不得宣称 S0 整体通过的部分：
 
-- Spec 第 8 节 S0 行还要求「停止证据能实际取得」。这只能在 S3 维护窗口内验证，本轮无真实窗口、无取证执行，故**该项 NOT_VERIFIED**；在 S1/S2/S3 实施授权前，维护实现在门禁上仍视为 BLOCKED。本文不改写该门槛，也不以「冲突时以本文为准」的优先级条款免除它。
+- Spec 第 8 节 S0 行还要求「停止证据能实际取得」。这只能在真实维护窗口内验证；本轮无真实窗口、无取证执行，故**该项 NOT_VERIFIED**。S1–S3 实现与本地测试已完成，但任何真实 `apply` 仍须在能取得该证据的维护窗口内逐次授权，否则为 BLOCKED。本文不改写该门槛，也不以「冲突时以本文为准」的优先级条款免除它。
 - 接口冻结不替代实现评审：函数分解、内部命名、测试文件划分仍按 S1/S2/S3 各自评审；
 - CLI 拼写按本表执行；若实现评审发现平台限制需改动，必须回改本文并重新冻结，不得在代码里私自漂移。
 

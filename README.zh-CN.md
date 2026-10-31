@@ -20,7 +20,7 @@ Root 策略规定同一 cwd 同时只有一个写入者，Root 与 engineer 不�
 
 ## 安装与配置
 
-角色与插件依赖基线为 OpenCode **2.2.3**；本轮私有宿主 smoke 使用 **2.2.4**。无需手工复制角色或运行安装脚本。
+角色与插件依赖基线为 OpenCode **2.2.3**。阶段 1 私有宿主验收使用 **2.2.5**；阶段 2 的 S1–S3 目前只有本地测试，尚未在真实宿主验证。无需手工复制角色或运行安装脚本。
 
 ### 从 GitHub 安装（推荐）
 
@@ -77,7 +77,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 - `default_agent: root` 用于未选角色的新会话，不强行改变已有会话；已有会话使用 `/crew`。
 - 模型/步数在插件 options 修改，按 OpenCode 配置热加载机制生效，无需重启服务。
 
-### 显式 worktree 任务（受限阶段 1）
+### 显式 worktree 任务
 
 从**主工作区根目录**的 Root 会话调用 `crew_task_start`，参数为 `{key, directory, baseline, scope, goal, acceptance, check}`；`scope` 是精确相对文件路径或以 `/` 结尾的目录前缀数组，不是 glob。`crew_task_status` 接受 `{taskID?}`，`crew_task_stop` 接受 `{taskID}`。这是插件管理的独立会话，不是原生子代理隔离，也不会自动隔离所有委派。
 
@@ -93,6 +93,21 @@ git -C ../crew-task rev-parse HEAD
 ```
 
 最多保留两个未结案写任务预留；没有 release 或 cleanup 接口，idle、error 和 stop 都不释放。ledger 位于 `<git-common-dir>/opencode-crew-stage1`；崩溃遗留锁不会自动抢占，不应把手删 ledger 当正常操作。同 key、owner 和输入重放只返回原记录，不重投、不续跑；受管 retry 关闭不等于自动 resume。stop 最多请求一次中断，不能确保进程树停止，进程安全始终为 `unconfirmed`。worktree 和 scope 均不是 OS 沙箱；人工整合前须审查实际差异并独立确认安全，无法确认时保留现场及预留。
+
+### Registry v2 与离线维护（阶段 2 S1–S3）
+
+v2 registry 将已结案任务保留为永久幂等墓碑，因此无需删除 key、owner、baseline 或 cwd 历史即可释放容量。三个在线工具输入不变：closed key 重放返回原 closed 记录，零 create/prompt/interrupt；不带 `taskID` 的 `crew_task_status` 仍只列 active，显式 `taskID` 可查该 owner 的 closed；`crew_task_stop` 命中 closed 不中断；retry hook 对历史绑定仍置 `retry:false`。closed 记录不能重新进入 transition。v1 从不隐式迁移：v1 继续按原语义工作，旧 reader 会拒绝 v2，而不是把它当空库。
+
+离线维护是本地操作者入口，不是在线工具，也没有新增面向模型的 release/cleanup 工具：
+
+```sh
+bun src/maintenance-cli.ts plan  operation.json
+bun src/maintenance-cli.ts apply plan.json
+```
+
+操作只有 `migrate`、`close`、`open-period`。`plan` 只读，并把请求绑定到当前 generation、registry 摘要、预期变更和证据闭包。`apply` 要求冻结的授权与证据包，重新核验计划与证据，写入备份和不可变归档，然后用一次原子替换提交 registry；响应丢失时从已存 operationID 重放，不会二次写入。`close` 只把预留移入历史：不证明进程已停止，不清理、不合并，worktree 字节保持不变。`open-period` 要求 active=0 且新 baseline 合法、主工作区 clean。证据、授权或排空依据缺失时保持 blocked，预留不释放。
+
+CLI 的 stdout 只输出一个机器 JSON 对象，stderr 只输出简短中文摘要；退出码 `0` 成功、`1` 拒绝/blocked、`2` 用法或输入结构非法。有界只读清单（`src/tasks-review.ts`）作为结案证据使用，不注册在线清单工具。只有一次 registry 写入是提交点。备份和归档是审计资料，不是另一份权威；不得删除 registry 或锁来回收容量。
 
 ## 角色
 
@@ -117,9 +132,12 @@ Engineer 则按原顺序保留宿主提供的权限规则，并在末尾追加�
 ```text
 opencode-crew/
 ├── package.json
-├── src/index.ts           # 解析配置、加载角色、注册 /crew
-├── dist/index.js          # 分发入口，内含 YAML 解析器
-├── docs/                  # 角色协作图（png + svg）
+├── src/index.ts             # 解析配置、加载角色、注册 /crew
+├── src/tasks-review.ts      # 有界只读成果清单
+├── src/tasks-maintenance.ts # registry 离线 plan/apply
+├── src/maintenance-cli.ts   # 本地维护入口
+├── dist/index.js            # 分发入口，内含 YAML 解析器
+├── docs/                    # 角色协作图（png + svg）
 └── agents/
     ├── root.md
     ├── architect.md
@@ -134,8 +152,8 @@ opencode-crew/
 
 ## 验证与限制
 
-`bun install` 后运行 `bun test`，默认发现范围限定为 `test/`。测试覆盖角色配置和受限任务工具，但不等于完整宿主验收矩阵通过。
+`bun install` 后运行 `bun test`，默认发现范围限定为 `test/`。测试覆盖角色配置、受限任务工具、v1/v2 兼容、closed 历史行为、只读清单，以及离线维护 plan/apply 的重放、证据限额和失败原子性。本地测试不等于完整宿主验收矩阵通过。
 
-私有宿主已实际调用 Root 工具并运行两个独立 engineer marker 任务，覆盖重放、容量和 stop 状态；但不证明执行重叠、真实权限拒绝审批或进程树停止。runner 与核验限制见源码工作区的 `plans/worktree-stage1-results.md`。结果仍受 provider、全局/会话权限及项目指令影响。路径权限不是操作系统沙盒，对不可信项目仍需额外隔离。
+私有宿主已实际调用阶段 1 的 Root 工具并运行两个独立 engineer marker 任务，覆盖重放、容量和 stop 状态。阶段 2 的 S1–S3 有本地红绿与回归证据，但尚无真实宿主维护窗口；S4 真实周转与 S5 整合均未运行。阶段 1 结果不证明执行重叠、真实权限拒绝审批或进程树停止。runner 与核验限制见源码工作区的 `plans/worktree-stage1-results.md`。结果仍受 provider、全局/会话权限及项目指令影响。路径权限不是操作系统沙盒，对不可信项目仍需额外隔离。
 
 卸载：删除配置中的 Crew 插件项和 `default_agent: root`（或恢复之前的默认值）；本地包不再使用后自行移走。移除插件后已有会话不要继续选用 root，改选 build 或恢复的 planner。旧配置回滚应仅恢复迁移涉及项，避免覆盖后续无关修改。
