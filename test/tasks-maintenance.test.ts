@@ -282,10 +282,18 @@ test('backup write failure leaves the active record and registry untouched', () 
   expect(existsSync(join(f.mgmt, 'archives', op('1') + '.json'))).toBe(false)
 })
 
-test('integrated disposition records a valid commit and refuses to omit it', () => {
+test('integrated disposition records a valid commit and refuses to omit or misplace it', () => {
   {
     const { f, rec } = prepared()
     code(() => closePlan(f, rec, { disposition: 'integrated' }), 'MAINTENANCE_EVIDENCE_INSUFFICIENT')
+  }
+  {
+    const { f, rec } = prepared()
+    code(() => closePlan(f, rec, { disposition: 'integrated', integrationCommit: 'bad' }), 'INVALID_INPUT')
+  }
+  {
+    const { f, rec } = prepared()
+    code(() => closePlan(f, rec, { integrationCommit: 'b'.repeat(40) }), 'INVALID_INPUT')
   }
   {
     const { f, rec } = prepared()
