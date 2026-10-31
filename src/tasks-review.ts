@@ -38,7 +38,7 @@ export function reviewTask(request:ReviewRequest):ReviewListing {
  headFrom=git(root,['rev-parse','HEAD']).trim()
  const raw=git(root,['status','--porcelain=v1','-z','--untracked-files=all']).split('\0')
  const ancestor=spawnSync('git',['-c','core.fsmonitor=false','merge-base','--is-ancestor',request.baseline,headFrom],{cwd:root,env,timeout:Math.max(1,limits.timeoutMs-(Date.now()-start)),maxBuffer:1024*1024})
- if(ancestor.status===1) warnings.push('baseline 不在 HEAD 祖先链上'); else if(ancestor.status!==0||ancestor.error||ancestor.signal) { if(Date.now()-start>=limits.timeoutMs) { failures.push({code:'REVIEW_LIMIT_EXCEEDED',count:1});completeness='incomplete' } else return fail('HOST_ERROR') }
+ if(ancestor.status===1) warnings.push('BASELINE_NOT_ANCESTOR: baseline 不在 HEAD 祖先链上'); else if(ancestor.status!==0||ancestor.error||ancestor.signal) { if(Date.now()-start>=limits.timeoutMs) { failures.push({code:'REVIEW_LIMIT_EXCEEDED',count:1});completeness='incomplete' } else return fail('HOST_ERROR') }
  const trackedPaths=new Set<string>(),outsidePaths=new Set<string>(),entryKeys=new Set<string>()
  function tracked(path:string){if(!trackedPaths.has(path)){trackedPaths.add(path);counts.tracked++}}
  const added=(path:string,type:string,source:ReviewEntry['source'])=>{const before=entries.length;add(path,type,source);return entries.length>before}
