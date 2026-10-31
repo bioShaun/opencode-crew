@@ -8,10 +8,10 @@ export interface TaskInput { key: string; directory: string; baseline: string; s
 export type TaskState = 'reserved' | 'session_create_requested' | 'session_bound' | 'prompt_requested' | 'submitted' | 'start_unconfirmed' | 'stop_requested' | 'stop_unconfirmed'
 export interface TaskRecord { taskID: string; input: TaskInput; ownerSessionID: string; requestDigest: string; state: TaskState; sessionID?: string; lastErrorCode?: 'START_UNCONFIRMED' | 'SESSION_MISMATCH' | 'HOST_ERROR'; interruptResult?: { interrupted: 'unknown'; result: 'request_completed' | 'not_requested' | 'error'; errorCode?: 'HOST_ERROR' }; createdAt: string; updatedAt: string }
 export interface Closeout { operationID: string; paramsDigest: string; closedAt: string; operatorRef: string; authorizationRef: string; disposition: 'preserved' | 'abandoned' | 'integrated'; stopEvidenceRef: string; quiescenceEvidenceRef: string; reviewEvidenceRef: string; evidenceDigest: string; archiveRef: string; archiveDigest: string; integrationCommit?: string }
-interface Period { periodID: string; baseline: string; openedAt: string; openedBy: string; openedParamsDigest: string; sealedAt?: string }
-interface RegistryV1 { schemaVersion: 1; project: ProjectIdentity; baseline: string; tasks: TaskRecord[] }
-interface RegistryV2 { schemaVersion: 2; project: ProjectIdentity; generation: number; migration: { operationID: string; paramsDigest: string; appliedAt: string }; currentPeriodID: string; periods: Period[]; active: { periodID: string; record: TaskRecord }[]; closed: { periodID: string; record: TaskRecord; closeout: Closeout }[] }
-type Registry = RegistryV1 | RegistryV2
+export interface Period { periodID: string; baseline: string; openedAt: string; openedBy: string; openedParamsDigest: string; sealedAt?: string }
+export interface RegistryV1 { schemaVersion: 1; project: ProjectIdentity; baseline: string; tasks: TaskRecord[] }
+export interface RegistryV2 { schemaVersion: 2; project: ProjectIdentity; generation: number; migration: { operationID: string; paramsDigest: string; appliedAt: string }; currentPeriodID: string; periods: Period[]; active: { periodID: string; record: TaskRecord }[]; closed: { periodID: string; record: TaskRecord; closeout: Closeout }[] }
+export type Registry = RegistryV1 | RegistryV2
 export interface LedgerEntry { record: TaskRecord; lifecycle: 'active' | 'closed'; periodID?: string; closeout?: Closeout }
 export interface Reservation { task: TaskRecord; replayed: boolean; lifecycle: 'active' | 'closed'; periodID?: string; closeout?: Closeout }
 export interface MigrationResult { schemaVersion: 2; generation: 1; currentPeriodID: 'pd_1'; replayed: boolean }
@@ -117,6 +117,28 @@ export class Ledger {
    if (raw.schemaVersion === 2) return decodeV2(raw,this.project)
    return fail('REGISTRY_INVALID')
   } catch { return fail('REGISTRY_INVALID') }
+ }
+ /** Read-only snapshot; callers must not treat the lock-free read as stable. */
+ load(): { registry: Registry | undefined; bytes: Buffer | undefined } {
+  const bytes=this.atomic.readBytes()
+  if (bytes===undefined) return { registry: undefined, bytes: undefined }
+  let raw: unknown
+  try { raw=JSON.parse(bytes.toString('utf8')) } catch { return fail('REGISTRY_INVALID') }
+  const registry=this.decode(raw)
+  if (!registry) return fail('REGISTRY_INVALID')
+  return { registry, bytes }
+ }
+ /** Run a synchronous maintenance mutation under the registry lock with the exact bytes being replaced. */
+ transaction<T>(fn: (tx: { registry: Registry; bytes: Buffer; write: (next: Registry) => void }) => T): T {
+  return this.atomic.withLock(store => {
+   const bytes=this.atomic.readBytes()
+   if (bytes===undefined) return fail('REGISTRY_INVALID')
+   let raw: unknown
+   try { raw=JSON.parse(bytes.toString('utf8')) } catch { return fail('REGISTRY_INVALID') }
+   const registry=this.decode(raw)
+   if (!registry) return fail('REGISTRY_INVALID')
+   return fn({ registry, bytes, write: next => store.write(next) })
+  })
  }
  entries(): LedgerEntry[] {
   const registry=this.decode(this.atomic.read())

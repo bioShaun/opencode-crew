@@ -43,7 +43,7 @@ export class AtomicRegistry {
     catch (e) { if (missing(e)) return false; return invalid() }
   }
 
-  read(): unknown | undefined {
+  readBytes(): Buffer | undefined {
     if (!this.base(false) || !this.checkFile()) return undefined
     let fd: number | undefined
     try {
@@ -52,8 +52,14 @@ export class AtomicRegistry {
       if (!s.isFile() || s.size > MAX_BYTES) invalid()
       const data = readFileSync(fd)
       if (data.length > MAX_BYTES) invalid()
-      return JSON.parse(data.toString("utf8"))
+      return data
     } catch { return invalid() } finally { if (fd !== undefined) closeSync(fd) }
+  }
+
+  read(): unknown | undefined {
+    const data = this.readBytes()
+    if (data === undefined) return undefined
+    try { return JSON.parse(data.toString("utf8")) } catch { return invalid() }
   }
 
   private write(payload: unknown): void {
