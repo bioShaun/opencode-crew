@@ -6,14 +6,9 @@ An OpenCode V2 plugin with file-based roles and delegation on demand. Root retai
 
 ## Role design and workflow
 
-```mermaid
-flowchart TD
-    U[User] <--> R[Root: decide, execute, coordinate and verify]
-    R <--> A[architect: planning and design]
-    R <--> E[engineer: implementation and testing]
-    R <--> X[explorer: read-only exploration]
-    R <--> V[reviewer: independent review]
-```
+![Role collaboration: Root can do simple work directly; specialists join on demand](docs/role-collaboration.en.png)
+
+Editable source: [`docs/role-collaboration.en.svg`](docs/role-collaboration.en.svg).
 
 Root completes and verifies simple, clear tasks directly. For complex tasks, it delegates to specialists as needed, checks the results and delivers the outcome. The four specialists are not a fixed pipeline and do not all need to participate in every task.
 
@@ -124,6 +119,7 @@ opencode-crew/
 ├── package.json
 ├── src/index.ts           # parse configuration, load roles, register /crew
 ├── dist/index.js          # distribution entry, includes YAML parser
+├── docs/                  # role-collaboration diagram (png + svg)
 └── agents/
     ├── root.md
     ├── architect.md
