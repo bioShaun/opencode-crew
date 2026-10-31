@@ -6946,8 +6946,8 @@ var require_public_api = __commonJS(function(exports) {
 
 // src/index.ts
 import { Plugin } from "@opencode/plugin";
-import { readFileSync } from "fs";
-import { resolve } from "path";
+import { readFileSync as readFileSync2 } from "fs";
+import { resolve as resolve3 } from "path";
 
 // node_modules/yaml/dist/index.js
 var composer = require_composer();
@@ -6995,35 +6995,678 @@ var $stringify = publicApi.stringify;
 var $visit = visit.visit;
 var $visitAsync = visit.visitAsync;
 
+// src/tasks.ts
+import { createHash as createHash2 } from "crypto";
+import { realpathSync as realpathSync4 } from "fs";
+import { join as join2, resolve as resolve2 } from "path";
+
+// src/tasks-registry.ts
+import { lstatSync, realpathSync, statSync } from "fs";
+import { isAbsolute, relative, resolve, sep } from "path";
+import { spawnSync } from "child_process";
+
+class TaskRegistryError extends Error {
+  code;
+  constructor(code = "INVALID_SCOPE") {
+    super(`Task registry: ${code}`);
+    this.code = code;
+    this.name = "TaskRegistryError";
+  }
+}
+function normalizeScopeLexical(scope) {
+  const invalid = () => {
+    throw new TaskRegistryError;
+  };
+  if (!Array.isArray(scope) || scope.length < 1 || scope.length > 32)
+    return invalid();
+  for (const item of scope) {
+    if (typeof item !== "string" || !item || Buffer.byteLength(item, "utf8") > 4096 || isAbsolute(item) || /[\\\0*?\[\]{}]/.test(item))
+      return invalid();
+    const prefix = item.endsWith("/");
+    const parts = (prefix ? item.slice(0, -1) : item).split("/");
+    if (parts.some((part) => !part || part === "." || part === ".." || part === ".git" || part !== ".env.example" && (part === ".env" || part.startsWith(".env.")) || [".ssh", ".gnupg", "node_modules", ".cache", ".venv"].includes(part)))
+      return invalid();
+  }
+  return [...new Set(scope)].sort();
+}
+function normalizeScope(directory, scope) {
+  const invalid = () => {
+    throw new TaskRegistryError;
+  };
+  const normalized = normalizeScopeLexical(scope);
+  if (typeof directory !== "string" || !isAbsolute(directory))
+    return invalid();
+  let root;
+  try {
+    root = realpathSync(directory);
+    if (!statSync(root).isDirectory())
+      return invalid();
+  } catch {
+    return invalid();
+  }
+  for (const item of normalized) {
+    const prefix = item.endsWith("/");
+    const parts = (prefix ? item.slice(0, -1) : item).split("/");
+    let current = root, missing = false;
+    for (let i = 0;i < parts.length; i++) {
+      current = resolve(current, parts[i]);
+      if (missing)
+        continue;
+      try {
+        const info = lstatSync(current);
+        if (info.isSymbolicLink() || (i < parts.length - 1 || prefix) && !info.isDirectory())
+          return invalid();
+        const actual = realpathSync(current), rel = relative(root, actual);
+        if (rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel))
+          return invalid();
+      } catch (error) {
+        if (error.code === "ENOENT")
+          missing = true;
+        else
+          return invalid();
+      }
+    }
+  }
+  return normalized;
+}
+function fail(code) {
+  throw new TaskRegistryError(code);
+}
+function canonical(path) {
+  if (typeof path !== "string" || !isAbsolute(path))
+    return fail("PROJECT_MISMATCH");
+  try {
+    const p = realpathSync(path);
+    if (!statSync(p).isDirectory())
+      return fail("PROJECT_MISMATCH");
+    return p;
+  } catch {
+    return fail("PROJECT_MISMATCH");
+  }
+}
+function git(directory, args, code = "PROJECT_MISMATCH") {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+  env.GIT_OPTIONAL_LOCKS = "0";
+  const result = spawnSync("git", ["-c", "core.fsmonitor=false", ...args], { cwd: directory, env, encoding: "utf8", timeout: 1e4, maxBuffer: 1024 * 1024 });
+  if (result.error || result.status !== 0 || result.signal)
+    return fail(code);
+  return result.stdout;
+}
+function common(directory) {
+  const path = git(directory, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).trimEnd();
+  try {
+    return realpathSync(path);
+  } catch {
+    return fail("PROJECT_MISMATCH");
+  }
+}
+function records(directory) {
+  const output = git(directory, ["worktree", "list", "--porcelain", "-z"]);
+  return output.split("\x00\x00").filter(Boolean).map((record) => {
+    const fields = record.split("\x00");
+    const first = fields[0];
+    if (!first?.startsWith("worktree "))
+      return fail("PROJECT_MISMATCH");
+    const path = first.slice(9);
+    if (!isAbsolute(path))
+      return fail("PROJECT_MISMATCH");
+    return { path: resolve(path), detached: fields.includes("detached"), bare: fields.includes("bare") };
+  });
+}
+function contains(parent, child) {
+  const rel = relative(parent, child);
+  return rel === "" || rel !== ".." && !rel.startsWith(".." + sep) && !isAbsolute(rel);
+}
+function inspectProjectFromWorktree(directory) {
+  const current = canonical(directory);
+  if (canonical(git(current, ["rev-parse", "--show-toplevel"]).trimEnd()) !== current)
+    return fail("PROJECT_MISMATCH");
+  const list = records(current);
+  if (!list.length || list[0].bare || !list.some((item) => item.path === current))
+    return fail("PROJECT_MISMATCH");
+  return inspectProject(list[0].path);
+}
+function inspectProject(primaryDirectory) {
+  const primary = canonical(primaryDirectory);
+  if (git(primary, ["rev-parse", "--is-bare-repository"]).trim() !== "false")
+    return fail("PROJECT_MISMATCH");
+  if (git(primary, ["rev-parse", "--show-superproject-working-tree"]).trimEnd())
+    return fail("PROJECT_MISMATCH");
+  const root = canonical(git(primary, ["rev-parse", "--show-toplevel"]).trimEnd());
+  const commonDir = common(primary), list = records(primary);
+  if (root !== primary || !list.length || list[0].bare || list[0].path !== primary)
+    return fail("PROJECT_MISMATCH");
+  return { primaryDirectory: primary, commonDir };
+}
+function validateWorktree(primaryDirectory, directory, baseline, scope) {
+  const project = inspectProject(primaryDirectory), target = canonical(directory);
+  if (contains(project.primaryDirectory, target) || contains(target, project.primaryDirectory) || contains(target, resolve(project.commonDir, "opencode-crew-stage1")))
+    return fail("PROJECT_MISMATCH");
+  const list = records(project.primaryDirectory), entry = list.find((item) => item.path === target);
+  if (!entry || entry.bare || !entry.detached || common(target) !== project.commonDir || canonical(git(target, ["rev-parse", "--show-toplevel"]).trimEnd()) !== target)
+    return fail("PROJECT_MISMATCH");
+  const format = git(project.primaryDirectory, ["rev-parse", "--show-object-format"]).trim();
+  const length = format === "sha1" ? 40 : format === "sha256" ? 64 : 0;
+  if (typeof baseline !== "string" || !length || !new RegExp(`^[0-9a-f]{${length}}$`).test(baseline))
+    return fail("BASELINE_MISMATCH");
+  const commit = git(project.primaryDirectory, ["rev-parse", "--verify", `${baseline}^{commit}`], "BASELINE_MISMATCH").trim();
+  if (commit !== baseline || git(project.primaryDirectory, ["rev-parse", "HEAD"]).trim() !== baseline || git(target, ["rev-parse", "HEAD"]).trim() !== baseline)
+    return fail("BASELINE_MISMATCH");
+  if (git(project.primaryDirectory, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], "HOST_ERROR") !== "")
+    return fail("DIRTY_PRIMARY");
+  if (git(target, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], "HOST_ERROR") !== "")
+    return fail("DIRTY_WORKTREE");
+  return { ...project, directory: target, baseline, scope: normalizeScope(target, scope) };
+}
+
+// src/tasks-state.ts
+import { realpathSync as realpathSync3, statSync as statSync3 } from "fs";
+import { isAbsolute as isAbsolute3, normalize } from "path";
+import { createHash } from "crypto";
+
+// src/tasks-ledger.ts
+import { constants, closeSync, fsyncSync, fstatSync, lstatSync as lstatSync2, mkdirSync, openSync, readFileSync, realpathSync as realpathSync2, renameSync, rmdirSync, statSync as statSync2, statfsSync, unlinkSync, writeFileSync } from "fs";
+import { isAbsolute as isAbsolute2, join } from "path";
+import { randomBytes } from "crypto";
+var MAX_BYTES = 1024 * 1024;
+var REMOTE = new Set([26985, 4283649346, 4266872130, 20859, 22092]);
+var invalid = () => {
+  throw new TaskRegistryError("REGISTRY_INVALID");
+};
+var locked = () => {
+  throw new TaskRegistryError("REGISTRY_LOCKED");
+};
+var missing = (e) => e?.code === "ENOENT";
+
+class AtomicRegistry {
+  commonDir;
+  identity;
+  directory;
+  file;
+  lock;
+  constructor(commonDir, identity) {
+    this.commonDir = commonDir;
+    this.identity = identity;
+    try {
+      if (!isAbsolute2(commonDir) || realpathSync2(commonDir) !== commonDir || !statSync2(commonDir).isDirectory() || identity.commonDir !== commonDir || !isAbsolute2(identity.primaryDirectory) || realpathSync2(identity.primaryDirectory) !== identity.primaryDirectory || !statSync2(identity.primaryDirectory).isDirectory() || REMOTE.has(Number(statfsSync(commonDir).type) >>> 0))
+        invalid();
+    } catch {
+      invalid();
+    }
+    this.directory = join(commonDir, "opencode-crew-stage1");
+    this.file = join(this.directory, "registry.json");
+    this.lock = join(this.directory, ".lock");
+  }
+  base(create) {
+    try {
+      if (create) {
+        try {
+          mkdirSync(this.directory, { mode: 448 });
+        } catch (e) {
+          if (e.code !== "EEXIST")
+            throw e;
+        }
+      }
+      const s = lstatSync2(this.directory);
+      if (!s.isDirectory() || s.isSymbolicLink() || (s.mode & 511) !== 448)
+        invalid();
+      return true;
+    } catch (e) {
+      if (!create && missing(e))
+        return false;
+      return invalid();
+    }
+  }
+  checkFile() {
+    try {
+      const s = lstatSync2(this.file);
+      if (!s.isFile() || s.isSymbolicLink() || s.size > MAX_BYTES)
+        invalid();
+      return true;
+    } catch (e) {
+      if (missing(e))
+        return false;
+      return invalid();
+    }
+  }
+  read() {
+    if (!this.base(false) || !this.checkFile())
+      return;
+    let fd;
+    try {
+      fd = openSync(this.file, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const s = fstatSync(fd);
+      if (!s.isFile() || s.size > MAX_BYTES)
+        invalid();
+      const data = readFileSync(fd);
+      if (data.length > MAX_BYTES)
+        invalid();
+      return JSON.parse(data.toString("utf8"));
+    } catch {
+      return invalid();
+    } finally {
+      if (fd !== undefined)
+        closeSync(fd);
+    }
+  }
+  write(payload) {
+    let fd, temp;
+    try {
+      this.base(false) || invalid();
+      if (this.checkFile())
+        this.read();
+      const json = JSON.stringify(payload);
+      if (typeof json !== "string" || Buffer.byteLength(json) > MAX_BYTES)
+        invalid();
+      temp = join(this.directory, `.registry-${randomBytes(16).toString("hex")}.tmp`);
+      fd = openSync(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 384);
+      writeFileSync(fd, json);
+      fsyncSync(fd);
+      closeSync(fd);
+      fd = undefined;
+      this.checkFile();
+      renameSync(temp, this.file);
+      temp = undefined;
+      const dirfd = openSync(this.directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      try {
+        fsyncSync(dirfd);
+      } finally {
+        closeSync(dirfd);
+      }
+    } catch {
+      invalid();
+    } finally {
+      if (fd !== undefined)
+        closeSync(fd);
+      if (temp !== undefined) {
+        try {
+          unlinkSync(temp);
+        } catch {}
+      }
+    }
+  }
+  withLock(fn) {
+    this.base(true);
+    try {
+      mkdirSync(this.lock, { mode: 448 });
+    } catch (e) {
+      if (e.code === "EEXIST")
+        return locked();
+      return invalid();
+    }
+    let active = true;
+    try {
+      const store = { read: () => {
+        if (!active)
+          return invalid();
+        return this.read();
+      }, write: (value) => {
+        if (!active)
+          return invalid();
+        this.write(value);
+      } };
+      const result = fn(store);
+      if (result != null && typeof result.then === "function")
+        invalid();
+      return result;
+    } finally {
+      active = false;
+      try {
+        rmdirSync(this.lock);
+      } catch {
+        invalid();
+      }
+    }
+  }
+}
+
+// src/tasks-state.ts
+var fail2 = (code) => {
+  throw new TaskRegistryError(code);
+};
+var object = (x) => !!x && typeof x === "object" && !Array.isArray(x) && (Object.getPrototypeOf(x) === Object.prototype || Object.getPrototypeOf(x) === null);
+var exact = (x, required, optional = []) => required.every((k) => Object.hasOwn(x, k)) && Object.keys(x).every((k) => required.includes(k) || optional.includes(k));
+var validInterrupt = (x) => object(x) && exact(x, ["interrupted", "result"], ["errorCode"]) && x.interrupted === "unknown" && (x.result === "error" ? x.errorCode === "HOST_ERROR" : (x.result === "request_completed" || x.result === "not_requested") && x.errorCode === undefined);
+var id = (x) => typeof x === "string" && x.length > 0 && x.length <= 512 && !/[\x00-\x1f\x7f]/.test(x);
+var clone = (x) => JSON.parse(JSON.stringify(x));
+function normalizeStoredInput(raw) {
+  if (!object(raw) || !exact(raw, ["key", "directory", "baseline", "scope", "goal", "acceptance", "check"]))
+    return fail2("INVALID_INPUT");
+  const { key, directory, baseline, scope, goal, acceptance, check } = raw;
+  if (typeof key !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(key) || typeof directory !== "string" || !isAbsolute3(directory) || directory.includes("\x00") || normalize(directory) !== directory || typeof baseline !== "string" || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(baseline) || !Array.isArray(scope) || ![goal, acceptance, check].every((x) => typeof x === "string" && x.length >= 1 && x.length <= 8000) || Buffer.byteLength(JSON.stringify(raw)) > 32768)
+    return fail2("INVALID_INPUT");
+  return { key, directory, baseline, scope: normalizeScopeLexical(scope), goal, acceptance, check };
+}
+function normalizeTaskInput(raw) {
+  if (!object(raw) || typeof raw.directory !== "string" || !isAbsolute3(raw.directory))
+    return fail2("INVALID_INPUT");
+  let dir;
+  try {
+    dir = realpathSync3(raw.directory);
+    if (!statSync3(dir).isDirectory())
+      return fail2("INVALID_INPUT");
+  } catch {
+    return fail2("INVALID_INPUT");
+  }
+  const input = normalizeStoredInput({ ...raw, directory: dir });
+  return { ...input, scope: normalizeScope(dir, input.scope) };
+}
+function requestDigest(input, ownerSessionID) {
+  if (!id(ownerSessionID))
+    return fail2("INVALID_INPUT");
+  const normalized = normalizeStoredInput(input);
+  return createHash("sha256").update(JSON.stringify([normalized, ownerSessionID])).digest("hex");
+}
+var states = ["reserved", "session_create_requested", "session_bound", "prompt_requested", "submitted", "start_unconfirmed", "stop_requested", "stop_unconfirmed"];
+var edges = {
+  reserved: ["session_create_requested", "start_unconfirmed", "stop_requested"],
+  session_create_requested: ["session_bound", "start_unconfirmed", "stop_requested"],
+  session_bound: ["prompt_requested", "start_unconfirmed", "stop_requested"],
+  prompt_requested: ["submitted", "start_unconfirmed", "stop_requested"],
+  submitted: ["start_unconfirmed", "stop_requested"],
+  start_unconfirmed: ["stop_requested"],
+  stop_requested: ["stop_unconfirmed"],
+  stop_unconfirmed: []
+};
+
+class Ledger {
+  project;
+  atomic;
+  constructor(project) {
+    this.project = project;
+    this.atomic = new AtomicRegistry(project.commonDir, project);
+    this.project = { ...project };
+  }
+  decode(raw) {
+    if (raw === undefined)
+      return;
+    try {
+      if (!object(raw) || !exact(raw, ["schemaVersion", "project", "baseline", "tasks"]) || raw.schemaVersion !== 1 || !object(raw.project) || !exact(raw.project, ["primaryDirectory", "commonDir"]) || raw.project.primaryDirectory !== this.project.primaryDirectory || raw.project.commonDir !== this.project.commonDir || typeof raw.baseline !== "string" || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(raw.baseline) || !Array.isArray(raw.tasks) || raw.tasks.length < 1 || raw.tasks.length > 2)
+        return fail2("REGISTRY_INVALID");
+      const keys = new Set, dirs = new Set;
+      for (const t of raw.tasks) {
+        if (!object(t) || !exact(t, ["taskID", "input", "ownerSessionID", "requestDigest", "state", "createdAt", "updatedAt"], ["sessionID", "lastErrorCode", "interruptResult"]) || !id(t.ownerSessionID) || !id(t.taskID) || !states.includes(t.state) || t.sessionID !== undefined && !id(t.sessionID) || t.lastErrorCode !== undefined && !["START_UNCONFIRMED", "SESSION_MISMATCH", "HOST_ERROR"].includes(t.lastErrorCode) || t.interruptResult !== undefined && !validInterrupt(t.interruptResult) || typeof t.createdAt !== "string" || !Number.isFinite(Date.parse(t.createdAt)) || typeof t.updatedAt !== "string" || !Number.isFinite(Date.parse(t.updatedAt)))
+          return fail2("REGISTRY_INVALID");
+        const input = normalizeStoredInput(t.input);
+        if (JSON.stringify(input) !== JSON.stringify(t.input) || t.taskID !== `ct_${input.key}` || input.baseline !== raw.baseline || t.requestDigest !== requestDigest(input, t.ownerSessionID) || keys.has(input.key) || dirs.has(input.directory) || ["session_bound", "prompt_requested", "submitted"].includes(t.state) && !t.sessionID)
+          return fail2("REGISTRY_INVALID");
+        keys.add(input.key);
+        dirs.add(input.directory);
+      }
+      return raw;
+    } catch {
+      return fail2("REGISTRY_INVALID");
+    }
+  }
+  read() {
+    return clone(this.decode(this.atomic.read())?.tasks ?? []);
+  }
+  reserve(ownerSessionID, raw, preflight) {
+    const input = normalizeStoredInput(raw), digest = requestDigest(input, ownerSessionID);
+    return this.atomic.withLock((store) => {
+      const registry = this.decode(store.read()), existing = registry?.tasks.find((t) => t.input.key === input.key);
+      if (existing) {
+        if (existing.requestDigest !== digest)
+          return fail2("IDEMPOTENCY_CONFLICT");
+        return { task: clone(existing), replayed: true };
+      }
+      const checkedInput = normalizeTaskInput(input);
+      if (JSON.stringify(checkedInput) !== JSON.stringify(input))
+        return fail2("INVALID_INPUT");
+      if (registry && registry.baseline !== input.baseline)
+        return fail2("BASELINE_MISMATCH");
+      if (registry?.tasks.some((t) => t.input.directory === input.directory))
+        return fail2("WRITER_RESERVED");
+      if ((registry?.tasks.length ?? 0) >= 2)
+        return fail2("CAPACITY_RESERVED");
+      const checked = preflight();
+      if (!checked || checked.primaryDirectory !== this.project.primaryDirectory || checked.commonDir !== this.project.commonDir || checked.directory !== input.directory || checked.baseline !== input.baseline || JSON.stringify(checked.scope) !== JSON.stringify(input.scope))
+        return fail2("PROJECT_MISMATCH");
+      const now = new Date().toISOString(), task = { taskID: `ct_${input.key}`, input, ownerSessionID, requestDigest: digest, state: "reserved", createdAt: now, updatedAt: now };
+      const next = registry ?? { schemaVersion: 1, project: { ...this.project }, baseline: input.baseline, tasks: [] };
+      next.tasks.push(task);
+      store.write(next);
+      return { task: clone(task), replayed: false };
+    });
+  }
+  transition(ownerSessionID, taskID, expected, next, options = {}) {
+    if (!id(ownerSessionID) || !id(taskID) || !states.includes(expected) || !states.includes(next) || !object(options) || !exact(options, [], ["sessionID", "lastErrorCode", "interruptResult"]) || options.sessionID !== undefined && !id(options.sessionID) || options.lastErrorCode !== undefined && (!["START_UNCONFIRMED", "SESSION_MISMATCH", "HOST_ERROR"].includes(options.lastErrorCode) || next !== "start_unconfirmed") || options.interruptResult !== undefined && (!validInterrupt(options.interruptResult) || expected !== "stop_requested" || next !== "stop_unconfirmed"))
+      return fail2("INVALID_INPUT");
+    return this.atomic.withLock((store) => {
+      const registry = this.decode(store.read()), task = registry?.tasks.find((t) => t.taskID === taskID && t.ownerSessionID === ownerSessionID);
+      if (!task || task.state !== expected || !edges[expected].includes(next) || options.sessionID !== undefined && (next !== "session_bound" || task.sessionID !== undefined) || next === "session_bound" && !options.sessionID)
+        return fail2("HOST_ERROR");
+      task.state = next;
+      if (options.sessionID)
+        task.sessionID = options.sessionID;
+      if (options.lastErrorCode)
+        task.lastErrorCode = options.lastErrorCode;
+      if (options.interruptResult)
+        task.interruptResult = options.interruptResult;
+      task.updatedAt = new Date().toISOString();
+      store.write(registry);
+      return clone(task);
+    });
+  }
+}
+
+// src/tasks.ts
+var marker = "opencode-crew-stage1";
+var object2 = (x) => !!x && typeof x === "object" && !Array.isArray(x);
+var response = (output) => ({ output, content: output.ok ? "\u4EFB\u52A1\u8BB0\u5F55\u5DF2\u5904\u7406\uFF1B\u8FDB\u7A0B\u5B89\u5168\u672A\u786E\u8BA4\u3002" : "\u4EFB\u52A1\u64CD\u4F5C\u672A\u5B8C\u6210\u3002" });
+var failure = (code) => response({ ok: false, error: { code, message: "\u4EFB\u52A1\u64CD\u4F5C\u672A\u5B8C\u6210\uFF0C\u8BF7\u68C0\u67E5\u72B6\u6001\u5E76\u4EBA\u5DE5\u8C03\u67E5\u3002" }, warnings: [] });
+var errorCode = (e) => e instanceof TaskRegistryError ? e.code : "HOST_ERROR";
+var taskView = (t, observed) => ({ taskID: t.taskID, directory: t.input.directory, baseline: t.input.baseline, scope: t.input.scope, state: t.state, ...t.sessionID ? { sessionID: t.sessionID } : {}, ...t.lastErrorCode ? { lastErrorCode: t.lastErrorCode } : {}, ...t.interruptResult ? { interruptResult: t.interruptResult } : {}, ...observed ? { observed } : {}, processSafety: "unconfirmed", canCleanup: false, canIntegrate: false, nextAction: "\u4FDD\u7559\u9884\u7559\uFF0C\u4EBA\u5DE5\u6838\u5B9E\u4EFB\u52A1\u4E0E\u8FDB\u7A0B\u72B6\u6001\u3002", createdAt: t.createdAt, updatedAt: t.updatedAt });
+var projectHash = (commonDir) => createHash2("sha256").update(commonDir).digest("hex");
+var metadata = (t, commonDir) => ({ namespace: marker, taskID: t.taskID, requestDigest: t.requestDigest, ownerSessionID: t.ownerSessionID, project: projectHash(commonDir) });
+var matches = (s, t, commonDir) => {
+  const expected = metadata(t, commonDir), got = s?.metadata?.crewTask;
+  return s?.id === t.sessionID && s?.agent === "engineer" && s?.location?.directory === t.input.directory && object2(got) && Object.entries(expected).every(([k, v]) => got[k] === v);
+};
+var schema = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
+var str = { type: "string" };
+var output = { type: "object", additionalProperties: true };
+async function registerTasks(ctx, configuredModel) {
+  await ctx.session.hook("retry", async (event) => {
+    try {
+      const project = inspectProjectFromWorktree(ctx.location.directory);
+      const task = new Ledger(project).read().find((t) => t.sessionID === event.sessionID);
+      if (!task)
+        return;
+      const session = await ctx.session.get({ sessionID: event.sessionID });
+      if (matches(session, task, project.commonDir))
+        event.decision = { retry: false };
+    } catch {}
+  });
+  async function caller(tc) {
+    if (tc.agent !== "root")
+      throw new TaskRegistryError("HOST_ERROR");
+    const project = inspectProject(ctx.location.directory);
+    const owner = await ctx.session.get({ sessionID: tc.sessionID });
+    if (owner.id !== tc.sessionID || owner.agent !== "root" || owner.location?.directory !== project.primaryDirectory || ctx.location.directory !== project.primaryDirectory)
+      throw new TaskRegistryError("PROJECT_MISMATCH");
+    return { project, owner, ledger: new Ledger(project) };
+  }
+  async function authorize(tc, action, resources) {
+    await ctx.permission.assert({ sessionID: tc.sessionID, agent: tc.agent, action, resources, source: { type: "tool", messageID: tc.messageID, id: tc.id } });
+  }
+  async function identity(tc) {
+    try {
+      return await caller(tc);
+    } catch (e) {
+      return { error: tc.agent !== "root" ? "FORBIDDEN_CALLER" : errorCode(e) };
+    }
+  }
+  async function observe(t, commonDir) {
+    const checkedAt = new Date().toISOString();
+    if (!t.sessionID)
+      return;
+    try {
+      const s = await ctx.session.get({ sessionID: t.sessionID });
+      if (!matches(s, t, commonDir))
+        return { checkedAt, errorCode: "SESSION_MISMATCH" };
+      return { checkedAt, agent: s.agent, ...s.outcome ? { outcome: s.outcome } : {}, ...s.time?.busy ? { busyAt: s.time.busy } : {}, ...s.time?.idle ? { idleAt: s.time.idle } : {} };
+    } catch {
+      return { checkedAt, errorCode: "HOST_ERROR" };
+    }
+  }
+  const start = async (raw, tc) => {
+    let input;
+    try {
+      input = normalizeStoredInput(raw);
+      try {
+        input = { ...input, directory: realpathSync4(input.directory) };
+      } catch (e) {
+        if (e.code !== "ENOENT")
+          throw e;
+      }
+    } catch (e) {
+      return failure(errorCode(e));
+    }
+    const id = await identity(tc);
+    if ("error" in id)
+      return failure(id.error);
+    const { project, owner, ledger } = id;
+    await authorize(tc, "crew_task_start", [project.primaryDirectory]);
+    await authorize(tc, "subagent", ["engineer"]);
+    await authorize(tc, "edit", [...input.scope.map((s) => s.endsWith("/") ? resolve2(input.directory, s) + "/**" : resolve2(input.directory, s)), join2(project.commonDir, "opencode-crew-stage1", "registry.json")]);
+    let task;
+    try {
+      const existing = ledger.read().find((t) => t.input.key === input.key);
+      if (!existing && !(configuredModel ?? owner.model))
+        return failure("HOST_ERROR");
+      const reservation = ledger.reserve(tc.sessionID, input, () => validateWorktree(project.primaryDirectory, input.directory, input.baseline, input.scope));
+      task = reservation.task;
+      if (reservation.replayed)
+        return response({ ok: true, task: taskView(task), warnings: ["\u91CD\u653E\u4E0D\u4F1A\u91CD\u65B0\u6295\u9012\u3002"] });
+    } catch (e) {
+      return failure(errorCode(e));
+    }
+    try {
+      task = ledger.transition(tc.sessionID, task.taskID, "reserved", "session_create_requested");
+      const created = await ctx.session.create({ agent: "engineer", location: { directory: input.directory }, model: configuredModel ?? owner.model, metadata: { crewTask: metadata(task, project.commonDir) } });
+      task = ledger.transition(tc.sessionID, task.taskID, "session_create_requested", "session_bound", { sessionID: created.id });
+      const current = await ctx.session.get({ sessionID: task.sessionID });
+      if (!matches(current, task, project.commonDir)) {
+        try {
+          task = ledger.transition(tc.sessionID, task.taskID, "session_bound", "start_unconfirmed", { lastErrorCode: "SESSION_MISMATCH" });
+        } catch {}
+        return response({ ok: false, task: taskView(task), error: { code: "SESSION_MISMATCH", message: "\u4F1A\u8BDD\u8EAB\u4EFD\u4E0D\u5339\u914D\u3002" }, warnings: [] });
+      }
+      validateWorktree(project.primaryDirectory, input.directory, input.baseline, input.scope);
+      task = ledger.transition(tc.sessionID, task.taskID, "session_bound", "prompt_requested");
+      const text = `Goal:
+${input.goal}
+Scope:
+${input.scope.join(`
+`)}
+Decided: bind-only\uFF0Cscope \u4E0D\u662F\u6C99\u7BB1\u3002cwd: ${input.directory}; baseline: ${input.baseline}; key: ${input.key}\u3002\u7981\u6B62 commit\u3001push\u3001merge\u3001\u540E\u53F0\u8FDB\u7A0B\u3001\u8131\u79BB\u8FDB\u7A0B\u7EC4\u3001\u670D\u52A1\u548C\u8303\u56F4\u5916\u5199\u5165\u3002\u7981\u6B62\u4F7F\u7528 /tmp\u3002\u91CD\u6D3B\u5148 slot audit/status \u7559\u65E5\u5FD7\u5E76\u7ECF slot \u63D0\u4EA4\u3002
+Approach: \u884C\u4E3A\u53D8\u66F4\u5148\u4EC5\u5199\u6D4B\u8BD5\u5E76\u8FD0\u884C\u7EA2\u706F\uFF0C\u518D\u5B9E\u73B0\u5E76\u8FD0\u884C\u7EFF\u706F\uFF1B\u4FDD\u7559\u8BC1\u636E\u3002
+Acceptance:
+${input.acceptance}
+Check:
+${input.check}`;
+      await ctx.session.prompt({ sessionID: task.sessionID, text, delivery: "queue", metadata: { crewTask: metadata(task, project.commonDir) } });
+      task = ledger.transition(tc.sessionID, task.taskID, "prompt_requested", "submitted");
+      return response({ ok: true, task: taskView(task), warnings: [] });
+    } catch {
+      try {
+        task = ledger.transition(tc.sessionID, task.taskID, task.state, "start_unconfirmed", { lastErrorCode: "START_UNCONFIRMED" });
+      } catch {}
+      return response({ ok: false, task: taskView(task), error: { code: "START_UNCONFIRMED", message: "\u542F\u52A8\u7ED3\u679C\u672A\u786E\u8BA4\uFF0C\u8BF7\u4EBA\u5DE5\u8C03\u67E5\u3002" }, warnings: [] });
+    }
+  };
+  const status = async (raw, tc) => {
+    if (!object2(raw) || Object.keys(raw).some((k) => k !== "taskID") || raw.taskID !== undefined && (typeof raw.taskID !== "string" || !/^ct_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(raw.taskID)))
+      return failure("INVALID_INPUT");
+    const id = await identity(tc);
+    if ("error" in id)
+      return failure(id.error);
+    await authorize(tc, "crew_task_status", [id.project.primaryDirectory]);
+    try {
+      const tasks = id.ledger.read().filter((t) => t.ownerSessionID === tc.sessionID && (!raw.taskID || t.taskID === raw.taskID));
+      const views = await Promise.all(tasks.map(async (t) => taskView(t, await observe(t, id.project.commonDir))));
+      return response({ ok: true, ...raw.taskID ? views[0] ? { task: views[0] } : {} : { tasks: views }, warnings: [] });
+    } catch (e) {
+      return failure(errorCode(e));
+    }
+  };
+  const stop = async (raw, tc) => {
+    if (!object2(raw) || Object.keys(raw).length !== 1 || typeof raw.taskID !== "string" || !/^ct_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(raw.taskID))
+      return failure("INVALID_INPUT");
+    const id = await identity(tc);
+    if ("error" in id)
+      return failure(id.error);
+    await authorize(tc, "crew_task_stop", [id.project.primaryDirectory]);
+    await authorize(tc, "subagent", ["engineer"]);
+    try {
+      let task = id.ledger.read().find((t) => t.taskID === raw.taskID && t.ownerSessionID === tc.sessionID);
+      if (!task)
+        return failure("HOST_ERROR");
+      if (task.state === "stop_requested" || task.state === "stop_unconfirmed")
+        return response({ ok: true, task: taskView(task), warnings: ["\u4E0D\u4F1A\u91CD\u590D\u4E2D\u65AD\u3002"] });
+      if (task.sessionID) {
+        let session;
+        try {
+          session = await ctx.session.get({ sessionID: task.sessionID });
+        } catch {
+          return failure("HOST_ERROR");
+        }
+        if (!matches(session, task, id.project.commonDir))
+          return failure("SESSION_MISMATCH");
+      }
+      task = id.ledger.transition(tc.sessionID, task.taskID, task.state, "stop_requested");
+      let interruptResult = { interrupted: "unknown", result: "not_requested" };
+      if (task.sessionID) {
+        try {
+          await ctx.session.interrupt({ sessionID: task.sessionID, resume: false });
+          interruptResult = { interrupted: "unknown", result: "request_completed" };
+        } catch {
+          interruptResult = { interrupted: "unknown", result: "error", errorCode: "HOST_ERROR" };
+        }
+      }
+      task = id.ledger.transition(tc.sessionID, task.taskID, "stop_requested", "stop_unconfirmed", { interruptResult });
+      return response({ ok: true, task: taskView(task), warnings: ["\u505C\u6B62\u548C\u8FDB\u7A0B\u5B89\u5168\u5747\u672A\u786E\u8BA4\u3002"] });
+    } catch (e) {
+      return failure(errorCode(e));
+    }
+  };
+  await ctx.tool.transform((editor) => {
+    editor.add({ name: "crew_task_start", description: "\u7ED1\u5B9A\u624B\u5DE5\u51C6\u5907\u7684\u5DE5\u4F5C\u533A\u5E76\u4E00\u6B21\u6027\u6295\u9012\u4EFB\u52A1", input: schema({ key: str, directory: str, baseline: str, scope: { type: "array", items: str }, goal: str, acceptance: str, check: str }, ["key", "directory", "baseline", "scope", "goal", "acceptance", "check"]), output, execute: start });
+    editor.add({ name: "crew_task_status", description: "\u67E5\u8BE2\u5F53\u524D Root \u7684\u4EFB\u52A1", input: schema({ taskID: str }), output, execute: status });
+    editor.add({ name: "crew_task_stop", description: "\u6700\u591A\u8BF7\u6C42\u4E00\u6B21\u4E2D\u65AD\uFF1B\u505C\u6B62\u72B6\u6001\u672A\u786E\u8BA4", input: schema({ taskID: str }, ["taskID"]), output, execute: stop });
+  });
+}
+
 // src/index.ts
 var IDS = ["root", "architect", "engineer", "explorer", "reviewer"];
-function fail(message) {
+function fail3(message) {
   throw new Error(`[opencode-crew] ${message}`);
 }
-function object(value) {
+function object3(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 function options(input) {
-  if (!object(input))
-    fail("options \u5FC5\u987B\u662F\u5BF9\u8C61");
+  if (!object3(input))
+    fail3("options \u5FC5\u987B\u662F\u5BF9\u8C61");
   for (const key of Object.keys(input))
     if (!["models", "steps"].includes(key))
-      fail(`\u672A\u77E5 options.${key}`);
+      fail3(`\u672A\u77E5 options.${key}`);
   const models = {}, steps = {};
   for (const field of ["models", "steps"]) {
     const map = input[field] ?? {};
-    if (!object(map))
-      fail(`options.${field} \u5FC5\u987B\u662F\u89D2\u8272\u6620\u5C04`);
+    if (!object3(map))
+      fail3(`options.${field} \u5FC5\u987B\u662F\u89D2\u8272\u6620\u5C04`);
     for (const [id, value] of Object.entries(map)) {
       if (!IDS.includes(id))
-        fail(`\u672A\u77E5\u89D2\u8272 options.${field}.${id}`);
+        fail3(`\u672A\u77E5\u89D2\u8272 options.${field}.${id}`);
       if (field === "steps") {
         if (!Number.isSafeInteger(value) || value <= 0)
-          fail(`options.steps.${id} \u5FC5\u987B\u4E3A\u6B63\u6574\u6570`);
+          fail3(`options.steps.${id} \u5FC5\u987B\u4E3A\u6B63\u6574\u6570`);
         steps[id] = value;
       } else {
         if (typeof value !== "string" || !/^[^\s/#]+\/[^\s#]+(?:#[^\s#]+)?$/.test(value)) {
-          fail(`options.models.${id} \u5FC5\u987B\u4E3A provider/model[#variant]\uFF1B\u7701\u7565\u5373\u53EF\u7EE7\u627F\u4F1A\u8BDD\u6A21\u578B`);
+          fail3(`options.models.${id} \u5FC5\u987B\u4E3A provider/model[#variant]\uFF1B\u7701\u7565\u5373\u53EF\u7EE7\u627F\u4F1A\u8BDD\u6A21\u578B`);
         }
         const [left, variant] = value.split("#"), slash = left.indexOf("/");
         models[id] = { providerID: left.slice(0, slash), id: left.slice(slash + 1), ...variant ? { variant } : {} };
@@ -7033,22 +7676,22 @@ function options(input) {
   return { models, steps };
 }
 function loadRole(id) {
-  const text = readFileSync(new URL(`../agents/${id}.md`, import.meta.url), "utf8");
+  const text = readFileSync2(new URL(`../agents/${id}.md`, import.meta.url), "utf8");
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]+)$/.exec(text);
   if (!match)
-    fail(`agents/${id}.md \u7F3A\u5C11 frontmatter \u6216\u6B63\u6587`);
+    fail3(`agents/${id}.md \u7F3A\u5C11 frontmatter \u6216\u6B63\u6587`);
   const meta = $parse(match[1]);
-  if (!object(meta))
-    fail(`agents/${id}.md \u5143\u6570\u636E\u5FC5\u987B\u662F\u5BF9\u8C61`);
+  if (!object3(meta))
+    fail3(`agents/${id}.md \u5143\u6570\u636E\u5FC5\u987B\u662F\u5BF9\u8C61`);
   for (const key of Object.keys(meta))
     if (!["description", "mode", "steps", "permissions"].includes(key))
-      fail(`agents/${id}.md \u4E0D\u652F\u6301 ${key}\uFF1B\u6A21\u578B\u8BF7\u5199 options.models`);
+      fail3(`agents/${id}.md \u4E0D\u652F\u6301 ${key}\uFF1B\u6A21\u578B\u8BF7\u5199 options.models`);
   if (typeof meta.description !== "string" || !meta.description.trim() || meta.mode !== (id === "root" ? "primary" : "subagent"))
-    fail(`agents/${id}.md \u7684 description/mode \u65E0\u6548`);
+    fail3(`agents/${id}.md \u7684 description/mode \u65E0\u6548`);
   if (meta.steps !== undefined && (!Number.isSafeInteger(meta.steps) || meta.steps <= 0))
-    fail(`agents/${id}.md steps \u65E0\u6548`);
-  if (!Array.isArray(meta.permissions) || !meta.permissions.every((r) => object(r) && typeof r.action === "string" && typeof r.resource === "string" && ["allow", "ask", "deny"].includes(String(r.effect))))
-    fail(`agents/${id}.md permissions \u65E0\u6548`);
+    fail3(`agents/${id}.md steps \u65E0\u6548`);
+  if (!Array.isArray(meta.permissions) || !meta.permissions.every((r) => object3(r) && typeof r.action === "string" && typeof r.resource === "string" && ["allow", "ask", "deny"].includes(String(r.effect))))
+    fail3(`agents/${id}.md permissions \u65E0\u6548`);
   return { ...meta, system: match[2].trim() };
 }
 var src_default = Plugin.define({
@@ -7071,7 +7714,7 @@ var src_default = Plugin.define({
           else if (id !== "root" || role.permissions.length > 0)
             agent.permissions = role.permissions.map((rule) => ({ ...rule }));
           if (id === "architect")
-            agent.permissions.push({ action: "edit", resource: resolve(ctx.location.directory, "plans") + "/**", effect: "allow" });
+            agent.permissions.push({ action: "edit", resource: resolve3(ctx.location.directory, "plans") + "/**", effect: "allow" });
         });
     });
     await ctx.command.transform((editor) => editor.add({
@@ -7086,6 +7729,7 @@ var src_default = Plugin.define({
         await ctx.session.prompt({ ...prompt, sessionID, delivery });
       }
     }));
+    await registerTasks(ctx, config.models.engineer);
   }
 });
 export {

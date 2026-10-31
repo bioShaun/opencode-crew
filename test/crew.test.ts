@@ -17,7 +17,9 @@ function fixture(options: any = {}, rootPermissions: any[] = [], seeds: Record<s
       update: (id: string, fn: any) => { const a = agents.get(id) ?? { id, permissions: [] }; fn(a); agents.set(id, a) },
     }), reload: async () => calls.push("reload") },
     command: { transform: async (fn: any) => fn({ add: (c: any) => commands.push(c) }) },
+    tool: { transform: async (fn: any) => fn({ add: () => {} }) },
     session: {
+      hook: async () => ({ dispose: async () => {} }),
       switchAgent: async (a: any) => calls.push(["agent", a]),
       switchModel: async (a: any) => calls.push(["model", a]),
       prompt: async (a: any) => calls.push(["prompt", a]),

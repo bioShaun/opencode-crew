@@ -21,11 +21,11 @@ flowchart TD
 
 Root 策略规定同一 cwd 同时只有一个写入者，Root 与 engineer 不同时修改；写入结束后再独立审查。仅不同目录的独立任务才考虑并行。
 
-插件只注册角色和命令，没有自有调度器、队列、并发上限、锁、自动 worktree、依赖 DAG 或冲突检测。实际子代理调用与并发执行由 OpenCode 宿主能力及 Root 的工具使用决定；并行执行未在此宣称已实测。
+原生委派仍由宿主控制，不自动隔离。另有显式 `crew_task_*` 工具，将手工准备的 worktree 绑定到独立 engineer 会话，并使用受限本地 ledger 与锁；它不是调度器、DAG 或自动 worktree 管理器。私有宿主已运行两个真实 engineer 任务，但未验证执行时间重叠。
 
 ## 安装与配置
 
-要求 OpenCode **2.2.3**（已验证版本）。无需手工复制角色或运行安装脚本。
+角色与插件依赖基线为 OpenCode **2.2.3**；本轮私有宿主 smoke 使用 **2.2.4**。无需手工复制角色或运行安装脚本。
 
 ### 从 GitHub 安装（推荐）
 
@@ -82,6 +82,23 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 - `default_agent: root` 用于未选角色的新会话，不强行改变已有会话；已有会话使用 `/crew`。
 - 模型/步数在插件 options 修改，按 OpenCode 配置热加载机制生效，无需重启服务。
 
+### 显式 worktree 任务（受限阶段 1）
+
+从**主工作区根目录**的 Root 会话调用 `crew_task_start`，参数为 `{key, directory, baseline, scope, goal, acceptance, check}`；`scope` 是精确相对文件路径或以 `/` 结尾的目录前缀数组，不是 glob。`crew_task_status` 接受 `{taskID?}`，`crew_task_stop` 接受 `{taskID}`。这是插件管理的独立会话，不是原生子代理隔离，也不会自动隔离所有委派。
+
+手工准备 sibling detached worktree，主工作区与目标均须 clean 且处于同一完整 commit OID（主工作区脏时不要执行示例）：
+
+```sh
+git status --porcelain
+baseline=$(git rev-parse HEAD)
+git worktree add --detach ../crew-task "$baseline"
+git -C ../crew-task status --porcelain
+git -C ../crew-task rev-parse HEAD
+# directory 使用 ../crew-task 的绝对路径，baseline 使用 $baseline。
+```
+
+最多保留两个未结案写任务预留；没有 release 或 cleanup 接口，idle、error 和 stop 都不释放。ledger 位于 `<git-common-dir>/opencode-crew-stage1`；崩溃遗留锁不会自动抢占，不应把手删 ledger 当正常操作。同 key、owner 和输入重放只返回原记录，不重投、不续跑；受管 retry 关闭不等于自动 resume。stop 最多请求一次中断，不能确保进程树停止，进程安全始终为 `unconfirmed`。worktree 和 scope 均不是 OS 沙箱；人工整合前须审查实际差异并独立确认安全，无法确认时保留现场及预留。
+
 ## 角色
 
 | 角色 | 定位 | 权限边界 |
@@ -121,8 +138,8 @@ opencode-crew/
 
 ## 验证与限制
 
-`bun install` 后运行 `bun test`。验收覆盖模型解析、native Root、只读角色、plans 写入范围、命令切换和附件保留、非法配置及空命令。
+`bun install` 后运行 `bun test`，默认发现范围限定为 `test/`。测试覆盖角色配置和受限任务工具，但不等于完整宿主验收矩阵通过。
 
-配置/注册与权限回读不等于真实模型链路验证。未跑付费的 Root→子代理多轮任务；运行结果还受目标机 provider、全局/会话权限、项目指令影响。路径权限不是操作系统沙盒，对不可信项目仍需额外隔离。
+私有宿主已实际调用 Root 工具并运行两个独立 engineer marker 任务，覆盖重放、容量和 stop 状态；但不证明执行重叠、真实权限拒绝审批或进程树停止。runner 与核验限制见源码工作区的 `plans/worktree-stage1-results.md`。结果仍受 provider、全局/会话权限及项目指令影响。路径权限不是操作系统沙盒，对不可信项目仍需额外隔离。
 
 卸载：删除配置中的 Crew 插件项和 `default_agent: root`（或恢复之前的默认值）；本地包不再使用后自行移走。移除插件后已有会话不要继续选用 root，改选 build 或恢复的 planner。旧配置回滚应仅恢复迁移涉及项，避免覆盖后续无关修改。

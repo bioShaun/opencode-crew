@@ -2,6 +2,7 @@ import { Plugin } from "@opencode/plugin"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { parse } from "yaml"
+import { registerTasks } from "./tasks"
 
 const IDS = ["root", "architect", "engineer", "explorer", "reviewer"] as const
 type RoleID = typeof IDS[number]
@@ -82,5 +83,6 @@ export default Plugin.define({
         await ctx.session.prompt({ ...prompt, sessionID, delivery })
       },
     }))
+    await registerTasks(ctx, config.models.engineer)
   },
 })
