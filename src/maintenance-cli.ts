@@ -22,7 +22,10 @@ function readJSON(path: string): unknown {
 }
 
 const args = process.argv.slice(2)
-if (args.length !== 2 || (args[0] !== 'plan' && args[0] !== 'apply')) {
+if (args.length === 1 && (args[0] === 'help' || args[0] === '--help')) {
+  process.stdout.write(usage + '\n')
+  process.exitCode = 0
+} else if (args.length !== 2 || (args[0] !== 'plan' && args[0] !== 'apply')) {
   emit({ v: 1, ok: false, error: { code: 'INVALID_INPUT' } }, 2, usage)
 } else {
   try {
