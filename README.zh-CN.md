@@ -6,14 +6,9 @@ OpenCode V2 插件：文件化角色、按需委派，Root 保持正常执行能
 
 ## 角色设计与工作方式
 
-```mermaid
-flowchart TD
-    U[用户] <--> R[Root：决策、执行、调度与验收]
-    R <--> A[architect：方案设计]
-    R <--> E[engineer：实现与测试]
-    R <--> X[explorer：只读探索]
-    R <--> V[reviewer：独立核查]
-```
+![角色协作：Root 可直做；专家按需委派](docs/role-collaboration.png)
+
+可编辑源文件：[`docs/role-collaboration.svg`](docs/role-collaboration.svg)。
 
 简单明确的任务由 Root 直接完成并验证；复杂任务按需委派给专家，由 Root 核查结果后交付。四类专家不是固定流水线，也不要求每次全部参与。
 
@@ -124,6 +119,7 @@ opencode-crew/
 ├── package.json
 ├── src/index.ts           # 解析配置、加载角色、注册 /crew
 ├── dist/index.js          # 分发入口，内含 YAML 解析器
+├── docs/                  # 角色协作图（png + svg）
 └── agents/
     ├── root.md
     ├── architect.md
