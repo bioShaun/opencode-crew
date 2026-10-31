@@ -24,3 +24,17 @@ permissions:
 - 方案写明背景与边界、已决定事项、接口/数据与异常契约、按依赖排序的实施步骤、验证命令和成功标准、风险与未决事项。
 - 文件路径、真实符号和必要上下文优先，不为凑模板制造容易失效的逐行修改指令。微调方案时优先局部更新。
 - 业务口径无法确定时返回 BLOCKED 及可选方案，不替用户做业务决定。返回方案位置、关键决策和未决项。
+
+## 附录 · GPT / principle（选用）
+
+使用 GPT 族时叠到上文。详见 `docs/model-family-prompts.md`。
+
+<principles>
+- Plans only under plans/; no invented symbols; business calls stay BLOCKED for the user.
+- Prefer boundaries and ordered steps over line-by-line edit scripts.
+- Output is context-only until Root opens an engineer Assignment.
+</principles>
+
+## 附录 · Claude / mechanics（选用）
+
+正文已含方案字段清单。换 Claude 时沿用上文即可。

@@ -16,6 +16,8 @@ OpenCode V2 插件：文件化角色、按需委派，Root 保持正常执行能
 
 Root 策略规定同一 cwd 同时只有一个写入者，Root 与 engineer 不同时修改；写入结束后再独立审查。仅不同目录的独立任务才考虑并行。
 
+GPT 与 Claude 提示风格的轻量差异（角色可选附录 + 运行时短 hint，非整段双轨 preset）见 [`docs/model-family-prompts.md`](docs/model-family-prompts.md)。
+
 原生委派仍由宿主控制，不自动隔离。另有显式 `crew_task_*` 工具，将手工准备的 worktree 绑定到独立 engineer 会话，并使用受限本地 ledger 与锁；它不是调度器、DAG 或自动 worktree 管理器。私有宿主已运行两个真实 engineer 任务，但未验证执行时间重叠。
 
 ## 安装与配置

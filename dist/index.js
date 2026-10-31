@@ -7229,7 +7229,7 @@ class AtomicRegistry {
       return invalid();
     }
   }
-  read() {
+  readBytes() {
     if (!this.base(false) || !this.checkFile())
       return;
     let fd;
@@ -7241,12 +7241,22 @@ class AtomicRegistry {
       const data = readFileSync(fd);
       if (data.length > MAX_BYTES)
         invalid();
-      return JSON.parse(data.toString("utf8"));
+      return data;
     } catch {
       return invalid();
     } finally {
       if (fd !== undefined)
         closeSync(fd);
+    }
+  }
+  read() {
+    const data = this.readBytes();
+    if (data === undefined)
+      return;
+    try {
+      return JSON.parse(data.toString("utf8"));
+    } catch {
+      return invalid();
     }
   }
   write(payload) {
@@ -7328,6 +7338,16 @@ var object = (x) => !!x && typeof x === "object" && !Array.isArray(x) && (Object
 var exact = (x, required, optional = []) => required.every((k) => Object.hasOwn(x, k)) && Object.keys(x).every((k) => required.includes(k) || optional.includes(k));
 var validInterrupt = (x) => object(x) && exact(x, ["interrupted", "result"], ["errorCode"]) && x.interrupted === "unknown" && (x.result === "error" ? x.errorCode === "HOST_ERROR" : (x.result === "request_completed" || x.result === "not_requested") && x.errorCode === undefined);
 var id = (x) => typeof x === "string" && x.length > 0 && x.length <= 512 && !/[\x00-\x1f\x7f]/.test(x);
+var baselineID = (x) => typeof x === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(x);
+var periodID = (x) => typeof x === "string" && /^pd_[1-9][0-9]{0,5}$/.test(x);
+var operationID = (x) => typeof x === "string" && /^op_[0-9a-f]{32}$/.test(x);
+var sha256 = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
+var timestamp = (x) => typeof x === "string" && Number.isFinite(Date.parse(x));
+var evidenceRef = (x) => {
+  if (typeof x !== "string" || !x || Buffer.byteLength(x) > 4096 || isAbsolute3(x) || /[\x00-\x1f\x7f]/.test(x))
+    return false;
+  return x.split("/").every((part) => part !== "" && part !== "." && part !== "..");
+};
 var clone = (x) => JSON.parse(JSON.stringify(x));
 function normalizeStoredInput(raw) {
   if (!object(raw) || !exact(raw, ["key", "directory", "baseline", "scope", "goal", "acceptance", "check"]))
@@ -7368,6 +7388,85 @@ var edges = {
   stop_requested: ["stop_unconfirmed"],
   stop_unconfirmed: []
 };
+var sameProject = (raw, project) => object(raw) && exact(raw, ["primaryDirectory", "commonDir"]) && raw.primaryDirectory === project.primaryDirectory && raw.commonDir === project.commonDir;
+function decodeRecord(raw, baseline) {
+  if (!object(raw) || !exact(raw, ["taskID", "input", "ownerSessionID", "requestDigest", "state", "createdAt", "updatedAt"], ["sessionID", "lastErrorCode", "interruptResult"]) || !id(raw.ownerSessionID) || !id(raw.taskID) || !states.includes(raw.state) || raw.sessionID !== undefined && !id(raw.sessionID) || raw.lastErrorCode !== undefined && !["START_UNCONFIRMED", "SESSION_MISMATCH", "HOST_ERROR"].includes(raw.lastErrorCode) || raw.interruptResult !== undefined && !validInterrupt(raw.interruptResult) || !timestamp(raw.createdAt) || !timestamp(raw.updatedAt))
+    return fail2("REGISTRY_INVALID");
+  const input = normalizeStoredInput(raw.input);
+  if (JSON.stringify(input) !== JSON.stringify(raw.input) || raw.taskID !== `ct_${input.key}` || input.baseline !== baseline || raw.requestDigest !== requestDigest(input, raw.ownerSessionID) || ["session_bound", "prompt_requested", "submitted"].includes(raw.state) && !raw.sessionID)
+    return fail2("REGISTRY_INVALID");
+  return raw;
+}
+function decodeV1(raw, project) {
+  if (!exact(raw, ["schemaVersion", "project", "baseline", "tasks"]) || raw.schemaVersion !== 1 || !sameProject(raw.project, project) || !baselineID(raw.baseline) || !Array.isArray(raw.tasks) || raw.tasks.length < 1 || raw.tasks.length > 2)
+    return fail2("REGISTRY_INVALID");
+  const keys = new Set, dirs = new Set;
+  for (const item of raw.tasks) {
+    const task = decodeRecord(item, raw.baseline);
+    if (keys.has(task.input.key) || dirs.has(task.input.directory))
+      return fail2("REGISTRY_INVALID");
+    keys.add(task.input.key);
+    dirs.add(task.input.directory);
+  }
+  return raw;
+}
+function decodeCloseout(raw, operationIDs) {
+  if (!object(raw) || !exact(raw, ["operationID", "paramsDigest", "closedAt", "operatorRef", "authorizationRef", "disposition", "stopEvidenceRef", "quiescenceEvidenceRef", "reviewEvidenceRef", "evidenceDigest", "archiveRef", "archiveDigest"], ["integrationCommit"]) || !operationID(raw.operationID) || operationIDs.has(raw.operationID) || !sha256(raw.paramsDigest) || !timestamp(raw.closedAt) || !id(raw.operatorRef) || !id(raw.authorizationRef) || !["preserved", "abandoned", "integrated"].includes(raw.disposition) || !evidenceRef(raw.stopEvidenceRef) || !evidenceRef(raw.quiescenceEvidenceRef) || !evidenceRef(raw.reviewEvidenceRef) || !sha256(raw.evidenceDigest) || !evidenceRef(raw.archiveRef) || !sha256(raw.archiveDigest))
+    return fail2("REGISTRY_INVALID");
+  if (raw.disposition === "integrated" ? !baselineID(raw.integrationCommit) : raw.integrationCommit !== undefined)
+    return fail2("REGISTRY_INVALID");
+  operationIDs.add(raw.operationID);
+  return raw;
+}
+function decodeV2(raw, project) {
+  if (!exact(raw, ["schemaVersion", "project", "generation", "migration", "currentPeriodID", "periods", "active", "closed"]) || raw.schemaVersion !== 2 || !sameProject(raw.project, project) || !Number.isSafeInteger(raw.generation) || raw.generation < 1 || !periodID(raw.currentPeriodID) || !Array.isArray(raw.periods) || raw.periods.length < 1 || !Array.isArray(raw.active) || raw.active.length > 2 || !Array.isArray(raw.closed))
+    return fail2("REGISTRY_INVALID");
+  const migration = raw.migration;
+  if (!object(migration) || !exact(migration, ["operationID", "paramsDigest", "appliedAt"]) || !operationID(migration.operationID) || !sha256(migration.paramsDigest) || !timestamp(migration.appliedAt))
+    return fail2("REGISTRY_INVALID");
+  const operationIDs = new Set([migration.operationID]), baselines = new Map;
+  for (let index = 0;index < raw.periods.length; index++) {
+    const period = raw.periods[index];
+    if (!object(period) || !exact(period, ["periodID", "baseline", "openedAt", "openedBy", "openedParamsDigest"], ["sealedAt"]) || period.periodID !== `pd_${index + 1}` || !baselineID(period.baseline) || !timestamp(period.openedAt) || !operationID(period.openedBy) || !sha256(period.openedParamsDigest))
+      return fail2("REGISTRY_INVALID");
+    if (index === 0) {
+      if (period.openedBy !== migration.operationID || period.openedParamsDigest !== migration.paramsDigest)
+        return fail2("REGISTRY_INVALID");
+    } else {
+      if (operationIDs.has(period.openedBy))
+        return fail2("REGISTRY_INVALID");
+      operationIDs.add(period.openedBy);
+    }
+    if (period.periodID === raw.currentPeriodID ? period.sealedAt !== undefined : period.sealedAt === undefined || !timestamp(period.sealedAt))
+      return fail2("REGISTRY_INVALID");
+    baselines.set(period.periodID, period.baseline);
+  }
+  const currentBaseline = baselines.get(raw.currentPeriodID);
+  if (currentBaseline === undefined)
+    return fail2("REGISTRY_INVALID");
+  const keys = new Set, ids = new Set, dirs = new Set;
+  const register = (task) => {
+    if (keys.has(task.input.key) || ids.has(task.taskID) || dirs.has(task.input.directory))
+      return fail2("REGISTRY_INVALID");
+    keys.add(task.input.key);
+    ids.add(task.taskID);
+    dirs.add(task.input.directory);
+  };
+  for (const item of raw.active) {
+    if (!object(item) || !exact(item, ["periodID", "record"]) || item.periodID !== raw.currentPeriodID)
+      return fail2("REGISTRY_INVALID");
+    register(decodeRecord(item.record, currentBaseline));
+  }
+  for (const item of raw.closed) {
+    if (!object(item) || !exact(item, ["periodID", "record", "closeout"]) || typeof item.periodID !== "string" || !baselines.has(item.periodID))
+      return fail2("REGISTRY_INVALID");
+    register(decodeRecord(item.record, baselines.get(item.periodID)));
+    decodeCloseout(item.closeout, operationIDs);
+  }
+  return raw;
+}
+var allRecords = (registry) => registry.schemaVersion === 1 ? registry.tasks : [...registry.active.map((item) => item.record), ...registry.closed.map((item) => item.record)];
+var toReservation = (entry, replayed) => ({ task: entry.record, replayed, lifecycle: entry.lifecycle, ...entry.periodID ? { periodID: entry.periodID } : {}, ...entry.closeout ? { closeout: entry.closeout } : {} });
 
 class Ledger {
   project;
@@ -7378,62 +7477,131 @@ class Ledger {
     this.project = { ...project };
   }
   decode(raw) {
-    if (raw === undefined)
-      return;
     try {
-      if (!object(raw) || !exact(raw, ["schemaVersion", "project", "baseline", "tasks"]) || raw.schemaVersion !== 1 || !object(raw.project) || !exact(raw.project, ["primaryDirectory", "commonDir"]) || raw.project.primaryDirectory !== this.project.primaryDirectory || raw.project.commonDir !== this.project.commonDir || typeof raw.baseline !== "string" || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(raw.baseline) || !Array.isArray(raw.tasks) || raw.tasks.length < 1 || raw.tasks.length > 2)
+      if (raw === undefined)
+        return;
+      if (!object(raw))
         return fail2("REGISTRY_INVALID");
-      const keys = new Set, dirs = new Set;
-      for (const t of raw.tasks) {
-        if (!object(t) || !exact(t, ["taskID", "input", "ownerSessionID", "requestDigest", "state", "createdAt", "updatedAt"], ["sessionID", "lastErrorCode", "interruptResult"]) || !id(t.ownerSessionID) || !id(t.taskID) || !states.includes(t.state) || t.sessionID !== undefined && !id(t.sessionID) || t.lastErrorCode !== undefined && !["START_UNCONFIRMED", "SESSION_MISMATCH", "HOST_ERROR"].includes(t.lastErrorCode) || t.interruptResult !== undefined && !validInterrupt(t.interruptResult) || typeof t.createdAt !== "string" || !Number.isFinite(Date.parse(t.createdAt)) || typeof t.updatedAt !== "string" || !Number.isFinite(Date.parse(t.updatedAt)))
-          return fail2("REGISTRY_INVALID");
-        const input = normalizeStoredInput(t.input);
-        if (JSON.stringify(input) !== JSON.stringify(t.input) || t.taskID !== `ct_${input.key}` || input.baseline !== raw.baseline || t.requestDigest !== requestDigest(input, t.ownerSessionID) || keys.has(input.key) || dirs.has(input.directory) || ["session_bound", "prompt_requested", "submitted"].includes(t.state) && !t.sessionID)
-          return fail2("REGISTRY_INVALID");
-        keys.add(input.key);
-        dirs.add(input.directory);
-      }
-      return raw;
+      if (raw.schemaVersion === 1)
+        return decodeV1(raw, this.project);
+      if (raw.schemaVersion === 2)
+        return decodeV2(raw, this.project);
+      return fail2("REGISTRY_INVALID");
     } catch {
       return fail2("REGISTRY_INVALID");
     }
   }
+  load() {
+    const bytes = this.atomic.readBytes();
+    if (bytes === undefined)
+      return { registry: undefined, bytes: undefined };
+    let raw;
+    try {
+      raw = JSON.parse(bytes.toString("utf8"));
+    } catch {
+      return fail2("REGISTRY_INVALID");
+    }
+    const registry = this.decode(raw);
+    if (!registry)
+      return fail2("REGISTRY_INVALID");
+    return { registry, bytes };
+  }
+  transaction(fn) {
+    return this.atomic.withLock((store) => {
+      const bytes = this.atomic.readBytes();
+      if (bytes === undefined)
+        return fail2("REGISTRY_INVALID");
+      let raw;
+      try {
+        raw = JSON.parse(bytes.toString("utf8"));
+      } catch {
+        return fail2("REGISTRY_INVALID");
+      }
+      const registry = this.decode(raw);
+      if (!registry)
+        return fail2("REGISTRY_INVALID");
+      return fn({ registry, bytes, write: (next) => store.write(next) });
+    });
+  }
+  entries() {
+    const registry = this.decode(this.atomic.read());
+    if (!registry)
+      return [];
+    if (registry.schemaVersion === 1)
+      return registry.tasks.map((record) => ({ record: clone(record), lifecycle: "active" }));
+    return [
+      ...registry.active.map((item) => ({ record: clone(item.record), lifecycle: "active", periodID: item.periodID })),
+      ...registry.closed.map((item) => ({ record: clone(item.record), lifecycle: "closed", periodID: item.periodID, closeout: clone(item.closeout) }))
+    ];
+  }
   read() {
-    return clone(this.decode(this.atomic.read())?.tasks ?? []);
+    return this.entries().map((entry) => entry.record);
+  }
+  active(ownerSessionID) {
+    return this.entries().filter((entry) => entry.lifecycle === "active" && (ownerSessionID === undefined || entry.record.ownerSessionID === ownerSessionID));
+  }
+  find(ownerSessionID, taskID) {
+    return this.entries().find((entry) => entry.record.ownerSessionID === ownerSessionID && entry.record.taskID === taskID);
+  }
+  findByKey(key) {
+    return this.entries().find((entry) => entry.record.input.key === key);
+  }
+  entryFrom(registry, record) {
+    if (registry.schemaVersion === 1)
+      return { record: clone(record), lifecycle: "active" };
+    const active = registry.active.find((item) => item.record.taskID === record.taskID);
+    if (active)
+      return { record: clone(record), lifecycle: "active", periodID: active.periodID };
+    const closed = registry.closed.find((item) => item.record.taskID === record.taskID);
+    return { record: clone(record), lifecycle: "closed", periodID: closed.periodID, closeout: clone(closed.closeout) };
   }
   reserve(ownerSessionID, raw, preflight) {
     const input = normalizeStoredInput(raw), digest = requestDigest(input, ownerSessionID);
     return this.atomic.withLock((store) => {
-      const registry = this.decode(store.read()), existing = registry?.tasks.find((t) => t.input.key === input.key);
+      const registry = this.decode(store.read()), records = registry ? allRecords(registry) : [], existing = records.find((task) => task.input.key === input.key);
       if (existing) {
         if (existing.requestDigest !== digest)
           return fail2("IDEMPOTENCY_CONFLICT");
-        return { task: clone(existing), replayed: true };
+        return toReservation(this.entryFrom(registry, existing), true);
       }
       const checkedInput = normalizeTaskInput(input);
       if (JSON.stringify(checkedInput) !== JSON.stringify(input))
         return fail2("INVALID_INPUT");
-      if (registry && registry.baseline !== input.baseline)
+      const baseline = registry ? registry.schemaVersion === 1 ? registry.baseline : registry.periods.find((period) => period.periodID === registry.currentPeriodID).baseline : undefined;
+      if (baseline !== undefined && baseline !== input.baseline)
         return fail2("BASELINE_MISMATCH");
-      if (registry?.tasks.some((t) => t.input.directory === input.directory))
+      if (records.some((task) => task.input.directory === input.directory))
         return fail2("WRITER_RESERVED");
-      if ((registry?.tasks.length ?? 0) >= 2)
+      const activeCount = registry === undefined ? 0 : registry.schemaVersion === 1 ? registry.tasks.length : registry.active.length;
+      if (activeCount >= 2)
         return fail2("CAPACITY_RESERVED");
       const checked = preflight();
       if (!checked || checked.primaryDirectory !== this.project.primaryDirectory || checked.commonDir !== this.project.commonDir || checked.directory !== input.directory || checked.baseline !== input.baseline || JSON.stringify(checked.scope) !== JSON.stringify(input.scope))
         return fail2("PROJECT_MISMATCH");
       const now = new Date().toISOString(), task = { taskID: `ct_${input.key}`, input, ownerSessionID, requestDigest: digest, state: "reserved", createdAt: now, updatedAt: now };
-      const next = registry ?? { schemaVersion: 1, project: { ...this.project }, baseline: input.baseline, tasks: [] };
-      next.tasks.push(task);
-      store.write(next);
-      return { task: clone(task), replayed: false };
+      if (registry === undefined) {
+        store.write({ schemaVersion: 1, project: { ...this.project }, baseline: input.baseline, tasks: [task] });
+        return { task: clone(task), replayed: false, lifecycle: "active" };
+      }
+      if (registry.schemaVersion === 1) {
+        registry.tasks.push(task);
+        store.write(registry);
+        return { task: clone(task), replayed: false, lifecycle: "active" };
+      }
+      registry.active.push({ periodID: registry.currentPeriodID, record: task });
+      registry.generation++;
+      store.write(registry);
+      return { task: clone(task), replayed: false, lifecycle: "active", periodID: registry.currentPeriodID };
     });
   }
   transition(ownerSessionID, taskID, expected, next, options = {}) {
     if (!id(ownerSessionID) || !id(taskID) || !states.includes(expected) || !states.includes(next) || !object(options) || !exact(options, [], ["sessionID", "lastErrorCode", "interruptResult"]) || options.sessionID !== undefined && !id(options.sessionID) || options.lastErrorCode !== undefined && (!["START_UNCONFIRMED", "SESSION_MISMATCH", "HOST_ERROR"].includes(options.lastErrorCode) || next !== "start_unconfirmed") || options.interruptResult !== undefined && (!validInterrupt(options.interruptResult) || expected !== "stop_requested" || next !== "stop_unconfirmed"))
       return fail2("INVALID_INPUT");
     return this.atomic.withLock((store) => {
-      const registry = this.decode(store.read()), task = registry?.tasks.find((t) => t.taskID === taskID && t.ownerSessionID === ownerSessionID);
+      const registry = this.decode(store.read());
+      if (!registry)
+        return fail2("HOST_ERROR");
+      const task = registry.schemaVersion === 1 ? registry.tasks.find((item) => item.taskID === taskID && item.ownerSessionID === ownerSessionID) : registry.active.find((item) => item.record.taskID === taskID && item.record.ownerSessionID === ownerSessionID)?.record;
       if (!task || task.state !== expected || !edges[expected].includes(next) || options.sessionID !== undefined && (next !== "session_bound" || task.sessionID !== undefined) || next === "session_bound" && !options.sessionID)
         return fail2("HOST_ERROR");
       task.state = next;
@@ -7444,10 +7612,98 @@ class Ledger {
       if (options.interruptResult)
         task.interruptResult = options.interruptResult;
       task.updatedAt = new Date().toISOString();
+      if (registry.schemaVersion === 2)
+        registry.generation++;
       store.write(registry);
       return clone(task);
     });
   }
+  migrate(operation, paramsDigest) {
+    if (!operationID(operation) || !sha256(paramsDigest))
+      return fail2("INVALID_INPUT");
+    return this.atomic.withLock((store) => {
+      const registry = this.decode(store.read());
+      if (!registry)
+        return fail2("REGISTRY_INVALID");
+      if (registry.schemaVersion === 2) {
+        if (registry.migration.operationID === operation && registry.migration.paramsDigest === paramsDigest)
+          return { schemaVersion: 2, generation: 1, currentPeriodID: "pd_1", replayed: true };
+        return fail2("OPERATION_CONFLICT");
+      }
+      const appliedAt = new Date().toISOString();
+      const next = { schemaVersion: 2, project: { ...registry.project }, generation: 1, migration: { operationID: operation, paramsDigest, appliedAt }, currentPeriodID: "pd_1", periods: [{ periodID: "pd_1", baseline: registry.baseline, openedAt: appliedAt, openedBy: operation, openedParamsDigest: paramsDigest }], active: registry.tasks.map((record) => ({ periodID: "pd_1", record })), closed: [] };
+      store.write(next);
+      return { schemaVersion: 2, generation: 1, currentPeriodID: "pd_1", replayed: false };
+    });
+  }
+}
+
+// src/model-family.ts
+function splitRoleBody(body) {
+  const text = body.trim();
+  const idx = text.search(/^## \u9644\u5F55/m);
+  if (idx < 0)
+    return { base: text };
+  const base = text.slice(0, idx).trim();
+  const rest = text.slice(idx);
+  const parts = rest.split(/(?=^## \u9644\u5F55)/m).filter(Boolean);
+  const out = { base };
+  for (const part of parts) {
+    const title = (part.split(`
+`)[0] ?? "").toLowerCase();
+    const block = part.trim();
+    if (/gpt|principle/.test(title))
+      out.gpt = block;
+    else if (/claude|mechanics/.test(title))
+      out.claude = block;
+  }
+  return out;
+}
+function detectModelFamily(model) {
+  if (!model)
+    return "unknown";
+  const raw = typeof model === "string" ? model : `${model.providerID}/${model.id}${model.variant ? `#${model.variant}` : ""}`;
+  const s = raw.toLowerCase();
+  if (/(?:^|\/|[_-])(?:openai|chatgpt|codex)(?:\/|[_-]|$)/.test(s) || /(?:^|\/|[_-])gpt(?:[-_.]|$)/.test(s) || /(?:^|\/|[_-])o[1-9](?:[-_.]|$)/.test(s)) {
+    return "gpt";
+  }
+  if (s.includes("openai") || s.includes("chatgpt") || /\bgpt[-_]?\d/.test(s) || /\bo[1-9][-_]/.test(s) || s.includes("codex")) {
+    return "gpt";
+  }
+  if (s.includes("anthropic") || s.includes("claude"))
+    return "claude";
+  return "unknown";
+}
+var MODEL_FAMILY_TASK_HINTS = {
+  gpt: [
+    "Model style (GPT/principle): treat Scope as a hard boundary;",
+    "prefer short principles and explicit tags (e.g. <status>COMPLETE|BLOCKED|INCOMPLETE</status>) over long checklists;",
+    "hand back on ambiguity\u2014do not expand Mandate."
+  ].join(" "),
+  claude: [
+    "Model style (Claude/mechanics): walk Goal/Scope/Decided/Approach/Acceptance/Check as an explicit checklist;",
+    "keep evidence paths; return COMPLETE/BLOCKED/INCOMPLETE clearly."
+  ].join(" ")
+};
+function modelFamilyTaskHint(model) {
+  const family = detectModelFamily(model);
+  if (family === "unknown")
+    return "";
+  return MODEL_FAMILY_TASK_HINTS[family];
+}
+function selectRoleAppendix(appendices, model) {
+  const family = detectModelFamily(model);
+  if (family === "gpt")
+    return appendices.gpt ?? "";
+  if (family === "claude")
+    return appendices.claude ?? "";
+  return "";
+}
+function composeRoleSystem(base, appendices, model) {
+  const appendix = selectRoleAppendix(appendices, model);
+  return appendix ? `${base}
+
+${appendix}` : base;
 }
 
 // src/tasks.ts
@@ -7456,7 +7712,7 @@ var object2 = (x) => !!x && typeof x === "object" && !Array.isArray(x);
 var response = (output) => ({ output, content: output.ok ? "\u4EFB\u52A1\u8BB0\u5F55\u5DF2\u5904\u7406\uFF1B\u8FDB\u7A0B\u5B89\u5168\u672A\u786E\u8BA4\u3002" : "\u4EFB\u52A1\u64CD\u4F5C\u672A\u5B8C\u6210\u3002" });
 var failure = (code) => response({ ok: false, error: { code, message: "\u4EFB\u52A1\u64CD\u4F5C\u672A\u5B8C\u6210\uFF0C\u8BF7\u68C0\u67E5\u72B6\u6001\u5E76\u4EBA\u5DE5\u8C03\u67E5\u3002" }, warnings: [] });
 var errorCode = (e) => e instanceof TaskRegistryError ? e.code : "HOST_ERROR";
-var taskView = (t, observed) => ({ taskID: t.taskID, directory: t.input.directory, baseline: t.input.baseline, scope: t.input.scope, state: t.state, ...t.sessionID ? { sessionID: t.sessionID } : {}, ...t.lastErrorCode ? { lastErrorCode: t.lastErrorCode } : {}, ...t.interruptResult ? { interruptResult: t.interruptResult } : {}, ...observed ? { observed } : {}, processSafety: "unconfirmed", canCleanup: false, canIntegrate: false, nextAction: "\u4FDD\u7559\u9884\u7559\uFF0C\u4EBA\u5DE5\u6838\u5B9E\u4EFB\u52A1\u4E0E\u8FDB\u7A0B\u72B6\u6001\u3002", createdAt: t.createdAt, updatedAt: t.updatedAt });
+var taskView = (t, observed, meta) => ({ taskID: t.taskID, directory: t.input.directory, baseline: t.input.baseline, scope: t.input.scope, ...meta ? { lifecycle: meta.lifecycle, ...meta.periodID ? { periodID: meta.periodID } : {}, ...meta.lifecycle === "closed" && meta.closeout ? { closeout: { closedAt: meta.closeout.closedAt, disposition: meta.closeout.disposition } } : {} } : {}, state: t.state, ...t.sessionID ? { sessionID: t.sessionID } : {}, ...t.lastErrorCode ? { lastErrorCode: t.lastErrorCode } : {}, ...t.interruptResult ? { interruptResult: t.interruptResult } : {}, ...observed ? { observed } : {}, processSafety: "unconfirmed", canCleanup: false, canIntegrate: false, nextAction: "\u4FDD\u7559\u9884\u7559\uFF0C\u4EBA\u5DE5\u6838\u5B9E\u4EFB\u52A1\u4E0E\u8FDB\u7A0B\u72B6\u6001\u3002", createdAt: t.createdAt, updatedAt: t.updatedAt });
 var projectHash = (commonDir) => createHash2("sha256").update(commonDir).digest("hex");
 var metadata = (t, commonDir) => ({ namespace: marker, taskID: t.taskID, requestDigest: t.requestDigest, ownerSessionID: t.ownerSessionID, project: projectHash(commonDir) });
 var matches = (s, t, commonDir) => {
@@ -7530,15 +7786,16 @@ async function registerTasks(ctx, configuredModel) {
     await authorize(tc, "crew_task_start", [project.primaryDirectory]);
     await authorize(tc, "subagent", ["engineer"]);
     await authorize(tc, "edit", [...input.scope.map((s) => s.endsWith("/") ? resolve2(input.directory, s) + "/**" : resolve2(input.directory, s)), join2(project.commonDir, "opencode-crew-stage1", "registry.json")]);
-    let task;
+    let task, periodID;
     try {
-      const existing = ledger.read().find((t) => t.input.key === input.key);
+      const existing = ledger.findByKey(input.key);
       if (!existing && !(configuredModel ?? owner.model))
         return failure("HOST_ERROR");
       const reservation = ledger.reserve(tc.sessionID, input, () => validateWorktree(project.primaryDirectory, input.directory, input.baseline, input.scope));
       task = reservation.task;
+      periodID = reservation.periodID;
       if (reservation.replayed)
-        return response({ ok: true, task: taskView(task), warnings: ["\u91CD\u653E\u4E0D\u4F1A\u91CD\u65B0\u6295\u9012\u3002"] });
+        return response({ ok: true, task: taskView(task, undefined, { lifecycle: reservation.lifecycle, periodID: reservation.periodID, closeout: reservation.closeout }), warnings: ["\u91CD\u653E\u4E0D\u4F1A\u91CD\u65B0\u6295\u9012\u3002"] });
     } catch (e) {
       return failure(errorCode(e));
     }
@@ -7551,10 +7808,11 @@ async function registerTasks(ctx, configuredModel) {
         try {
           task = ledger.transition(tc.sessionID, task.taskID, "session_bound", "start_unconfirmed", { lastErrorCode: "SESSION_MISMATCH" });
         } catch {}
-        return response({ ok: false, task: taskView(task), error: { code: "SESSION_MISMATCH", message: "\u4F1A\u8BDD\u8EAB\u4EFD\u4E0D\u5339\u914D\u3002" }, warnings: [] });
+        return response({ ok: false, task: taskView(task, undefined, { lifecycle: "active", periodID }), error: { code: "SESSION_MISMATCH", message: "\u4F1A\u8BDD\u8EAB\u4EFD\u4E0D\u5339\u914D\u3002" }, warnings: [] });
       }
       validateWorktree(project.primaryDirectory, input.directory, input.baseline, input.scope);
       task = ledger.transition(tc.sessionID, task.taskID, "session_bound", "prompt_requested");
+      const familyHint = modelFamilyTaskHint(configuredModel ?? owner.model);
       const text = `Goal:
 ${input.goal}
 Scope:
@@ -7565,15 +7823,16 @@ Approach: \u884C\u4E3A\u53D8\u66F4\u5148\u4EC5\u5199\u6D4B\u8BD5\u5E76\u8FD0\u88
 Acceptance:
 ${input.acceptance}
 Check:
-${input.check}`;
+${input.check}${familyHint ? `
+` + familyHint : ""}`;
       await ctx.session.prompt({ sessionID: task.sessionID, text, delivery: "queue", metadata: { crewTask: metadata(task, project.commonDir) } });
       task = ledger.transition(tc.sessionID, task.taskID, "prompt_requested", "submitted");
-      return response({ ok: true, task: taskView(task), warnings: [] });
+      return response({ ok: true, task: taskView(task, undefined, { lifecycle: "active", periodID }), warnings: [] });
     } catch {
       try {
         task = ledger.transition(tc.sessionID, task.taskID, task.state, "start_unconfirmed", { lastErrorCode: "START_UNCONFIRMED" });
       } catch {}
-      return response({ ok: false, task: taskView(task), error: { code: "START_UNCONFIRMED", message: "\u542F\u52A8\u7ED3\u679C\u672A\u786E\u8BA4\uFF0C\u8BF7\u4EBA\u5DE5\u8C03\u67E5\u3002" }, warnings: [] });
+      return response({ ok: false, task: taskView(task, undefined, { lifecycle: "active", periodID }), error: { code: "START_UNCONFIRMED", message: "\u542F\u52A8\u7ED3\u679C\u672A\u786E\u8BA4\uFF0C\u8BF7\u4EBA\u5DE5\u8C03\u67E5\u3002" }, warnings: [] });
     }
   };
   const status = async (raw, tc) => {
@@ -7584,8 +7843,8 @@ ${input.check}`;
       return failure(id.error);
     await authorize(tc, "crew_task_status", [id.project.primaryDirectory]);
     try {
-      const tasks = id.ledger.read().filter((t) => t.ownerSessionID === tc.sessionID && (!raw.taskID || t.taskID === raw.taskID));
-      const views = await Promise.all(tasks.map(async (t) => taskView(t, await observe(t, id.project.commonDir))));
+      const entries = raw.taskID ? [id.ledger.find(tc.sessionID, raw.taskID)].filter((entry) => !!entry) : id.ledger.active(tc.sessionID);
+      const views = await Promise.all(entries.map(async (entry) => taskView(entry.record, entry.lifecycle === "active" ? await observe(entry.record, id.project.commonDir) : undefined, { lifecycle: entry.lifecycle, periodID: entry.periodID, closeout: entry.closeout })));
       return response({ ok: true, ...raw.taskID ? views[0] ? { task: views[0] } : {} : { tasks: views }, warnings: [] });
     } catch (e) {
       return failure(errorCode(e));
@@ -7600,11 +7859,15 @@ ${input.check}`;
     await authorize(tc, "crew_task_stop", [id.project.primaryDirectory]);
     await authorize(tc, "subagent", ["engineer"]);
     try {
-      let task = id.ledger.read().find((t) => t.taskID === raw.taskID && t.ownerSessionID === tc.sessionID);
-      if (!task)
+      const entry = id.ledger.find(tc.sessionID, raw.taskID);
+      if (!entry)
         return failure("HOST_ERROR");
+      if (entry.lifecycle === "closed")
+        return response({ ok: true, task: taskView(entry.record, undefined, { lifecycle: "closed", periodID: entry.periodID, closeout: entry.closeout }), warnings: ["\u5DF2\u7ED3\u6848\uFF0C\u4E0D\u4F1A\u91CD\u590D\u4E2D\u65AD\u3002"] });
+      let task = entry.record;
+      const meta = { lifecycle: "active", periodID: entry.periodID };
       if (task.state === "stop_requested" || task.state === "stop_unconfirmed")
-        return response({ ok: true, task: taskView(task), warnings: ["\u4E0D\u4F1A\u91CD\u590D\u4E2D\u65AD\u3002"] });
+        return response({ ok: true, task: taskView(task, undefined, meta), warnings: ["\u4E0D\u4F1A\u91CD\u590D\u4E2D\u65AD\u3002"] });
       if (task.sessionID) {
         let session;
         try {
@@ -7626,7 +7889,7 @@ ${input.check}`;
         }
       }
       task = id.ledger.transition(tc.sessionID, task.taskID, "stop_requested", "stop_unconfirmed", { interruptResult });
-      return response({ ok: true, task: taskView(task), warnings: ["\u505C\u6B62\u548C\u8FDB\u7A0B\u5B89\u5168\u5747\u672A\u786E\u8BA4\u3002"] });
+      return response({ ok: true, task: taskView(task, undefined, meta), warnings: ["\u505C\u6B62\u548C\u8FDB\u7A0B\u5B89\u5168\u5747\u672A\u786E\u8BA4\u3002"] });
     } catch (e) {
       return failure(errorCode(e));
     }
@@ -7692,7 +7955,8 @@ function loadRole(id) {
     fail3(`agents/${id}.md steps \u65E0\u6548`);
   if (!Array.isArray(meta.permissions) || !meta.permissions.every((r) => object3(r) && typeof r.action === "string" && typeof r.resource === "string" && ["allow", "ask", "deny"].includes(String(r.effect))))
     fail3(`agents/${id}.md permissions \u65E0\u6548`);
-  return { ...meta, system: match[2].trim() };
+  const { base, gpt, claude } = splitRoleBody(match[2].trim());
+  return { ...meta, system: base, appendices: { gpt, claude } };
 }
 var src_default = Plugin.define({
   id: "opencode-crew",
@@ -7706,7 +7970,7 @@ var src_default = Plugin.define({
           agent.name = id;
           agent.description = role.description;
           agent.mode = role.mode;
-          agent.system = role.system;
+          agent.system = composeRoleSystem(role.system, role.appendices, config.models[id]);
           agent.steps = config.steps[id] ?? role.steps;
           agent.model = config.models[id];
           if (id === "engineer")

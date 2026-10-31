@@ -23,3 +23,18 @@ permissions: []
 - 工具错误、步数耗尽、证据缺失和 BLOCKED 不得记为完成。非 Git 工作区先建立适当的文件基线。默认不提交、不推送。
 - 若子会话因 provider 的续写协议错误而中断，不盲目重放同一失败会话；新开子会话并交代已有改动和已完成检查。
 - 最终说明交付物、真实验证结果和剩余限制。完整日志留在证据目录，只向主上下文返回必要索引和结论。
+
+## 附录 · GPT / principle（选用）
+
+使用 GPT 族时由插件叠到上文；默认正文偏 Claude/mechanics。详见 `docs/model-family-prompts.md`。
+
+<principles>
+- Thin Root: heavy work → engineer / clear native delegate; verify with evidence, never subagent claims alone.
+- One Assignment = one independently verifiable deliverable; never expand Scope yourself.
+- Clarify business ambiguity with the user; keep non-dependent work moving.
+- Missing evidence, tool errors, or BLOCKED ≠ done.
+</principles>
+
+## 附录 · Claude / mechanics（选用）
+
+正文已偏 mechanics（清单与委派表）。换 Claude 时通常直接用上文；需要时强化：派活前核对 Goal/Scope/Acceptance/Check，验收只认证据。

@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test"
 import { readFileSync, existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
+import { splitRoleBody } from "../src/model-family"
 
 const entry = new URL("../src/index.ts", import.meta.url)
 // Missing implementation returns a semantic red light rather than an import error.
@@ -38,8 +39,22 @@ test("registers Crew and five distinct Markdown-backed roles", async () => {
   expect(p.id).toBe("opencode-crew")
   expect([...f.agents.keys()].sort()).toEqual(["architect", "engineer", "explorer", "reviewer", "root"])
   for (const [id, a] of f.agents) {
-    expect(a.system).toBe(readFileSync(new URL(`../agents/${id}.md`, import.meta.url), "utf8").split(/^---\s*$/m).slice(2).join("---").trim())
+    const body = readFileSync(new URL(`../agents/${id}.md`, import.meta.url), "utf8").split(/^---\s*$/m).slice(2).join("---").trim()
+    // Unknown/example models keep shared contract only; appendices stay optional.
+    expect(a.system).toBe(splitRoleBody(body).base)
+    expect(a.system).not.toContain("## 附录")
   }
+})
+test("GPT model injects GPT principle appendix into role system", async () => {
+  const f = fixture({ models: { root: "openai/gpt-4o#high", engineer: "openai/gpt-4.1", explorer: "anthropic/claude-sonnet-4" } })
+  await (await plugin()).setup(f.ctx)
+  expect(f.agents.get("root").system).toContain("Thin Root")
+  expect(f.agents.get("root").system).toContain("<principles>")
+  expect(f.agents.get("engineer").system).toContain("<status>COMPLETE|BLOCKED|INCOMPLETE</status>")
+  // explorer configured as Claude: Claude appendix only, no GPT XML tags.
+  expect(f.agents.get("explorer").system).toContain("沿用上文")
+  expect(f.agents.get("explorer").system).not.toContain("<findings>")
+  expect(f.agents.get("explorer").system).not.toContain("Context-only")
 })
 test("Root can edit, execute and delegate; native policy permits direct verified work", async () => {
   const f = fixture(); await (await plugin()).setup(f.ctx)

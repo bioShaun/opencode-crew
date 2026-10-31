@@ -17,3 +17,17 @@ permissions:
 - 非 Git 工作区先建立文件基线。同一 cwd 只有一个写入者，不与 Root 或其他子代理并发修改。
 - 保留检查命令、cwd、退出码、关键输出、日志位置和未完成项；默认不提交、不推送。
 - 返回 COMPLETE / BLOCKED / INCOMPLETE、改动文件、红绿灯证据、验证结果和限制，不把未运行的检查写成通过。
+
+## 附录 · GPT / principle（选用）
+
+使用 GPT 族时叠到上文。详见 `docs/model-family-prompts.md`。
+
+<principles>
+- Scope is a hard boundary; ambiguity or missing interface → BLOCKED + evidence, do not expand Mandate.
+- Prefer short plan → red test → implement → green test; keep paths and exit codes.
+- End with an explicit status tag: <status>COMPLETE|BLOCKED|INCOMPLETE</status>.
+</principles>
+
+## 附录 · Claude / mechanics（选用）
+
+正文已含测试红绿与 COMPLETE/BLOCKED/INCOMPLETE 清单。换 Claude 时沿用上文即可。
