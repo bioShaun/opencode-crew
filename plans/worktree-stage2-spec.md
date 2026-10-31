@@ -1,6 +1,6 @@
 # Worktree 阶段 2：成果审阅与离线受控周转 Spec
 
-日期：2026-10-31。状态：**S0-D 通过——D1–D6 已由用户于 2026-10-31 全部采纳建议，决策与精简接口冻结见 [S0 契约](worktree-stage2-s0-contract.md)。S1–S3 已按各自授权实现并在本地红绿门禁通过（S3 提交 `64b9e20`）；未迁移真实 ledger、未释放名额、未做真实维护。「停止证据可实际取得」仍只能在真实维护窗口验证，S4 私有宿主最小周转与 S5 另授权整合均未开始，且仍需逐次授权。**
+日期：2026-10-31。状态：**S0-D 通过——D1–D6 已由用户于 2026-10-31 全部采纳建议，决策与精简接口冻结见 [S0 契约](worktree-stage2-s0-contract.md)。S1–S3 已按各自授权实现并在本地红绿门禁通过（S3 提交 `64b9e20`）；S4 已于 2026-10-31 在私有 loopback 2.2.5 夹具（克隆 + 4 个 worktree）完成最小周转绿运行，证据见本地被忽略的 `test/.work/s4-turnover/run-20261031T145749Z/`。未迁移真实 ledger、未释放真实名额、未触碰真实 worktree，也不宣称进程安全。「停止证据可实际取得」已在该私有夹具取得，但真实维护窗口仍未验证；S5 另授权整合尚未开始，且仍需逐次授权。**
 
 ## 1. 授权、基线与目标
 
@@ -135,7 +135,7 @@ rename 后 fsync 报错可能已写入完整新值，应报告结果未确认并
 | S1 | 最小只读成果清单 | 仅观察、不改变任务/成果；边界和输出最小化通过。若要求完整包，另立契约 |
 | S2 | v2 reader/writer 兼容、迁移及永久历史 | 全部写入者已覆盖、v1 不隐式迁移、unknown fail closed；不单独上线一个可删历史的迁移脚本 |
 | S3 | 离线 plan/apply 结案与周期切换 | S1/S2 通过，授权/排空/停止/保全证据齐备；原子性及故障恢复有红绿证据后才触碰真实 ledger |
-| S4 | 私有 2.2.5 最小周转试运行 | S3 通过、逐次维护授权；新周期可用，旧 key 不重投，成果原字节保留 |
+| S4 | 私有 2.2.5 最小周转试运行 | 已于 2026-10-31 在夹具通过；新周期 `pd_2` 可用，旧 key 重放不重投、异 owner 冲突，三个结案与一个活动 worktree 的 marker 原字节保留 |
 | S5 | 可选真实双行为任务与串行整合评估 | 另行授权任务、完整成果保全/整合策略、提交策略；无授权不做 merge/commit/push |
 
 实现按依赖串行落地，避免不同 engineer 同改公共 state/ledger。纯文档阶段不跑行为测试；后续每个行为变更先仅写测试并运行有效语义红灯，附命令/退出码/断言，再实现和贴对应绿灯。缺红灯不验收；语法/import/认证/服务未就绪不是有效红灯。
@@ -203,8 +203,16 @@ git diff --check
 
 停止条件：未知外部 writer、在途副作用无法排空、orphan 无法核实、权限/身份不符、版本混用、计划过期、档案损坏、成果漂移/遗漏未被人工解决、容量或历史不变量破坏、需要自动释放/清理或完整导出包才能满足用户目标。均保留 worktree/ledger/证据并回问；不得删库解锁、弱化权限或扩大并发来继续。
 
+### 11.1 S4 私有宿主最小周转结果（2026-10-31）
+
+- 环境：OpenCode 2.2.5 私有 loopback 宿主（每宿主独立 TMPDIR/XDG/`OPENCODE_DB`/密码）；夹具为 HEAD `7cacf0ab3f178c67c5dd79ede70246e72bba7428` 的克隆与 `wt-a`..`wt-d` 四个 worktree；真实 stage1 ledger/worktree 未触碰。
+- 运行：`test/.work/s4-turnover/run-20261031T145749Z/`（被 `.gitignore` 忽略）。该目录含宿主私有 DB（可能含 provider/account 数据），不得发布或提交。
+- 结果 PASS：v1 两任务 stop（第二次 stop 零字节）→ 宿主退出 → window-a（入口关闭、registry digest 稳定、无 opencode writer）→ 迁移 v2 → 只读清单 + 结案 `ct_one`/`ct_two`（`preserved`，停止态 `stop_unconfirmed`）→ 宿主 B 重启复用 Root，closed 重放返回原 task/session、零新 session、子会话 prompt 与 registry 字节不变（重放本身新增的 Root 消息另计）→ 异 owner 同请求 `IDEMPOTENCY_CONFLICT` 零写入 → 新 cwd 起第三任务、stop、结案 → checkout `fb222c78cf98aa26a3c0359242d6734f1cdd228c`（`OID^`）→ `open-period` `pd_2` → `wt-d` 起第四任务并保留。
+- 账本/证据：schemaVersion 2、generation 17、`pd_1` sealed、active=`ct_four`（pd_2，submitted）、closed=3（全部 preserved）、archives=5、backups=5；三份 closeout 的 bundle/listing/archive 与 digest 逐一复算一致；四个 marker 分别为 `ONE\n`/`TWO\n`/`THREE\n`/`FOUR\n`，四个 worktree 仅该 marker 未跟踪；宿主进程组退出后无夹具进程残留。
+- 限制：这是单次私有夹具绿运行；早前的红运行均定位为 runner/提示缺陷（换行比较、比较点、变量名、任务包不足），修复后不计为产品红灯。`drain.inFlightEvidenceRefs` 为空（无在途任务）；外部 writer 核实靠终止宿主进程组 + `/proc` 扫描，不是生产排空；`ct_four` 仍在途且 process safety 未确认；未做 merge/commit/push；S5 仍需另授权任务与完整保全/整合/提交策略。
+
 ## 12. 本文交付检查与未决项
 
 本轮仅核对事实并新建本文；没有运行行为测试、构建、服务或模型。架构角色无 shell 权限，未自行执行 Git。独立 reviewer 只读核对草案、阶段 1 契约及实际源码，未发现阻塞文档交付的实质问题；该审查不是实现验证。Root 在暂存本文后执行 `git diff --cached --check` 检查全文空白，并确认仅预期文档进入本次提交；真实提交与推送结果以 Git 记录和最终回执为准。纯文档无行为红绿灯要求，后续实现仍须遵守第 10 节门禁。
 
-原关键未决项 D1–D6 已于 2026-10-31 由用户全部采纳建议并记录，S0 的决策部分（S0-D）判定通过；字段级冻结（RegistryV2、closeout、离线 plan/apply、证据结构、清单输出、错误码）见 [S0 契约](worktree-stage2-s0-contract.md)。S1 只读清单、S2 v2 与显式迁移、S3 离线 plan/apply 已实现，S3 本地红绿门禁与全量回归通过；`integrated` 所需的 `integrationCommit` 来源已在 S0 契约中按实现评审结果显式补齐。S0 要求的「停止证据能实际取得」未在真实维护窗口验证，仍是未决项；S4 私有 2.2.5 最小周转与 S5 另授权整合均未开始，且各自仍需新的显式授权与逐次维护授权。当前未迁移真实 ledger、未释放名额、未触碰真实 worktree，也不宣称进程安全或生产可用。
+原关键未决项 D1–D6 已于 2026-10-31 由用户全部采纳建议并记录，S0 的决策部分（S0-D）判定通过；字段级冻结（RegistryV2、closeout、离线 plan/apply、证据结构、清单输出、错误码）见 [S0 契约](worktree-stage2-s0-contract.md)。S1 只读清单、S2 v2 与显式迁移、S3 离线 plan/apply 已实现，S3 本地红绿门禁与全量回归通过；`integrated` 所需的 `integrationCommit` 来源已在 S0 契约中按实现评审结果显式补齐。S4 私有 2.2.5 最小周转已于 2026-10-31 通过（见 11.1），取得关闭/排空/停止/保全证据并完成迁移、结案、重放、异 owner 冲突、新周期与新任务；S5 另授权整合仍未开始。当前未迁移真实 ledger、未释放真实名额、未触碰真实 worktree，也不宣称进程安全或生产可用。
