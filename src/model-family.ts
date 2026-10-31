@@ -46,12 +46,12 @@ export function detectModelFamily(model?: ModelRefLike): ModelFamily {
 export const MODEL_FAMILY_TASK_HINTS = {
   gpt: [
     'Model style (GPT/principle): treat Scope as a hard boundary;',
-    'prefer short principles and explicit tags (e.g. <status>COMPLETE|BLOCKED|INCOMPLETE</status>) over long checklists;',
+    'prefer short principles and explicit Report: <status> (progress|waiting|ready|blocked|failed|dropped) over long checklists;',
     'hand back on ambiguity—do not expand Mandate.',
   ].join(' '),
   claude: [
     'Model style (Claude/mechanics): walk Goal/Scope/Decided/Approach/Acceptance/Check as an explicit checklist;',
-    'keep evidence paths; return COMPLETE/BLOCKED/INCOMPLETE clearly.',
+    'keep evidence paths; return Report: <status> (progress|waiting|ready|blocked|failed|dropped) clearly.',
   ].join(' '),
 } as const
 

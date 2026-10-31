@@ -7677,12 +7677,12 @@ function detectModelFamily(model) {
 var MODEL_FAMILY_TASK_HINTS = {
   gpt: [
     "Model style (GPT/principle): treat Scope as a hard boundary;",
-    "prefer short principles and explicit tags (e.g. <status>COMPLETE|BLOCKED|INCOMPLETE</status>) over long checklists;",
+    "prefer short principles and explicit Report: <status> (progress|waiting|ready|blocked|failed|dropped) over long checklists;",
     "hand back on ambiguity\u2014do not expand Mandate."
   ].join(" "),
   claude: [
     "Model style (Claude/mechanics): walk Goal/Scope/Decided/Approach/Acceptance/Check as an explicit checklist;",
-    "keep evidence paths; return COMPLETE/BLOCKED/INCOMPLETE clearly."
+    "keep evidence paths; return Report: <status> (progress|waiting|ready|blocked|failed|dropped) clearly."
   ].join(" ")
 };
 function modelFamilyTaskHint(model) {
@@ -7705,6 +7705,14 @@ function composeRoleSystem(base, appendices, model) {
 
 ${appendix}` : base;
 }
+
+// src/report-status.ts
+var REPORT_STATUS_PROMPT_HINT = [
+  "Report: \u672B\u884C\u6216\u6BB5\u9996\u5FC5\u987B\u5199 `Report: <status>`\uFF0Cstatus \u4EC5\u53EF\u4E3A progress|waiting|ready|blocked|failed|dropped\u3002",
+  "Root \u9A8C\u6536\u53EA\u8BA4 ready + \u8BC1\u636E\uFF1Bblocked/failed \u624D\u8D70\u4EBA\u4ECB\u5165\uFF1Bwaiting/progress \u4E0D\u5192\u5145\u5B8C\u6210\uFF1Bdropped \u8868\u793A\u65E0\u9700\u5904\u7406\u3002",
+  "\u65E7\u8BCD COMPLETE\u2248ready\u3001BLOCKED\u2248blocked\u3001INCOMPLETE\u2248progress\uFF0C\u89C4\u8303\u8BCD\u7528\u516D\u6001\u3002",
+  "\u8D85 scope \u5FC5\u987B hand-back\uFF1AReport: blocked \u5E76\u9644\u8BC1\u636E\uFF0C\u4E0D\u5F97\u81EA\u884C\u6269\u6743\u3002"
+].join(" ");
 
 // src/tasks.ts
 var marker = "opencode-crew-stage1";
@@ -7824,7 +7832,8 @@ Acceptance:
 ${input.acceptance}
 Check:
 ${input.check}${familyHint ? `
-` + familyHint : ""}`;
+` + familyHint : ""}
+${REPORT_STATUS_PROMPT_HINT}`;
       await ctx.session.prompt({ sessionID: task.sessionID, text, delivery: "queue", metadata: { crewTask: metadata(task, project.commonDir) } });
       task = ledger.transition(tc.sessionID, task.taskID, "prompt_requested", "submitted");
       return response({ ok: true, task: taskView(task, undefined, { lifecycle: "active", periodID }), warnings: [] });

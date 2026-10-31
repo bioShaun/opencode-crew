@@ -5,6 +5,7 @@ import type { Context } from '@opencode/plugin/promise/plugin'
 import { inspectProject, inspectProjectFromWorktree, TaskRegistryError, validateWorktree } from './tasks-registry'
 import { Ledger, normalizeStoredInput, type Closeout, type LedgerEntry, type TaskRecord } from './tasks-state'
 import { modelFamilyTaskHint } from './model-family'
+import { REPORT_STATUS_PROMPT_HINT } from './report-status'
 
 type Host = Context
 type ModelRef = { providerID: string; id: string; variant?: string }
@@ -88,7 +89,7 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelRef) {
    validateWorktree(project.primaryDirectory,input.directory,input.baseline,input.scope)
    task=ledger.transition(tc.sessionID,task.taskID,'session_bound','prompt_requested')
    const familyHint=modelFamilyTaskHint(configuredModel ?? owner.model)
-   const text=`Goal:\n${input.goal}\nScope:\n${input.scope.join('\n')}\nDecided: bind-only，scope 不是沙箱。cwd: ${input.directory}; baseline: ${input.baseline}; key: ${input.key}。禁止 commit、push、merge、后台进程、脱离进程组、服务和范围外写入。禁止使用 /tmp。重活先 slot audit/status 留日志并经 slot 提交。\nApproach: 行为变更先仅写测试并运行红灯，再实现并运行绿灯；保留证据。\nAcceptance:\n${input.acceptance}\nCheck:\n${input.check}${familyHint ? '\n'+familyHint : ''}`
+   const text=`Goal:\n${input.goal}\nScope:\n${input.scope.join('\n')}\nDecided: bind-only，scope 不是沙箱。cwd: ${input.directory}; baseline: ${input.baseline}; key: ${input.key}。禁止 commit、push、merge、后台进程、脱离进程组、服务和范围外写入。禁止使用 /tmp。重活先 slot audit/status 留日志并经 slot 提交。\nApproach: 行为变更先仅写测试并运行红灯，再实现并运行绿灯；保留证据。\nAcceptance:\n${input.acceptance}\nCheck:\n${input.check}${familyHint ? '\n'+familyHint : ''}\n${REPORT_STATUS_PROMPT_HINT}`
    await ctx.session.prompt({sessionID:task.sessionID!,text,delivery:'queue',metadata:{crewTask:metadata(task,project.commonDir)}})
    task=ledger.transition(tc.sessionID,task.taskID,'prompt_requested','submitted')
    return response({ok:true,task:taskView(task,undefined,{lifecycle:'active',periodID}),warnings:[]})

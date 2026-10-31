@@ -17,6 +17,7 @@ Root completes and verifies simple, clear tasks directly. For complex tasks, it 
 Root's policy allows only one writer in the same cwd at a time; Root and engineer must not modify it simultaneously, and independent review follows completion of writes. Parallelism is considered only for independent tasks in different directories.
 
 For lightweight GPT vs Claude prompt-style notes (optional role appendices + short runtime hints, not dual-track presets), see [`docs/model-family-prompts.md`](docs/model-family-prompts.md).
+For Ticket/Session/Assignment mapping and structured `Report` statuses borrowed from dsh (without Source/Eval/Policy), see [`docs/dsh-mapping.md`](docs/dsh-mapping.md).
 
 Native delegation remains host-controlled and is not automatically isolated. Separately, the explicit `crew_task_*` tools bind a manually prepared worktree to an independent engineer session with a limited local ledger and lock; they are not a scheduler, DAG, or automatic worktree manager. Two real engineer tasks have run in a private host, but their execution overlap was not verified.
 
