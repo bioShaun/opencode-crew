@@ -1,10 +1,115 @@
 # 受限阶段 1 打包及有界验收记录
 
+## Root 最终验收：原受限阶段 1 契约有界通过
+
+2026-10-31，Root 对照 `worktree-stage1-contract.md` 第 7、8 节接受原受限阶段 1 的有界验收：既有生产行为红绿证据、单元/独立进程并发与故障测试、打包检查，以及 OpenCode 2.2.5 的权限补验和同版本最小宿主闭环已有对应证据。最终门禁为项目测试 88 pass、0 fail、11 files，build、pack dry-run 和 diff 检查通过。此结论不是任意宿主、所有状态/故障组合或进程安全的完整通过；下表未测项与既定 OUT_OF_SCOPE 保留，不自动新增为原契约阻塞项。历史各子轮“完整阶段 1 未通过/待签字”描述当时状态，本节为最终结论。
+
+Root 实际重跑最终仪器自测 8 pass 和 harness 自测 3 pass，并以 SQLite `mode=ro` 核对七阶段全部 Root 外层/嵌套工具调用、一 Root 两 child、各唯一 user prompt、当前 registry、interrupt 的实际 child/`resume:false`、当前源码及 marker 哈希；见 `host-final-225/root-selftest.log`、`root-harness-test.log`、`root-db-verify2.log`。reviewer 只读审查原契约、实现、runner、仪器及日志，支持有界验收；其 shell 权限受限，没有独立执行测试或数据库查询，不冒称其已复现。
+
+**保留现场的时间边界：**宿主 runner 期间及结束快照 primary clean；随后 gate 的 `npm pack --dry-run` 触发 prepack build，当前 fixture primary 仅 `dist/index.js` 修改，且该文件与实包 dist 原始字节一致。Root 首次事后检查因仍期待 clean 而失败，随后按实际时间顺序补核，未恢复或清理该差异；当前状态见 `root-db-verify2.log`。这是门禁构建产生的改动，不是 child 串写，也不推翻 runner 期间 clean 的记录。历史前后快照仍依赖分时记录，不能从当前 DB 事后重建。
+
+用户随后明确授权提交并推送当前进度，取代本轮之前默认不提交的安排；仅提交版本化报告与测试，不纳入忽略目录中的私有 fixture、DB、cache 或原始证据。下文历史“未提交”均指各子轮执行时，实际提交与推送结果以 Git 记录和最终回执为准。
+
+## 最新契约矩阵对照（原契约已验收；未测边界保留）
+
+按 `worktree-stage1-contract.md` 第 7 节逐类对照；“子矩阵通过”不代表整类全部组合通过。历史章节的 NOT_TESTED 保留当时含义，以本节与具体最新证据为准。
+
+| 契约类别 | 已有证据范围 | 剩余边界或缺项 |
+|---|---|---|
+| 接口与权限 | 单元测试；2.2.5 start 三层 ask→reject/deny、status ask→reject/deny；stop 两层首次 ask→reject、首次及已 stop 后 deny 有限通过 | 已 stop 后 ask→reject 和其余未列组合未测 |
+| Git/路径 | 既有 dirty/baseline/路径测试；真实主/目标 status 各 1,135,000 字节时拒绝 | worktree list 等命令超限、精确阈值、工具层超限零副作用未测 |
+| 容量与固定基线 | mock/独立进程测试；2.2.4 双服务最后容量位；2.2.5 同 Root 双任务及 stop 后第三任务容量拒绝有限通过 | 不外推锁临界区重叠或任意外部写入者控制 |
+| 幂等 | mock/独立进程同 owner 重放；host1→host2 复用 DB、Root 和原输入的顺序重启重放；双服务不同 owner 同 key 冲突且无重复副作用 | 两个同时在线真实服务的同 owner、同 digest 并发重放未测；不与已通过的顺序重启场景混同 |
+| 锁 | 独立进程持锁、竞争、SIGKILL 遗留锁；registry 校验测试 | 实际真实服务锁临界区时间重叠未证；非本地/多机不在保证内 |
+| 每步故障注入 | start/stop checkpoint SIGKILL、写前异常及分层 AtomicRegistry 底层故障 | 完整工具级底层故障组合仍未覆盖，非断电持久性保证 |
+| 状态与 stop | mock 状态校验；真实 status/stop；2.2.5 stop 独立仪器边界新增次数 1/0 | 本次 child 已 idle，不证明运行中中断效果、宿主内部执行或进程树安全 |
+| 角色与重试 | 既有角色/权限继承/模型/retry 回归；真实 engineer marker | 双 engineer 模型/工具事件时间相交仍 NOT_TESTED |
+| 数据最小化 | 既有摘要/秘密错误测试、打包排除证据目录；本轮仅脱敏日志 | 不提供完整成果导出或秘密识别保证；私有 DB/cache 不可分享 |
+| 打包与宿主 | 最终门禁 88 pass、build、pack dry-run；2.2.5 单 Root 最小真实闭环有限通过 | 仅具体所列宿主版本与场景，不扩展为完整宿主矩阵 |
+
+Root 已自取 Git diff 确认本轮仅报告与 `test/tasks-git.test.ts` 两处 tracked 修改，并以 SQLite `mode=ro` 重读 interrupt attempt2、permissions-extra attempt1/attempt2：完整枚举 Root 嵌套调用，核验成功/错误状态、child/prompt 计数及当前 registry/marker。脱敏二次核验见 `plans/evidence/worktree-stage1/host-interrupt/root-db-verify.log`，退出 0。该二次查询不重建历史快照；前后变化依据 runner 分时段日志。独立 reviewer 接受 stop 边界有限 PASS 的技术解释，但其工具权限不允许 Git/SQLite 执行，故该部分由 Root 补核而非冒称 reviewer 已独立执行。
+
+## OpenCode 2.2.5 单 Root 最小闭环与最终本地门禁（2026-10-31）
+
+**有限 PASS；完整阶段 1 最终签字留待 Root 对原契约逐项审查。** 冻结 HEAD `8d3ff194d3b07a40937b8cc119af5752484dbf48`、真实宿主 2.2.5、包 SHA-256 `68e830a870a87a0453c1ff88ff7d51dd274e96526e911e0c369e6cb49944a59c`；独立 clean clone 和三个 detached sibling worktree、私有 loopback 服务与 DB/config/data/cache/state/tmp，实际加载解包包，root/engineer 可用，包内 src 哈希等于当前源码。
+
+同一真实 Root 经注册工具顺序 start A/B，两个 child 完成各自 marker 后 idle；各目标只出现对应精确内容，primary 和第三目标 clean，无串写。child 工具仅 patch/read；部分 read 报错，但 marker 内容和唯一工作区变动实际核验通过。A dirty 后原始完整输入重放返回相同 task/session、registry 字节及 child/prompt 不变；status 返回实际 A child 的 engineer 观察。首次 stop A 的独立 interrupt 边界增量 1，参数实际 child、`resume:false`，状态 `stop_unconfirmed`；重复 stop 增量 0，完整 registry 字节不变。随后 start C 返回 `CAPACITY_RESERVED`，C 目标仍 clean，registry 不变，无第三 child 或 prompt，证明该次 stop 后占位未释放。最终 registry 两任务，SQLite `mode=ro` 核验一 Root、两 child、每 child 一 user prompt，完整枚举七阶段所有外层及嵌套调用索引；详见 `host-final-225/run2.log`。
+
+最终门禁 `host-final-225/gate2.log`：复用三文件仪器自测 8 pass，harness 自测 3 pass，项目配置限定 `test/` 的 `bun test` 88 pass / 0 fail / 11 files，`bun run build`、fixture 的 `npm pack --dry-run --json`、包文件清单核验及 `git diff --check` 均退出 0。实包与 dry-run 清单 15 项一致、不含证据、registry 或 cache；包内 src 和 fixture 构建 dist 字节一致。根目录构建 dist 与包内 dist 的唯一区别是 Bun 对依赖路径生成的相对路径注释，归一化这些注释后字节一致；绝不声称原始 dist 哈希相同。两个 slot 预检分别见 `slot-run2.log`、`slot-gate2.log`，runner 和门禁退出 0，私有服务 PID 1923538 finally 回收且进程组不存在。
+
+保留失败尝试：`run1.log` 退出 1，包检查误将合法 `src/tasks-registry.ts` 认作 registry 泄漏，服务尚未启动；`harness-pack-red.log` / `harness-pack-green.log` 记录修正的语义红绿。首次门禁 `gate.log` 退出 1，因不同构建 cwd 产生依赖路径注释导致根目录 dist 与 fixture dist 原始哈希不同；`harness-bundle-red.log` / `harness-bundle-green.log` 记录仅归一化该类注释的核验。最初 harness 自测红绿另见 `harness-red.log`、`harness-green.log`，均是仪器/harness 而非生产红灯。未修改生产逻辑，不宣称生产 bug 修复。
+
+本闭环与同为 2.2.5 的权限补验证据分别成立；2.2.4 历史证据不拼接为 2.2.5 结果。interrupt 仪器仅证明插件→host 调用边界；两 child 已 idle，不能证明宿主内部中断或进程树停止，`processSafety` 仍为 unconfirmed；无 cleanup/merge/resume。私有 DB/cache 不应分享，不外推并发或其他未测组合。
+
+## 真实宿主 status 内部权限补验（2026-10-31）
+
+**两项有限 PASS，不是完整阶段 1 验收**：2.2.5 私有服务中，各以真实 Root start 创建 child、完成 marker 并 idle，随后分别设置并回读 `crew_task_status` ask 与 deny。ask 实际 pending 并 reject；deny 与 ask 均有独立 assert 边界记录、匹配 source、嵌套错误传播。前后完整 registry 字节相同，child 与其 user prompt、marker 哈希及相关 Git 状态不变。身份验证允许 owner `session.get`；该轮没有 interrupt 仪器，不宣称 interrupt 实测为零。
+
+新仪器先语义红灯（status 被旧过滤器忽略，预期记录 1 实得 0），扩展后 2 pass；`host-status-stop-permissions/run1.log` 中 runner 经 slot 执行退出 0，服务 finally 回收。Root 重跑自测 2 pass 并以 SQLite `mode=ro` 枚举两个 Root 的全部外层/嵌套工具调用、child prompt 和当前 registry 哈希，见该目录 `root-selftest.log`、`root-db-verify.log`；历史前后快照来自 runner 日志而非事后重建。reviewer 仅静态审查支持有限 PASS，无 shell 执行权限；不宣称其独立执行。私有 DB/cache 不应分享。
+
+## 真实宿主 stop 两层 deny 补验（2026-10-31）
+
+**四项有限 PASS，不是完整阶段 1 验收。** 新 clone / detached worktree 与独立 DB/config/cache/tmp 的 OpenCode 2.2.5 loopback 服务，真实 Root `crew_task_start` 创建自身拥有的 child，child 完成 marker 并 idle。对同一 Root 和 task，分别 PATCH 并回读 `crew_task_stop` deny（subagent allow）、`subagent/engineer` deny（stop allow）：内部 assert 仪器记录到目标层、source 与外层 execute 匹配，嵌套调用均为 error；registry 完整字节不变、仍为 submitted，child/prompt/marker/Git 状态不变，独立 interrupt 仪器增量均为 0。
+
+之后双层 allow 的控制调用返回 `stop_unconfirmed`、`processSafety:unconfirmed`；独立 interrupt 仪器增量 1，参数为实际 child 和 `resume:false`，registry 保留该 task 占位。再对相同 task 分别 deny 两层重放，均证实内部 assert 到达、错误传播、registry 字节及其他快照不变，interrupt 增量均为 0。完整 Root 六个 user 阶段的外层及嵌套调用通过 SQLite `mode=ro` 索引，见 `host-stop-permissions/run1.log`。该仪器只证明插件→interrupt 边界的转发意图，不证明宿主内部执行或进程树停止；child 在 stop 前已 idle。
+
+复制 status 仪器新增 stop 测试先红灯（预期转发前记录 1，实际 0），扩展后与独立 interrupt 仪器及组合透明性测试共 8 pass。`host-stop-permissions/assert-red.log`、`instrument-green.log` 保存输出；初次组合测试缺少复制的测试入口而失败，保存在 `instrument-initial-fail.log`，不作为行为红灯。`slot1.log` 记录预检，`slot cpu -- python3 runner.py` 退出 0，私有服务 PID 1785039 在 finally 回收、进程组不存在。包内 src 与当前 src 哈希一致；私有 DB/cache 不应分享。此轮不测 ask→reject，未重跑生产全量测试。
+
+Root 实际重跑三文件仪器自测 8 pass，见 `host-stop-permissions/root-selftest-all.log`；此前命令误写组合测试文件名仅运行 7 pass，保留 `root-selftest.log`，不视为完整自测。Root 另以 SQLite `mode=ro` 核验六个阶段完整工具索引、唯一 child prompt、interrupt 目标及 resume、最终 registry，见 `root-db-verify.log`；历史前后字节变化仍依据 runner 快照。reviewer 只做静态审查并支持有限 PASS，未执行数据库核验。
+
+## 真实宿主 stop 两层首次 ask→reject 补验（2026-10-31）
+
+**两项有限 PASS，不是完整阶段 1 验收。** OpenCode 2.2.5 新私有 loopback 服务、独立 clone / detached worktree、DB/config/cache/tmp；打包 src 哈希与当前工作区一致。真实 Root start 同一 owner child，marker 完成且 child idle 后，分别设置并回读 stop ask / subagent allow、stop allow / subagent ask。两次均观察对应真实 pending、reply reject；内部 assert、pending 和外层 execute 的 source/action/resources 相符，固定反馈精确传播，嵌套 stop 均 error。每次前后完整 registry 字节相同且仍 submitted；child、user prompt、marker 和 Git 状态不变，独立 interrupt 仪器增量均为 0。
+
+随后双层 allow 控制返回 `stop_unconfirmed`、`processSafety:unconfirmed`，interrupt 边界增量 1，目标为实际 child、`resume:false`。只读 SQLite 按四个 user 阶段完整索引所有 Root 外层及嵌套调用；分阶段快照和实际字节比较见 `host-stop-permissions-ask/run1.log`。复制既有仪器行为不变，三文件自测 8 pass，见 `instrument-selftest.log`；此轮无需新仪器行为红灯。`slot1.log` 记录 audit/status 预检；证据目录执行 `slot cpu -- python3 runner.py` 退出 0，服务 PID 1792879 finally 回收、进程组不存在。只证明插件→interrupt 边界，不证明宿主内部执行或进程树停止；未覆盖运行中 child、并发或已 stop 后 ask→reject，私有 DB/cache 不应分享。
+
+Root 实际重跑三文件自测 8 pass、0 fail，见该目录 `root-selftest.log`；以 SQLite `mode=ro` 重新完整枚举四阶段 Root 工具及嵌套调用，对照 pending source 与错误反馈，并核对唯一 child prompt、interrupt 目标及 `resume:false`、最终 registry 和当前 src 哈希，全部通过，见 `root-db-verify.log`。该次补核不是重跑宿主，亦不能事后重建历史前后 registry 字节；历史不变依据仍为 runner 分时记录及实际字节比较。本 ask 子轮未另行取得 reviewer 独立执行结论。
+
+### 后续验收分类
+
+原契约必测矩阵仍以 `worktree-stage1-contract.md` 第 7 节为准。真实 status/stop 权限拒绝的上述明确场景现已有有限证据；已 stop 后 ask→reject、真实服务锁临界区实测相交、双 engineer 事件区间相交、Git 精确阈值及所有工具与所有底层故障的笛卡尔组合，作为额外加固记录，不自动新增为原契约阻塞项。其他故障/Git 缺口须逐项映射原契约，不能仅以“完整组合未覆盖”无限扩张验收范围。最终验收前仍须冻结宿主版本，对同一版本的权限拒绝、启动、重放、容量竞争和 stop 关键链路明确核验；历史 2.2.4 与本轮 2.2.5 证据分别成立，不拼接为单版本完整通过。本次整理不宣布完整阶段 1 通过。
+
+## crew_task_start 内部权限补验（OpenCode 2.2.5，2026-10-31）
+
+**本节所列五项有限 PASS**，仅覆盖 `crew_task_start` 内部权限路径；不覆盖 status/stop 权限。每 case 为新 Root，session 各只设置并回读对应一条规则；Root agent 的相关通配权限为 allow（其他无关 read/browser 规则仍存在）。使用私有 loopback 服务、独立 DB/cache/config/tmp、新 clone 和 detached worktree；各 case 开始时 registry 不存在、两个工作区干净。包 SHA-256 `68e830a870a87a0453c1ff88ff7d51dd274e96526e911e0c369e6cb49944a59c`，包内全部 src 哈希与当前工作区一致。
+
+| 内部 action / 测试规则 | 有界结果与资源 |
+|---|---|
+| `crew_task_start` ask→reject | PASS；pending 的 resources 为 primary 目录，source 精确对应真实外层 message/call ID |
+| `edit` ask→reject | PASS；pending resources 为目标 marker 和 registry 两个绝对路径，source 精确对应真实外层 message/call ID |
+| `crew_task_start` deny | PASS；独立 assert 仪器观察到本 action 一次，resources 为 primary |
+| `subagent` / `engineer` deny | PASS；按序观察 `crew_task_start`、`subagent`，后者 resources 为 `["engineer"]` |
+| `edit` deny | PASS；按序观察 `crew_task_start`、`subagent`、`edit`，最后 resources 为目标 marker 和 registry |
+
+真实 Root 均经 `execute` 调用 `crew_task_start`；只读 DB 对每条 assistant 消息中所有外层工具及嵌套调用按消息、外层 ID/索引、嵌套索引枚举，实参匹配，每 case 恰有一次对应嵌套调用。两 ask 收到的 pending 均 reply `reject`（固定反馈 `fixture rejection`）；三 deny 无 pending，DB 持久化错误文本分别含对应 action 和 denied。五项外层 `execute` 均为 completed 但 `metadata.error=true`，嵌套 `crew_task_start` 为 error，不能称正常 `{ok:false}`；宿主持久数据不证明具体运行时异常类。每项前后均无 registry、child、child user prompt 或 marker，primary 和目标保持干净；本节不将各 Root 自身 prompt 计为 child prompt。
+
+首次 `run1.log` 两项 ask 已通过；三个 deny 虽有嵌套错误和零副作用，但当时缺少独立证据证明进入内部 assert，故如实标为 NOT_TESTED，未冒充内部 deny。之后仅对未完成的三个 deny 建新现场及透明 assert 包装：记录调用前 fsync 的 sessionID/action/resources/source，不记录 prompt；原 this、参数、Promise 和拒绝对象原样转发。仪器自测 `assert-red.log` 的语义红灯是原方法进入时计数 0、预期 1；`assert-green.log` 为 1 pass。第二现场三 deny 的 `attempt2/assert.jsonl` 依次记录 1/2/3 个 assert（包含各前置 allow 路径），全部 source 与 DB 真实外层 message/call ID 一致。日志是调用前边界记录，结合原方法转发自测和实际 deny 错误得出上述有限结论，非对宿主内部权限引擎的全面验证。
+
+仓库根 cwd 下，两次均先 `slot audit` / `slot status`（退出 0），再分别 `slot cpu -- python3 plans/evidence/worktree-stage1/host-permissions-extra/runner.py` 和 `slot cpu -- python3 plans/evidence/worktree-stage1/host-permissions-extra/runner-deny.py`，runner 均退出 0；脱敏记录为该忽略目录的 `slot1.log`、`slot2.log`、`run1.log`、`run2.log`。两私有服务 PID `1665155`、`1669873` finally 回收，退出均 130，进程组均不存在。私有 DB 不应分享。未改生产或旧证据，未重跑全量测试/build，未提交推送；原有另一 engineer 的 `test/tasks-git.test.ts` 修改保留。此前已通过的 subagent ask→reject 未重跑。
+
+## 真实宿主 stop 边界独立仪器补验（2026-10-31）
+
+**有限 PASS：仅首次和重复 stop 的插件→宿主调用边界，不代表完整阶段 1 通过，也不证明宿主内部中断执行或任何进程树安全。** 仓库根 cwd、HEAD `8d3ff194d3b07a40937b8cc119af5752484dbf48`；OpenCode 2.2.5 私有 loopback 服务使用全新 clone、detached worktree、独立 DB/config/data/cache/tmp，解包的包内全部 src 哈希与主工作区一致，打包 SHA-256 `68e830a870a87a0453c1ff88ff7d51dd274e96526e911e0c369e6cb49944a59c`；primary 与目标初始干净。额外 witness 包加载上一轮已自测的仪器入口，真实宿主插件列表确认该包 active，独立 lifecycle 文件记录 `entry`、`setup_enter`、`setup_return`；lifecycle 不是 interrupt 计数。
+
+Root 模型通过外层 `execute` 嵌套调用一次 `crew_task_start` 和两次 `crew_task_stop`，每次均 completed、实参匹配。只读私有 DB 按 user 阶段、消息、外层调用 ID/索引及嵌套索引完整枚举，没有按 messageID 覆盖：三个阶段各一个外层 execute 和一个对应嵌套调用。child `ses_e705c068cffeekLqf4bGwiaeLL` 的 marker 完成、child idle 后才开始 stop；child 使用了 patch、read、glob，部分 read 报错，但最终 marker 内容和工作区状态精确。
+
+首次 stop 独立时段 JSONL 从 0 条增至 1 条，唯一事件 `sequence:1`、`sessionID:ses_e705c068cffeekLqf4bGwiaeLL`、`resume:false`；重复 stop 时从 1 条仍为 1 条，新增 0 条。两次结果均 `stop_unconfirmed`、`processSafety:unconfirmed`，首次 interruptResult 为 `request_completed`，两次调用后服务均仍存活。日志只代表调用前已 fsync 的转发意图；结合仪器透明转发自测、首次工具 `request_completed` 和服务未中断，作为该次边界调用证据，不外推为宿主内部执行成功。两次前后 DB 均为 1 Root、1 child，child user prompt 始终 1 条；marker SHA-256 始终 `2eddb54c7ec4ebf6cef93bafd409faf8273b1fceaaf982efcca9ba9a552f0d4c`，目标仅该 marker，primary clean；唯一 ledger task 保留相同 cwd 与 child，重复 stop 前后完整 registry 相同。
+
+项目根 cwd 下 `slot audit` / `slot status` 在每次尝试前均退出 0，记录在 `host-interrupt/slot-run1.log`、`slot-run2.log`；`slot cpu -- python3 plans/evidence/worktree-stage1/host-interrupt/runner.py` 第二次退出 0，结果及脱敏全事件见 `host-interrupt/run2.log`，原始计数 `host-interrupt/attempt2/interrupt.jsonl`，独立 lifecycle `attempt2/lifecycle.jsonl`。私有 DB/registry/目标现场保留在忽略目录，不应分享。服务 PID `1647738` 在 finally 回收，退出 130，进程组不存在；这不是任意进程树安全证明。
+
+首次 `run1.log` 退出 1：start 和 marker 已完成后，runner 将 registry 中 `input.directory` 错读为顶层 `directory`，在任何 stop 之前 KeyError；私有服务 PID `1646158` 回收、退出 130、进程组不存在。这是 runner 错误，不是生产行为红灯；修正读取并使用全新 `attempt2` 才形成上述证据。新增 lifecycle witness 的语义红灯 `witness-red.log` 为空事件断言失败，修复后 `witness-green.log` 为 5 pass；未改生产代码，未重跑全量测试，未提交推送。
+
+## 真实宿主 interrupt 独立计数补查（历史未完成轮，后已补证）
+
+**BLOCKED / NOT_TESTED**：本轮基线 HEAD `8d3ff194d3b07a40937b8cc119af5752484dbf48`，开始时 `git status --short` 为空；实际安装宿主 `/home/tcuni-claw/.opencode/bin/opencode` 为 ELF，`opencode --version` 为 `opencode v2.2.5`。生产调用位置 `src/tasks.ts:122` 为 `ctx.session.interrupt({sessionID:task.sessionID,resume:false})`；安装的 Promise 插件 `define` 只是返回插件对象。上述静态证据只能表明代码意图，不能独立计数真实宿主调用。此前 host2 的宿主 event 表为空，ledger 或 stop 输出也不能代替调用计数。
+
+可考虑在隔离包入口包装真实宿主传入的 `ctx.session.interrupt` 并原样转发，但本轮尚未建立和自检该包装与实际宿主边界的可靠对应，也没有运行新的 Root 模型、私有服务或独立 DB，因此首次 1 次、重复 0 次及参数均 **NOT_TESTED**，不能宣称通过。没有发现或修复生产缺陷。调查命令及输出为忽略目录 `plans/evidence/worktree-stage1/host-interrupt/investigation.log`，执行 cwd 为仓库根、退出码 0；该轮没有服务需要回收。没有执行完整测试、构建、打包或行为红绿灯；本轮没有行为变更。`processSafety` 仍为 `unconfirmed`，完整阶段 1 仍未通过。
+
 ## 当前结论与最新检查
 
-**受限阶段 1 实现完成，有界验收通过；完整阶段 1 验收仍未通过。** 在本地 checkpoint `4972eb7` 的既有 27 项故障/崩溃测试上新增 3 项独立进程竞争测试及 2 项 harness 自检，未修改生产代码。最新完整 `bun test`：87 pass、0 fail、11 files；构建、打包 dry-run 及 diff 检查通过。以下 start、AtomicRegistry、stop 子矩阵均通过独立只读复核。故障注入证据覆盖模拟宿主、本地文件系统运行时故障和 SIGKILL；其余真实宿主的有限补验见下文，不等同断电持久性或完整工具级底层故障组合矩阵。
+**受限阶段 1 实现完成，有界验收通过；完整阶段 1 验收仍未通过。** 在本地 checkpoint `4972eb7` 的既有 27 项故障/崩溃测试上新增 3 项独立进程竞争测试及 2 项 harness 自检，随后新增 1 项真实 Git status 输出超限测试，未修改生产代码。最新完整 `bun test`：88 pass、0 fail、11 files；构建、打包 dry-run 及 diff 检查通过，见文末 Git 补验记录。以下 start、AtomicRegistry、stop 子矩阵均通过独立只读复核。故障注入证据覆盖模拟宿主、本地文件系统运行时故障和 SIGKILL；其余真实宿主的有限补验见本文，不等同断电持久性或完整工具级底层故障组合矩阵。
 
-Root 本轮已复验完整测试 **87 pass**、build 和 diff，生产代码无改；此处依据 Root 交接记录，本只读核验子轮未重跑这些命令，也未启动服务或模型。下文各子轮“未重跑”均指该子轮当时，不与 Root 后续复验矛盾。
+此前一轮 Root 已复验完整测试 **87 pass**、build 和 diff，生产代码无改；该历史只读核验子轮未重跑这些命令，也未启动服务或模型。最新 **88 pass** 见文末 Git 补验及检查日志。下文各子轮“未重跑”均指该子轮当时，不与后续复验矛盾。
 
 ## 双服务历史调用完整性只读复核
 
@@ -25,7 +130,7 @@ Root 本轮已复验完整测试 **87 pass**、build 和 diff，生产代码无�
 
 项目根 cwd 下 `slot audit`、`slot status` 均退出 0，`slot cpu -- python3 plans/evidence/worktree-stage1/host-permissions/runner.py` 的本次 runner 退出 0；证据为忽略目录 `host-permissions/slot2.log`、`run2.log`、只读二次核验 `db-inspect.log`（退出 0）。服务 PID 1593799 在 finally 回收，退出 130，进程组不存在。初次 `run1.log` 的 NameError 是验证脚本缩进错误，未启动服务，不是生产红灯。无生产代码修改，未重跑完整测试或 build，未提交推送。私有 DB/cache 不应分享。
 
-该 2.2.5 单服务权限证据不外推到 2.2.4；下面历史双服务证据均为 2.2.4，二者各自独立。显式 deny、其他 assert 层、interrupt 和双 child 重叠仍为 NOT_TESTED。
+该 2.2.5 单服务权限证据不外推到 2.2.4；下面历史双服务证据均为 2.2.4，二者各自独立。该轮当时未测显式 deny、其他 assert 层、interrupt 和双 child 重叠；后续 start 权限及 stop 调用边界的有限补验见本文最新记录，双 child 重叠仍为 NOT_TESTED。
 
 ## 双真实服务最后容量位子矩阵（2026-10-31）
 
@@ -50,7 +155,7 @@ Root 本轮已复验完整测试 **87 pass**、build 和 diff，生产代码无�
 
 **当时 NOT_TESTED**：跨服务最后容量位（其后见上节）、同 owner 相同 digest 跨服务重放、实际锁临界区重叠、真实 ask/deny、真实 interrupt 计数、双 child 实际执行重叠。此前 87 项测试结果为历史结果，该轮未重跑完整 tests/build；未提交或推送。
 
-后文 55/67/75/82/85 等计数属于各历史验证轮次；当前总数为 **87**。`processSafety: unconfirmed` 仍是契约边界，不是缺陷；自动释放、清理、合并、resume 不在本阶段范围。多真实 service 同 key 的不同 owner 和最后容量位子矩阵已补验；真实宿主权限仅补验上文所列的 2.2.5 单一 ask→reject 案例，其他权限、interrupt 计数、双 engineer 时间重叠和 Git 输出超限尚待补验。
+后文 55/67/75/82/85/87 等计数属于各历史验证轮次；当前总数为 **88**。`processSafety: unconfirmed` 仍是契约边界，不是缺陷；自动释放、清理、合并、resume 不在本阶段范围。多真实 service 同 key 的不同 owner 和最后容量位子矩阵、2.2.5 start 三层 ask→reject/deny、status ask→reject/deny、stop 两层首次 ask→reject 及首次和已 stop 后 deny、stop 插件→宿主边界计数及主/目标 Git status 超限已有有限补验；已 stop 后 ask→reject、双 engineer 时间重叠及其他未列组合仍待补验，不能将这些子矩阵包装为完整通过。
 
 ## 独立 OS 进程模拟宿主竞争（2026-10-31）
 
@@ -170,9 +275,9 @@ Root 本轮已复验完整测试 **87 pass**、build 和 diff，生产代码无�
 
 1. 逐 checkpoint 写入故障、崩溃及重建恢复。
 2. 同 owner 同 digest 跨 service 重放及实际锁临界区重叠（不同 owner 同 key 和最后容量位的有限证据见上文）。
-3. 真实宿主其他权限 action、显式 deny 和 interrupt 独立计数（2.2.5 的 subagent/engineer ask→reject 已测，见上文）。
+3. 真实宿主已 stop 后两层 ask→reject 及其他未列组合；start 三层及 status ask→reject/deny、stop 两层首次 ask→reject 和首次及已 stop 后 deny 与 stop 插件→宿主边界计数已有限补验，不证明宿主内部中断或运行中停止。
 4. 双 engineer 执行时间重叠。
-5. Git 输出超限及其余边界，然后重跑全部检查。
+5. 其余 Git 边界（worktree list 等命令超限、精确阈值、工具层零副作用）；主/目标 status 超限已补验，全量 88 项及构建/包检通过。
 
 上述真实双服务请求区间重叠，但不证明 child 实际并发运行或进程树停止。cleanup、release、merge、自动 resume 及跨机分布式锁均在本阶段范围外，不是待实现验收项。进程安全仍未确认，marker 和 ledger 现场保留，不能自动清理或整合。
 
@@ -186,3 +291,9 @@ Root 本轮已复验完整测试 **87 pass**、build 和 diff，生产代码无�
 - 对第一个 task 的 stop（消息 `msg_18f536b47001mUBUzrms5R7vfA`）返回 `stop_unconfirmed`、`processSafety:unconfirmed`、interrupt result `request_completed`；重复 stop（`msg_18f538e9a001vJ0JYMPMV5oWp0`）保留结果并提示不会重复中断。宿主 event 表为空，**不能独立证明第二次 interrupt 调用数为零**。
 - 从原 ledger 取得未经改动的完整 input 重放（消息 `msg_18f53aa150014ytMql5GUHXAHF`），尽管 wt-a dirty 且 task 已 stop，仍返回原 child ID 和不再投递警告；两个 child 最终各仅一个 user prompt。原 marker 前后 SHA-256 均为 `b481f21510cc261ab9afc86aed473a08e8d7c6371a763785f74d31be18ce2615`，primary clean。
 - 私有 host PID 1427327 退出码 130，进程组不存在。这个观察只涵盖私有 host 进程组，不是任意后台或进程树安全保证。
+
+## Git status 输出超限的非宿主补验（2026-10-31）
+
+**有限 PASS，不升级完整阶段 1。** 仓库根 cwd、HEAD `8d3ff194d3b07a40937b8cc119af5752484dbf48`。真实 clone 和 detached worktree 分别创建 5000 个未跟踪文件，直接执行实际 Git `status --porcelain=v1 -z --untracked-files=all`，两处输出各 1,135,000 字节，超过 `src/tasks-registry.ts` Git helper 的 1,048,576 字节 `maxBuffer`。`validateWorktree` 两处均抛 `HOST_ERROR`，不会截断后返回 clean；fixture 使用 finally 清理。只覆盖这两个 status 超限位置，不覆盖 worktree list、其他 Git 命令、精确阈值或工具层宿主/registry 副作用。
+
+首次既有行为基线 `bun test test/tasks-git.test.ts` 退出 0、7 pass，见 `test/.work/git-overflow-round/baseline.log`；纯补证测试首次运行即通过，无生产行为变更，故无本轮生产红灯。`slot cpu -- bun test test/tasks-git.test.ts` 退出 0、8 pass，字节数见 `target.log`。项目内 TMPDIR/npm cache 下，`slot cpu` 内完整 `bun test` 退出 0、88 pass / 11 files，`bun run build`、`npm pack --dry-run --json`、`git diff --check` 均退出 0，见 `checks.log`、`pack.json`、`pack.stderr`；build 未留下 dist 或 src 修改。两次 slot 预检 audit/status 均退出 0，日志为同目录 `slot.log`、`slot-checks.log`。未运行宿主或模型，未提交、推送或 stash。

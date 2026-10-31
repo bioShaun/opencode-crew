@@ -48,3 +48,18 @@ test('rejects unregistered project and abbreviated baseline', () => {
  code(() => validate(primary, process.cwd(), oid, ['src/']), 'PROJECT_MISMATCH')
  code(() => validate(primary, target, oid.slice(0, 8), ['src/']), 'BASELINE_MISMATCH')
 })
+test('real oversized status output fails closed for primary and target', () => {
+ const limit = 1024 * 1024
+ for (const directory of [primary, target]) {
+  const fixture = resolve(directory, 'overflow-fixture')
+  try {
+   mkdirSync(fixture)
+   for (let i = 0; i < 5000; i++) writeFileSync(resolve(fixture, `${String(i).padStart(5, '0')}-${'x'.repeat(200)}`), '')
+   const result = spawnSync('git', ['-c', 'core.fsmonitor=false', 'status', '--porcelain=v1', '-z', '--untracked-files=all'], { cwd: directory, env, maxBuffer: 4 * limit })
+   expect(result.error).toBeUndefined(); expect(result.status).toBe(0)
+   expect(result.stdout.length).toBeGreaterThan(limit)
+   console.log(`oversized status ${directory === primary ? 'primary' : 'target'}: ${result.stdout.length} bytes > ${limit}`)
+   code(() => validate(primary, target, oid, ['src/']), 'HOST_ERROR')
+  } finally { rmSync(fixture, { recursive: true, force: true }) }
+ }
+})
