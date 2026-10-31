@@ -204,7 +204,7 @@ bun src/maintenance-cli.ts apply <plan.json>        # 提交，需 plan 内绑�
 ```text
 { v: 1, taskID, periodID?, baseline,
   observedFrom, observedTo,
-  head: { from, to, drifted },
+  head: { from: string|null, to: string|null, drifted: boolean|null } | null,
   completeness: "complete" | "incomplete" | "changed",
   counts: { tracked, staged, unstaged, untracked, deleted, renamed, binary, unknown, excluded, outsideScope },
   entries: [{ path, changeType, source: "index" | "worktree" | "head",
@@ -214,10 +214,20 @@ bun src/maintenance-cli.ts apply <plan.json>        # 提交，需 plan 内绑�
 ```
 
 - `entries[].status ∈ { hashed, unreadable, missing, changed, excluded, refused }`；排序按路径字节序，控制字符转义展示。
+- `head` 必须是「实际观测到的值」或 `null`，不得用请求里的 `baseline` 冒充观测结果。观测前就因超时/失败中止时整个 `head` 为 `null`；只观测到起点时 `to` 与 `drifted` 为 `null`。`drifted` 只在 `from`/`to` 都有值时才可判定，`null` 表示未观测，不表示「未漂移」。
+- 观测前的超时是**结果**不是异常：返回 `completeness:"incomplete"` + `failures:[{code:"REVIEW_LIMIT_EXCEEDED"}]`，保留已观测计数，不抛异常、不伪造 HEAD。
+- 路径身份必须先于删除/排除分类：解码后含 `\uFFFD` 的路径一律先判 `refused`（不论它是否删除），再做后续分类。
+- 删除事实优先于排除分类：`changeType:"deleted"` 的条目一律 `status:"missing"`、不打开不散列；若同名文件仍存在，它是另一条独立事实（如 `??` 条目），不许把它的哈希挂到删除条目上。被删除的排除类路径只计 `deleted`，不计 `excluded`（没有可读正文）。
+- 排除名单（命中即 `excluded`、不打开、不散列、只计数）：路径分量为 `.git`、`.env`（`.env.example` 除外）及 `.env.*`、`.ssh`、`.gnupg`、`node_modules`、`.cache`、`.venv`、`.opencode`、`secrets`；文件名后缀（大小写不敏感）`.sqlite`、`.sqlite3`、`.db`、`.db-wal`、`.db-shm`、`.pem`、`.key`。扩展名单须回改本节。
+- `counts.tracked` 与 `counts.outsideScope` 按**唯一路径**计数，且只在对应条目实际纳入清单时更新（截断/去重未纳入则不计）。其余分类计数口径另定：`untracked`/`staged`/`unstaged`/`deleted`/`renamed`/`unknown` 按**已消费的 status/HEAD 记录事实**计数，可能包含最终因额度、deadline 或去重未纳入条目的记录（例如 rename 被截断时 `renamed=1` 但无 renamed 条目）；`excluded` 只数已纳入且命中排除名单的条目；`binary` 只数散列成功且最终记为 `binary` 的条目。不得把 `counts` 求和当作路径总数，也不得要求所有 counts 与 entries 数量一致。
+- 同一路径可同时有 status 与 head 两条 `(path, source)` 条目，但路径计数不得重复累加。porcelain 的 unmerged 组合 `DD/AU/UD/UA/DU/AA/UU` 一律 `changeType:"unknown"`（即使内容含 NUL 也不改记为 `binary`）。
+- 无法按 UTF-8 无损表示的路径（解码后含 `\uFFFD`）必须 `status:"refused"`、不打开、记 `REVIEW_REFUSED` 并使清单 `incomplete`，不得静默按替换字符去散列另一个文件。
+- 限额是结果不是异常：路径数、单文件字节、累计字节、总时长任一超限都返回 `incomplete` + `REVIEW_LIMIT_EXCEEDED`；达到路径上限后停止消费剩余记录；读取中途超限时已读字节计入累计。
+- 已知限制（不得声称已消除）：`inspectProject` 的内部 Git 超时不接受 `timeoutMs`，只能在返回后检查预算；该预检的 Git 输出若超出 1 MiB 缓冲，会按其原有语义抛 `PROJECT_MISMATCH`，本阶段不改 `tasks-registry` 的该行为，属已披露例外；逐层 `lstat` + `realpath` + 打开前后 `inode/dev/size/mtime` 比对只能发现部分目录链替换，不构成并发写入已停止或稳定快照的证明。
+- 非法 UTF-8 路径只保留「每条原始记录一条 `refused`」的拒绝事实，不还原原始字节；解码碰撞可能使多条条目的 `path` 字符串相同，因此清单不承诺对这类路径做逐路径区分或字节序排序。
 - `complete` 仅表示本次有限枚举成功；超限、失败、读取中变动一律 `incomplete`/`changed`，不得截断后报成功。
-- 删除项保留路径与删除类型，不伪造现存字节哈希；rename 可保守拆为删除 + 新增并声明计数口径。
 - symlink 只 `lstat` 分类，不读目标正文；设备/FIFO/socket 不打开；路径逃逸与目录链替换拒绝并计入 `refused`。
-- 排除项（秘密/依赖/cache/私有 DB）不读正文、不散列，只报类别计数；清单是私有审阅资料，不是秘密扫描、稳定快照、沙箱或停止证明。
+- 清单是私有审阅资料，不是秘密扫描、稳定快照、沙箱或停止证明。
 
 ## 6. 冻结的错误码
 
