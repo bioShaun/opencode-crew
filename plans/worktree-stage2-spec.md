@@ -136,7 +136,7 @@ rename 后 fsync 报错可能已写入完整新值，应报告结果未确认并
 | S2 | v2 reader/writer 兼容、迁移及永久历史 | 全部写入者已覆盖、v1 不隐式迁移、unknown fail closed；不单独上线一个可删历史的迁移脚本 |
 | S3 | 离线 plan/apply 结案与周期切换 | S1/S2 通过，授权/排空/停止/保全证据齐备；原子性及故障恢复有红绿证据后才触碰真实 ledger |
 | S4 | 私有 2.2.5 最小周转试运行 | 已于 2026-10-31 在夹具通过；新周期 `pd_2` 可用，旧 key 重放不重投、异 owner 冲突，三个结案与一个活动 worktree 的 marker 原字节保留 |
-| S5 | 可选真实双行为任务与串行整合评估 | 另行授权任务、完整成果保全/整合策略、提交策略；无授权不做 merge/commit/push |
+| S5 | 可选真实双行为任务与串行整合评估 | 已于 2026-10-31 在夹具通过（见 11.2）；整合提交仅存在于夹具，未移植真实仓库，未做 merge/commit/push |
 
 实现按依赖串行落地，避免不同 engineer 同改公共 state/ledger。纯文档阶段不跑行为测试；后续每个行为变更先仅写测试并运行有效语义红灯，附命令/退出码/断言，再实现和贴对应绿灯。缺红灯不验收；语法/import/认证/服务未就绪不是有效红灯。
 
@@ -211,8 +211,22 @@ git diff --check
 - 账本/证据：schemaVersion 2、generation 17、`pd_1` sealed、active=`ct_four`（pd_2，submitted）、closed=3（全部 preserved）、archives=5、backups=5；三份 closeout 的 bundle/listing/archive 与 digest 逐一复算一致；四个 marker 分别为 `ONE\n`/`TWO\n`/`THREE\n`/`FOUR\n`，四个 worktree 仅该 marker 未跟踪；宿主进程组退出后无夹具进程残留。
 - 限制：这是单次私有夹具绿运行；早前的红运行均定位为 runner/提示缺陷（换行比较、比较点、变量名、任务包不足），修复后不计为产品红灯。`drain.inFlightEvidenceRefs` 为空（无在途任务）；外部 writer 核实靠终止宿主进程组 + `/proc` 扫描，不是生产排空；`ct_four` 仍在途且 process safety 未确认；未做 merge/commit/push；S5 仍需另授权任务与完整保全/整合/提交策略。
 
+### 11.2 S5 真实双行为任务与串行整合结果（2026-10-31）
+
+- 环境：与 11.1 相同的 OpenCode 2.2.5 私有 loopback 夹具方法；基线为提交 `a18e2178651cba93d8909495a810313a7baedaa1`（S4 文档提交）。夹含 primary、任务 worktree `wt-a`/`wt-b`、Root 红灯台 `wt-red-a`/`wt-red-b`、新周期 `wt-d`；每宿主独立端口/TMPDIR/XDG/`OPENCODE_DB`/密码；真实 stage1 ledger/worktree 未触碰。slot 前检（audit/status 均退出 0）见 `test/.work/s5-integration/slot.log`，runner 全程经 `slot cpu`。
+- 运行：`test/.work/s5-integration/run-20261031T161026Z/`（被 `.gitignore` 忽略，含宿主私有 DB，不得发布或提交）。
+- 双行为任务对（同基线、文件集互斥、均经真实 Root 工具投递给 engineer 子会话）：
+  - `ct_a-help`（wt-a，scope `src/maintenance-cli.ts`+`test/maintenance-cli.test.ts`）：CLI `help`/`--help` 子命令——stdout 输出 usage、exit 0；无效参数仍 exit 2 `INVALID_INPUT`。
+  - `ct_b-warning`（wt-b，scope `src/tasks-review.ts`+`test/tasks-review.test.ts`）：baseline 非 HEAD 祖先警告加稳定码前缀 `BASELINE_NOT_ANCESTOR:`，并同步既有回归断言。
+- 红绿证据：任务包逐字规定测试内容，Root 侧核对子会话写出的测试文件与其逐字节一致（sha256 相等）。engineer `execute` 全量 deny（S4 私有 DB 复核与本次 child_export 均证实子会话仅用 glob/read/patch），因此红灯由 Root 在基线 scratch worktree 用同一测试文件产生（`s5/red/a.log`：help 断言失败 1 fail；`s5/red/b.log`：`-t` 过滤后 1 fail），绿灯由 Root 在任务 worktree（`s5/green/a.log` 2 pass、`s5/green/b.log` 41 pass 0 fail）及每次整合后的定向+全量 `bun test`（0 fail ×2）产生。
+- 结果 PASS：双任务同基线启动（sessionID 互异）→ `crew_task_status` 观测 → 两次 stop（第二次 registry 字节不变，`stop_unconfirmed`）→ 宿主进程组退出 → window-a（入口关闭、registry digest 稳定、`/proc` 无 writer）→ v1→v2 迁移 → 只读清单（complete）→ 串行整合 A→B（每步：完整成果提取=tracked `git diff HEAD`+untracked 复制、定向+全量 `bun test` 0 fail、`git diff --check`、单任务单提交）→ 夹具整合提交 `159d14f356c828b4a7160ac6f10ca62b68b72c4a`（A）、`e003194ca4a80dd6e5c0534029bc1dc6578f2764`（B）→ window-post → 两任务 `integrated` 结案（`integrationCommit` 进 close 请求与归档；bundle 维持 exact 冻结 schema）→ `open-period` `pd_2`（baseline=提交 2，旧周期 sealed）→ closed 重放返回原 task/session、零新 session、registry 字节不变 → 异 owner 同请求 `IDEMPOTENCY_CONFLICT` 零写入 → 新周期 marker 任务（`THREE\n`）→ stop、window-c、`preserved` 结案。
+- 账本/证据：schemaVersion 2、generation 12、`pd_1` sealed、closed=3（A/B `integrated`、marker `preserved`）、active=0、archives=5、backups=5；三份 closeout 的 bundle/listing/digest 复算一致；两个归档记录的 `integrationCommit` 与夹具提交逐一相等；wt-a/wt-b/wt-d 修改与 marker 字节保全；子会话全程无 execute 调用。
+- 成本：绿运行全程 182.9s——任务投递+子会话完成约 26s/个、整合（含两次全量回归）约 33s、结案与周转约 62s；子会话人工打包成本为主要开销。达成绿运行前共 13 次红运行，全部归因 runner/任务包缺陷（管理目录以 0755 预创建触发产品 0700 严格校验、任务包与宿主 Approach 模板矛盾致子会话按设计返回 BLOCKED、porcelain 前导空格解析、`git diff` 尾换行被 strip 致 corrupt patch、bundle 塞入非 schema 的 `integration` 键、新周期 baseline 在 runner 中写死为初始 OID、任务文本含 `THREE\n` 逃逸字符诱发 Root 模型转写偏差），无一计为产品红灯。
+- 发现与限制：① engineer 无 execute 是当前机器闭环的主要缺口——子会话内无法运行测试，红绿只能由 Root 代跑，测试内容必须逐字规定并字节核对；② patch 工具对 tracked 修改自动暂存（观测为 `M `），验收断言需按 porcelain XY 位归一化；③ evidence bundle 为 exact 冻结 schema，整合事实只进 close 请求与归档层（符合 S0 契约设计）；④ 长 JSON 经 Root 模型转写存在保真度抖动，replay/冲突调用的正确性由工具侧 requestDigest/冲突逻辑保障，runner 对这两类调用放宽回显断言；⑤ 夹具整合提交未移植回真实仓库，移植需另行授权；未做 merge/commit/push；⑥ process safety 仍未确认，本报告继续区分「结案释放容量」与「进程安全」。
+- 定向测试命令（新增文件落地后记录）：`bun test test/maintenance-cli.test.ts`、`bun test test/tasks-review.test.ts`。
+
 ## 12. 本文交付检查与未决项
 
 本轮仅核对事实并新建本文；没有运行行为测试、构建、服务或模型。架构角色无 shell 权限，未自行执行 Git。独立 reviewer 只读核对草案、阶段 1 契约及实际源码，未发现阻塞文档交付的实质问题；该审查不是实现验证。Root 在暂存本文后执行 `git diff --cached --check` 检查全文空白，并确认仅预期文档进入本次提交；真实提交与推送结果以 Git 记录和最终回执为准。纯文档无行为红绿灯要求，后续实现仍须遵守第 10 节门禁。
 
-原关键未决项 D1–D6 已于 2026-10-31 由用户全部采纳建议并记录，S0 的决策部分（S0-D）判定通过；字段级冻结（RegistryV2、closeout、离线 plan/apply、证据结构、清单输出、错误码）见 [S0 契约](worktree-stage2-s0-contract.md)。S1 只读清单、S2 v2 与显式迁移、S3 离线 plan/apply 已实现，S3 本地红绿门禁与全量回归通过；`integrated` 所需的 `integrationCommit` 来源已在 S0 契约中按实现评审结果显式补齐。S4 私有 2.2.5 最小周转已于 2026-10-31 通过（见 11.1），取得关闭/排空/停止/保全证据并完成迁移、结案、重放、异 owner 冲突、新周期与新任务；S5 另授权整合仍未开始。当前未迁移真实 ledger、未释放真实名额、未触碰真实 worktree，也不宣称进程安全或生产可用。
+原关键未决项 D1–D6 已于 2026-10-31 由用户全部采纳建议并记录，S0 的决策部分（S0-D）判定通过；字段级冻结（RegistryV2、closeout、离线 plan/apply、证据结构、清单输出、错误码）见 [S0 契约](worktree-stage2-s0-contract.md)。S1 只读清单、S2 v2 与显式迁移、S3 离线 plan/apply 已实现，S3 本地红绿门禁与全量回归通过；`integrated` 所需的 `integrationCommit` 来源已在 S0 契约中按实现评审结果显式补齐。S4 私有 2.2.5 最小周转已于 2026-10-31 通过（见 11.1）。S5 真实双行为任务与串行整合已于 2026-10-31 通过（见 11.2）：同基线两任务、Root 代跑红绿、串行整合出夹具提交、integrated 结案、新周期周转与重放/冲突回归；夹具整合提交未移植真实仓库。当前未迁移真实 ledger、未释放真实名额、未触碰真实 worktree，也不宣称进程安全或生产可用。
