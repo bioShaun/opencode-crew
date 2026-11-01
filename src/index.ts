@@ -15,9 +15,25 @@ function fail(message: string): never { throw new Error(`[opencode-crew] ${messa
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
+function instructions(value: unknown): string[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) fail("options.engineerInstructions 必须是字符串数组")
+  if (value.length > 32) fail("options.engineerInstructions 最多 32 项")
+  let total = 0
+  const out = value.map((item, index) => {
+    if (typeof item !== "string") fail(`options.engineerInstructions[${index}] 必须为字符串`)
+    const text = item.trim()
+    if (!text) fail(`options.engineerInstructions[${index}] 不能为空`)
+    if (text.length > 2000) fail(`options.engineerInstructions[${index}] 最多 2000 字符`)
+    total += text.length
+    return text
+  })
+  if (total > 8000) fail("options.engineerInstructions 总长度最多 8000 字符")
+  return out
+}
 function options(input: unknown) {
   if (!object(input)) fail("options 必须是对象")
-  for (const key of Object.keys(input)) if (!["models", "steps"].includes(key)) fail(`未知 options.${key}`)
+  for (const key of Object.keys(input)) if (!["models", "steps", "engineerInstructions"].includes(key)) fail(`未知 options.${key}`)
   const models: Partial<Record<RoleID, ModelRef>> = {}, steps: Partial<Record<RoleID, number>> = {}
   for (const field of ["models", "steps"] as const) {
     const map = input[field] ?? {}
@@ -36,7 +52,7 @@ function options(input: unknown) {
       }
     }
   }
-  return { models, steps }
+  return { models, steps, engineerInstructions: instructions(input.engineerInstructions) }
 }
 
 type LoadedRole = Role & { appendices: RoleAppendices }
@@ -67,7 +83,7 @@ export default Plugin.define({
         agent.name = id
         agent.description = role.description
         agent.mode = role.mode
-        agent.system = composeRoleSystem(role.system, role.appendices, config.models[id])
+        agent.system = composeRoleSystem(role.system, role.appendices, config.models[id], id === "engineer" ? config.engineerInstructions : undefined)
         agent.steps = config.steps[id] ?? role.steps
         agent.model = config.models[id]
         // An empty Root policy adds no rules; retain the host's existing permissions.

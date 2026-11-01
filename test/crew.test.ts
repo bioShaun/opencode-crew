@@ -48,7 +48,7 @@ test("registers Crew and five distinct Markdown-backed roles", async () => {
 test("GPT model injects GPT principle appendix into role system", async () => {
   const f = fixture({ models: { root: "openai/gpt-4o#high", engineer: "openai/gpt-4.1", explorer: "anthropic/claude-sonnet-4" } })
   await (await plugin()).setup(f.ctx)
-  expect(f.agents.get("root").system).toContain("Thin Root")
+  expect(f.agents.get("root").system).toContain("重活委派，轻活自己做")
   expect(f.agents.get("root").system).toContain("<principles>")
   expect(f.agents.get("engineer").system).toContain("Report: <status>")
   // explorer configured as Claude: Claude appendix only, no GPT XML tags.
@@ -61,7 +61,7 @@ test("Root can edit, execute and delegate; native policy permits direct verified
   const a = f.agents.get("root"); expect(a).toBeDefined()
   expect(a.mode).toBe("primary")
   for (const tool of ["edit", "shell", "execute", "subagent"]) expect(effect(a, tool)).not.toBe("deny")
-  expect(a.system).toContain("可直接完成修改与验证")
+  expect(a.system).toContain("不是只能做规划的代理")
   expect(a.system).toContain("一次委派")
 })
 test("Root preserves host rules including asks and denies without adding an allow", async () => {

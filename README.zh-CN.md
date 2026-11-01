@@ -53,7 +53,11 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
           "explorer": "provider/fast-model",
           "reviewer": "provider/review-model#high"
         },
-        "steps": { "engineer": 80, "reviewer": 30 }
+        "steps": { "engineer": 80, "reviewer": 30 },
+        "engineerInstructions": [
+          "临时和中间文件放在项目内，禁止使用 /tmp；子进程同样遵守。",
+          "重活先执行项目的资源预检，再按项目规定通过调度器提交。"
+        ]
       }
     }
   ],
@@ -62,6 +66,8 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 ```
 
 以上是待替换的占位模型，provider、凭证和模型可用性由目标机配置提供，包内不包含密钥或具体模型默认值。`models` 可省略部分角色；省略表示遵循 OpenCode 原生模型继承规则，不是字符串 `inherit`。子代理继承父会话模型；主会话保持其已选模型。`/crew` 会显式选择已配置的 Root 模型，未配置则保留当前会话模型。
+
+`engineerInstructions` 是可选配置。非空数组会作为 `## 项目补充规则` 小节追加一次到 **engineer 角色 system**，位于共享正文和适用的模型族附录之后。它刻意不注入 `crew_task_start` 任务包，因此原生 engineer 会话与 worktree engineer 获得同一组项目规则，且不会重复出现。默认值为 `[]`：未配置时，engineer system 和任务包都不出现 `slot`，也不包含“禁止使用 `/tmp`”。值必须是去除首尾空白后非空的字符串（最多 32 项，每项最多 2000 字符，总计最多 8000 字符）。插件只把配置文本当作受信任的项目提示：不解析、不执行其中的命令，不授予权限，也不安装依赖。配置者必须确保所称工具和权限在目标环境真实存在。特别是当前 engineer 角色默认 deny `execute`，仅配置 slot 文案不会赋予执行能力。
 
 不要覆盖现有完整配置，保留 provider 和其他插件。不要再在 `agents` 配置或自动发现的 `agents/*.md` 中定义 Crew 的五个同名角色，否则宿主的合并规则可能覆盖模型/提示词或追加权限。旧 planner-only 用户先备份并移出旧角色文件，再删除其配置块，不能同时启用两个编排包。
 
@@ -78,7 +84,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 - `/crew`：切换到 Root 和已配置的 Root 模型，不发送空模型请求。
 - `/crew <任务>`：切换并提交任务；保留附件、技能和投递方式。
 - `default_agent: root` 用于未选角色的新会话，不强行改变已有会话；已有会话使用 `/crew`。
-- 模型/步数在插件 options 修改，按 OpenCode 配置热加载机制生效，无需重启服务。
+- 模型/步数/engineerInstructions 在插件 options 修改，按 OpenCode 配置热加载机制生效，无需重启服务。热更新只作用于后续新建会话；不要为应用新提示而中断正在运行的 engineer。
 
 ### 显式 worktree 任务
 
@@ -95,7 +101,9 @@ git -C ../crew-task rev-parse HEAD
 # directory 使用 ../crew-task 的绝对路径，baseline 使用 $baseline。
 ```
 
-最多保留两个未结案写任务预留；没有 release 或 cleanup 接口，idle、error 和 stop 都不释放。ledger 位于 `<git-common-dir>/opencode-crew-stage1`；崩溃遗留锁不会自动抢占，不应把手删 ledger 当正常操作。同 key、owner 和输入重放只返回原记录，不重投、不续跑；受管 retry 关闭不等于自动 resume。stop 最多请求一次中断，不能确保进程树停止，进程安全始终为 `unconfirmed`。worktree 和 scope 均不是 OS 沙箱；人工整合前须审查实际差异并独立确认安全，无法确认时保留现场及预留。
+最多保留两个未结案写任务预留；没有 release 或 cleanup 接口，idle、error 和 stop 都不释放。ledger 位于 `<git-common-dir>/opencode-crew-stage1`；崩溃遗留锁不会自动抢占，不应把手删 ledger 当正常操作。同 key、owner 和输入重放只返回原记录，不重投、不续跑，包括原记录已结案的情况。retry 是新的 Assignment，必须使用新 key；已结案的旧 key 不会重新投递。受管 retry 关闭不等于自动 resume。stop 最多请求一次中断，不能确保进程树停止，进程安全始终为 `unconfirmed`。worktree 和 scope 均不是 OS 沙箱；人工整合前须审查实际差异并独立确认安全，无法确认时保留现场及预留。结案后需要释放容量时，使用下文离线 `plan`/`apply` 维护流程；不得删除 registry 或锁。
+
+普通工具拒绝返回稳定的 `error.code`、简短 `message` 和可执行的 `nextAction`；比较失败时还提供脱敏的 `details`。按该动作处理，不要盲目重试。`stop` 不会释放预留。完整调用契约见各工具 description。
 
 ### Registry v2 与离线维护（阶段 2 S1–S3）
 

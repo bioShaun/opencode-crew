@@ -2,8 +2,10 @@ import { lstatSync, realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve, sep } from "node:path"
 import { spawnSync } from "node:child_process"
 
+export type BaselineMismatchReason = "invalid_oid" | "unknown_commit" | "primary_head" | "worktree_head" | "ledger_baseline"
+
 export class TaskRegistryError extends Error {
-  constructor(readonly code: TaskRegistryErrorCode = "INVALID_SCOPE") { super(`Task registry: ${code}`); this.name = "TaskRegistryError" }
+  constructor(readonly code: TaskRegistryErrorCode = "INVALID_SCOPE", readonly details?: Record<string, unknown>) { super(`Task registry: ${code}`); this.name = "TaskRegistryError" }
 }
 
 /** Validate scope syntax without consulting the mutable worktree. */
@@ -107,9 +109,21 @@ export function validateWorktree(primaryDirectory: string, directory: string, ba
   if (!entry || entry.bare || !entry.detached || common(target) !== project.commonDir || canonical(git(target, ["rev-parse", "--show-toplevel"]).trimEnd()) !== target) return fail("PROJECT_MISMATCH")
   const format = git(project.primaryDirectory, ["rev-parse", "--show-object-format"]).trim()
   const length = format === "sha1" ? 40 : format === "sha256" ? 64 : 0
-  if (typeof baseline !== "string" || !length || !new RegExp(`^[0-9a-f]{${length}}$`).test(baseline)) return fail("BASELINE_MISMATCH")
-  const commit = git(project.primaryDirectory, ["rev-parse", "--verify", `${baseline}^{commit}`], "BASELINE_MISMATCH").trim()
-  if (commit !== baseline || git(project.primaryDirectory, ["rev-parse", "HEAD"]).trim() !== baseline || git(target, ["rev-parse", "HEAD"]).trim() !== baseline) return fail("BASELINE_MISMATCH")
+  const oidLike = (value: unknown): value is string => typeof value === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value)
+  const mismatch = (reason: BaselineMismatchReason, details: Record<string, unknown> = {}): never => {
+    throw new TaskRegistryError("BASELINE_MISMATCH", { ...details, reason })
+  }
+  if (typeof baseline !== "string" || !length || !new RegExp(`^[0-9a-f]{${length}}$`).test(baseline)) {
+    return mismatch("invalid_oid", oidLike(baseline) ? { baseline } : {})
+  }
+  let commit: string
+  try { commit = git(project.primaryDirectory, ["rev-parse", "--verify", `${baseline}^{commit}`], "BASELINE_MISMATCH").trim() }
+  catch { return mismatch("unknown_commit", { baseline }) }
+  if (commit !== baseline) return mismatch("unknown_commit", { baseline })
+  const primaryHead = git(project.primaryDirectory, ["rev-parse", "HEAD"]).trim()
+  if (primaryHead !== baseline) return mismatch("primary_head", { baseline, primaryHead })
+  const worktreeHead = git(target, ["rev-parse", "HEAD"]).trim()
+  if (worktreeHead !== baseline) return mismatch("worktree_head", { baseline, worktreeHead })
   if (git(project.primaryDirectory, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], "HOST_ERROR") !== "") return fail("DIRTY_PRIMARY")
   if (git(target, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], "HOST_ERROR") !== "") return fail("DIRTY_WORKTREE")
   return { ...project, directory: target, baseline, scope: normalizeScope(target, scope) }

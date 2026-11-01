@@ -69,8 +69,15 @@ export function selectRoleAppendix(appendices: RoleAppendices, model?: ModelRefL
   return ''
 }
 
-/** Compose system prompt: shared base + optional matching appendix. */
-export function composeRoleSystem(base: string, appendices: RoleAppendices, model?: ModelRefLike): string {
+/** Compose the optional project-instruction section appended after role appendices. */
+export function composeProjectInstructions(instructions?: readonly string[]): string {
+  if (!instructions || instructions.length === 0) return ''
+  return `## 项目补充规则\n\n${instructions.map(item => `- ${item}`).join('\n')}`
+}
+
+/** Compose system prompt: shared base + optional matching appendix + optional project section. */
+export function composeRoleSystem(base: string, appendices: RoleAppendices, model?: ModelRefLike, instructions?: readonly string[]): string {
   const appendix = selectRoleAppendix(appendices, model)
-  return appendix ? `${base}\n\n${appendix}` : base
+  const project = composeProjectInstructions(instructions)
+  return [base, appendix, project].filter(Boolean).join('\n\n')
 }

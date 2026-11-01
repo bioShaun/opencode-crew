@@ -14,7 +14,7 @@
 要点：
 
 - ledger 里 task 记录可存活，但 **「会话还活着」≠「授权还有效」**。Root 会话死亡、换 owner、或非原 `ownerSessionID` 调用 `status`/`stop`，不能当作同一授权继续操作。
-- **retry** = 新 Assignment：新的 `crew_task_start`（新 `key`，或 stage2 结案后再派），意图上可复用同 worktree / 同 scope。
+- **retry** = 新 Assignment：新的 `crew_task_start` 必须使用新 `key`；即使原任务已 closed，旧 key 仍只会重放历史记录。意图上可复用同 worktree / 同 scope。
 - **同 key + 同 digest 重放** ≠ retry：是幂等重放，不再创建会话、不再 prompt。
 
 ## 2. 结构化 Report（六态）
@@ -51,7 +51,7 @@ Root **只认 `ready` + 证据**；`waiting`/`progress` 不得冒充完成。
 文档与 Root 提示约定（**不**假装实现新调度器）：
 
 - 排队或容量紧张时，优先保留 **用户打断** 与 Root 的 `crew_task_status` / `crew_task_stop` 容量，而不是再塞满写任务。
-- 修改 models / steps 的配置热更 **不得** 砍正在跑的 engineer；热更作用于后续会话/新 Assignment。
+- 修改 models / steps / engineerInstructions 的配置热更 **不得** 砍正在跑的 engineer；热更作用于后续会话/新 Assignment。
 - stop 仍是「最多一次 interrupt、进程安全未确认」；人唤醒优先不等于自动杀树。
 
 ## 5. Root 要薄

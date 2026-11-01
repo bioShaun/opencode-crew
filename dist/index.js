@@ -7007,9 +7007,11 @@ import { spawnSync } from "child_process";
 
 class TaskRegistryError extends Error {
   code;
-  constructor(code = "INVALID_SCOPE") {
+  details;
+  constructor(code = "INVALID_SCOPE", details) {
     super(`Task registry: ${code}`);
     this.code = code;
+    this.details = details;
     this.name = "TaskRegistryError";
   }
 }
@@ -7147,11 +7149,27 @@ function validateWorktree(primaryDirectory, directory, baseline, scope) {
     return fail("PROJECT_MISMATCH");
   const format = git(project.primaryDirectory, ["rev-parse", "--show-object-format"]).trim();
   const length = format === "sha1" ? 40 : format === "sha256" ? 64 : 0;
-  if (typeof baseline !== "string" || !length || !new RegExp(`^[0-9a-f]{${length}}$`).test(baseline))
-    return fail("BASELINE_MISMATCH");
-  const commit = git(project.primaryDirectory, ["rev-parse", "--verify", `${baseline}^{commit}`], "BASELINE_MISMATCH").trim();
-  if (commit !== baseline || git(project.primaryDirectory, ["rev-parse", "HEAD"]).trim() !== baseline || git(target, ["rev-parse", "HEAD"]).trim() !== baseline)
-    return fail("BASELINE_MISMATCH");
+  const oidLike = (value) => typeof value === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value);
+  const mismatch = (reason, details = {}) => {
+    throw new TaskRegistryError("BASELINE_MISMATCH", { ...details, reason });
+  };
+  if (typeof baseline !== "string" || !length || !new RegExp(`^[0-9a-f]{${length}}$`).test(baseline)) {
+    return mismatch("invalid_oid", oidLike(baseline) ? { baseline } : {});
+  }
+  let commit;
+  try {
+    commit = git(project.primaryDirectory, ["rev-parse", "--verify", `${baseline}^{commit}`], "BASELINE_MISMATCH").trim();
+  } catch {
+    return mismatch("unknown_commit", { baseline });
+  }
+  if (commit !== baseline)
+    return mismatch("unknown_commit", { baseline });
+  const primaryHead = git(project.primaryDirectory, ["rev-parse", "HEAD"]).trim();
+  if (primaryHead !== baseline)
+    return mismatch("primary_head", { baseline, primaryHead });
+  const worktreeHead = git(target, ["rev-parse", "HEAD"]).trim();
+  if (worktreeHead !== baseline)
+    return mismatch("worktree_head", { baseline, worktreeHead });
   if (git(project.primaryDirectory, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], "HOST_ERROR") !== "")
     return fail("DIRTY_PRIMARY");
   if (git(target, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], "HOST_ERROR") !== "")
@@ -7569,7 +7587,7 @@ class Ledger {
         return fail2("INVALID_INPUT");
       const baseline = registry ? registry.schemaVersion === 1 ? registry.baseline : registry.periods.find((period) => period.periodID === registry.currentPeriodID).baseline : undefined;
       if (baseline !== undefined && baseline !== input.baseline)
-        return fail2("BASELINE_MISMATCH");
+        throw new TaskRegistryError("BASELINE_MISMATCH", { baseline: input.baseline, ledgerBaseline: baseline, reason: "ledger_baseline" });
       if (records.some((task) => task.input.directory === input.directory))
         return fail2("WRITER_RESERVED");
       const activeCount = registry === undefined ? 0 : registry.schemaVersion === 1 ? registry.tasks.length : registry.active.length;
@@ -7699,11 +7717,20 @@ function selectRoleAppendix(appendices, model) {
     return appendices.claude ?? "";
   return "";
 }
-function composeRoleSystem(base, appendices, model) {
-  const appendix = selectRoleAppendix(appendices, model);
-  return appendix ? `${base}
+function composeProjectInstructions(instructions) {
+  if (!instructions || instructions.length === 0)
+    return "";
+  return `## \u9879\u76EE\u8865\u5145\u89C4\u5219
 
-${appendix}` : base;
+${instructions.map((item) => `- ${item}`).join(`
+`)}`;
+}
+function composeRoleSystem(base, appendices, model, instructions) {
+  const appendix = selectRoleAppendix(appendices, model);
+  const project = composeProjectInstructions(instructions);
+  return [base, appendix, project].filter(Boolean).join(`
+
+`);
 }
 
 // src/report-status.ts
@@ -7717,9 +7744,81 @@ var REPORT_STATUS_PROMPT_HINT = [
 // src/tasks.ts
 var marker = "opencode-crew-stage1";
 var object2 = (x) => !!x && typeof x === "object" && !Array.isArray(x);
-var response = (output) => ({ output, content: output.ok ? "\u4EFB\u52A1\u8BB0\u5F55\u5DF2\u5904\u7406\uFF1B\u8FDB\u7A0B\u5B89\u5168\u672A\u786E\u8BA4\u3002" : "\u4EFB\u52A1\u64CD\u4F5C\u672A\u5B8C\u6210\u3002" });
-var failure = (code) => response({ ok: false, error: { code, message: "\u4EFB\u52A1\u64CD\u4F5C\u672A\u5B8C\u6210\uFF0C\u8BF7\u68C0\u67E5\u72B6\u6001\u5E76\u4EBA\u5DE5\u8C03\u67E5\u3002" }, warnings: [] });
+var ERROR_INFO = {
+  CAPACITY_RESERVED: {
+    message: "\u5DF2\u6709 2 \u4E2A\u672A\u7ED3\u6848\u5199\u5165\u9884\u7559\uFF0C\u672C\u6B21\u672A\u521B\u5EFA\u4F1A\u8BDD\u3002",
+    nextAction: "\u505C\u6B62\u7EE7\u7EED\u6D3E\u53D1\uFF1B\u9700\u8981\u91CA\u653E\u5BB9\u91CF\u65F6\uFF0C\u6309\u73B0\u6709\u7EF4\u62A4\u5951\u7EA6\u6267\u884C\u79BB\u7EBF close \u7684 plan/apply\u3002\u4E0D\u5F97\u5220\u9664 registry \u6216\u9501\uFF0C\u4E5F\u4E0D\u8981\u628A stop \u5F53\u4F5C\u91CA\u653E\u3002"
+  },
+  IDEMPOTENCY_CONFLICT: {
+    message: "key \u5DF2\u88AB\u4E0D\u540C\u8F93\u5165\u6216\u5176\u4ED6 Root \u4F7F\u7528\u3002",
+    nextAction: "\u4E0D\u8981\u539F\u6837\u91CD\u8BD5\u3002\u82E5\u786E\u4E3A\u65B0 Assignment\uFF0C\u4F7F\u7528\u65B0 key\uFF0C\u5E76\u5148\u6392\u9664\u65E7\u4EFB\u52A1\u4ECD\u6709\u672A\u786E\u8BA4\u7684\u526F\u4F5C\u7528\u3002"
+  },
+  WRITER_RESERVED: {
+    message: "directory \u5DF2\u88AB\u5386\u53F2\u4EFB\u52A1\u5360\u7528\uFF08\u5305\u62EC\u5DF2\u7ED3\u6848\u4EFB\u52A1\uFF09\u3002",
+    nextAction: "\u9009\u62E9\u65B0\u7684\u89C4\u8303 worktree\uFF1B\u4E0D\u8981\u590D\u7528\u3001\u6539\u540D\u7ED5\u8FC7\u6216\u5220\u9664\u5386\u53F2\u3002"
+  },
+  DIRTY_PRIMARY: {
+    message: "\u4E3B worktree \u4E0D\u5E72\u51C0\uFF0C\u672A\u521B\u5EFA\u4F1A\u8BDD\u3002",
+    nextAction: "\u4E0D\u8981\u81EA\u884C clean/reset\uFF1B\u5148\u7531\u7528\u6237\u5904\u7406\u6216\u660E\u786E\u4FDD\u7559\u73B0\u6709\u4FEE\u6539\u3002"
+  },
+  DIRTY_WORKTREE: {
+    message: "\u76EE\u6807 worktree \u4E0D\u5E72\u51C0\uFF0C\u672A\u521B\u5EFA\u4F1A\u8BDD\u3002",
+    nextAction: "\u4E0D\u8981\u81EA\u884C\u6E05\u7406\u6210\u679C\uFF1B\u6362\u5E72\u51C0\u76EE\u6807\u6216\u7531\u7528\u6237\u5904\u7406\u3002"
+  },
+  BASELINE_MISMATCH: {
+    message: "baseline \u6821\u9A8C\u672A\u901A\u8FC7\uFF0C\u672A\u521B\u5EFA\u4F1A\u8BDD\u3002",
+    nextAction: "\u4E0D\u8981\u542F\u52A8\uFF1B\u6309 details \u6838\u5BF9 baseline\u3001\u4E3B HEAD\u3001\u76EE\u6807 HEAD \u6216\u5F53\u524D period baseline\uFF0C\u51C6\u5907\u4E00\u81F4\u7684\u65B0\u76EE\u6807\u3002\u4E0D\u5F97\u7F29\u5199 OID \u6216\u81EA\u52A8 checkout\u3002"
+  },
+  PROJECT_MISMATCH: {
+    message: "\u9879\u76EE\u6216 worktree \u8EAB\u4EFD\u6821\u9A8C\u672A\u901A\u8FC7\u3002",
+    nextAction: "\u6838\u5BF9\u8C03\u7528 cwd\u3001Root \u8EAB\u4EFD\u53CA\u76EE\u6807\u662F\u5426\u4E3A\u540C\u4ED3\u5E93\u7684\u72EC\u7ACB registered detached worktree\uFF1B\u4E0D\u8981\u539F\u6837\u91CD\u8BD5\u3002"
+  },
+  INVALID_SCOPE: {
+    message: "scope \u4E0D\u5408\u6CD5\u3002",
+    nextAction: "\u4FEE\u6B63 scope\uFF1A\u4F7F\u7528\u7CBE\u786E\u76F8\u5BF9\u6587\u4EF6\u8DEF\u5F84\u6216\u4EE5 / \u7ED3\u5C3E\u7684\u76EE\u5F55\u524D\u7F00\uFF0C\u4E0D\u7528 glob\u3001\u7EDD\u5BF9\u8DEF\u5F84\u3001..\u3001symlink \u9003\u9038\u6216\u7981\u6B62\u8DEF\u5F84\uFF1B\u4E0D\u5F97\u81EA\u884C\u6269\u5927 Scope\u3002"
+  },
+  INVALID_INPUT: {
+    message: "\u53C2\u6570\u4E0D\u5408\u6CD5\u3002",
+    nextAction: "\u6309\u5DE5\u5177 schema \u4FEE\u6B63\u53C2\u6570\uFF1B\u4E0D\u8981\u52A0\u5165\u672A\u5B9A\u4E49\u5B57\u6BB5\u3002"
+  },
+  FORBIDDEN_CALLER: {
+    message: "\u5F53\u524D\u8C03\u7528\u65B9\u4E0D\u662F Root\uFF0C\u672A\u6267\u884C\u4EFB\u4F55\u64CD\u4F5C\u3002",
+    nextAction: "\u53EA\u80FD\u7531 Root \u8C03\u7528\uFF1B\u5F53\u524D\u8C03\u7528\u65B9\u4E0D\u8981\u91CD\u8BD5\u3002"
+  },
+  TASK_NOT_FOUND: {
+    message: "\u4EFB\u52A1\u4E0D\u5B58\u5728\u6216\u4E0D\u5C5E\u4E8E\u5F53\u524D Root\u3002",
+    nextAction: "\u4E0D\u8981\u91CD\u8BD5\uFF0C\u4E5F\u4E0D\u8981\u5C1D\u8BD5\u64CD\u4F5C\u5176\u4ED6 Root \u7684\u4EFB\u52A1\u3002"
+  },
+  SESSION_MISMATCH: {
+    message: "\u4F1A\u8BDD\u8EAB\u4EFD\u4E0D\u5339\u914D\uFF0C\u542F\u52A8\u7ED3\u679C\u672A\u786E\u8BA4\u3002",
+    nextAction: "\u4FDD\u7559\u9884\u7559\u4E0E\u73B0\u573A\uFF0C\u7528 status \u83B7\u53D6\u8BB0\u5F55\u5E76\u4EBA\u5DE5\u8C03\u67E5\uFF1B\u4E0D\u8981\u6362 key \u91CD\u6D3E\uFF0C\u4E0D\u8981\u58F0\u79F0\u672A\u521B\u5EFA\u4F1A\u8BDD\u6216\u6CA1\u6709 orphan\u3002"
+  },
+  START_UNCONFIRMED: {
+    message: "\u542F\u52A8\u7ED3\u679C\u672A\u786E\u8BA4\u3002",
+    nextAction: "\u4FDD\u7559\u9884\u7559\u4E0E\u73B0\u573A\uFF0C\u7528 status \u83B7\u53D6\u8BB0\u5F55\u5E76\u4EBA\u5DE5\u8C03\u67E5\uFF1B\u4E0D\u8981\u6362 key \u91CD\u6D3E\uFF0C\u4E0D\u8981\u58F0\u79F0\u672A\u521B\u5EFA\u4F1A\u8BDD\u6216\u6CA1\u6709 orphan\u3002"
+  },
+  REGISTRY_LOCKED: {
+    message: "registry \u88AB\u9501\uFF0C\u5199\u64CD\u4F5C\u672A\u6267\u884C\u3002",
+    nextAction: "\u505C\u6B62\u5199\u64CD\u4F5C\u5E76\u4EBA\u5DE5\u8C03\u67E5\uFF1B\u4E0D\u5F97\u5220\u9501\u3001\u5220\u5E93\u6216\u81EA\u52A8\u62A2\u5360\u3002"
+  },
+  REGISTRY_INVALID: {
+    message: "registry \u5185\u5BB9\u6216\u72B6\u6001\u65E0\u6548\uFF0C\u64CD\u4F5C\u672A\u6267\u884C\u3002",
+    nextAction: "\u505C\u6B62\u5199\u64CD\u4F5C\u5E76\u4EBA\u5DE5\u8C03\u67E5\uFF1B\u4E0D\u5F97\u5220\u9501\u3001\u5220\u5E93\u6216\u81EA\u52A8\u62A2\u5360\u3002"
+  },
+  HOST_ERROR: {
+    message: "\u5BBF\u4E3B\u8C03\u7528\u6216\u5185\u90E8\u6821\u9A8C\u5931\u8D25\u3002",
+    nextAction: "\u4FDD\u7559\u73B0\u573A\u5E76\u4EBA\u5DE5\u8C03\u67E5\uFF1B\u4E0D\u8981\u5047\u5B9A\u5931\u8D25\u6CA1\u6709\u526F\u4F5C\u7528\uFF0C\u4E0D\u8981\u81EA\u52A8\u91CD\u6D3E\u3002"
+  }
+};
+var errorInfo = (code) => ERROR_INFO[code] ?? { message: `\u4EFB\u52A1\u64CD\u4F5C\u672A\u5B8C\u6210\uFF08${code}\uFF09\u3002`, nextAction: "\u505C\u6B62\u91CD\u8BD5\u5E76\u4EBA\u5DE5\u8C03\u67E5\uFF1B\u4FDD\u7559\u73B0\u6709\u9884\u7559\u4E0E\u73B0\u573A\u3002" };
+var errorPayload = (code, details) => {
+  const info = errorInfo(code);
+  return { code, message: info.message, nextAction: info.nextAction, ...details && Object.keys(details).length ? { details } : {} };
+};
+var response = (output) => ({ output, content: output.ok ? "\u4EFB\u52A1\u8BB0\u5F55\u5DF2\u5904\u7406\uFF1B\u8FDB\u7A0B\u5B89\u5168\u672A\u786E\u8BA4\u3002" : `${output.error.message} \u4E0B\u4E00\u6B65\uFF1A${output.error.nextAction}` });
+var failure = (code, details) => response({ ok: false, error: errorPayload(code, details), warnings: [] });
 var errorCode = (e) => e instanceof TaskRegistryError ? e.code : "HOST_ERROR";
+var failureFrom = (e) => e instanceof TaskRegistryError ? failure(e.code, e.details) : failure("HOST_ERROR");
 var taskView = (t, observed, meta) => ({ taskID: t.taskID, directory: t.input.directory, baseline: t.input.baseline, scope: t.input.scope, ...meta ? { lifecycle: meta.lifecycle, ...meta.periodID ? { periodID: meta.periodID } : {}, ...meta.lifecycle === "closed" && meta.closeout ? { closeout: { closedAt: meta.closeout.closedAt, disposition: meta.closeout.disposition } } : {} } : {}, state: t.state, ...t.sessionID ? { sessionID: t.sessionID } : {}, ...t.lastErrorCode ? { lastErrorCode: t.lastErrorCode } : {}, ...t.interruptResult ? { interruptResult: t.interruptResult } : {}, ...observed ? { observed } : {}, processSafety: "unconfirmed", canCleanup: false, canIntegrate: false, nextAction: "\u4FDD\u7559\u9884\u7559\uFF0C\u4EBA\u5DE5\u6838\u5B9E\u4EFB\u52A1\u4E0E\u8FDB\u7A0B\u72B6\u6001\u3002", createdAt: t.createdAt, updatedAt: t.updatedAt });
 var projectHash = (commonDir) => createHash2("sha256").update(commonDir).digest("hex");
 var metadata = (t, commonDir) => ({ namespace: marker, taskID: t.taskID, requestDigest: t.requestDigest, ownerSessionID: t.ownerSessionID, project: projectHash(commonDir) });
@@ -7785,7 +7884,7 @@ async function registerTasks(ctx, configuredModel) {
           throw e;
       }
     } catch (e) {
-      return failure(errorCode(e));
+      return failureFrom(e);
     }
     const id = await identity(tc);
     if ("error" in id)
@@ -7805,7 +7904,7 @@ async function registerTasks(ctx, configuredModel) {
       if (reservation.replayed)
         return response({ ok: true, task: taskView(task, undefined, { lifecycle: reservation.lifecycle, periodID: reservation.periodID, closeout: reservation.closeout }), warnings: ["\u91CD\u653E\u4E0D\u4F1A\u91CD\u65B0\u6295\u9012\u3002"] });
     } catch (e) {
-      return failure(errorCode(e));
+      return failureFrom(e);
     }
     try {
       task = ledger.transition(tc.sessionID, task.taskID, "reserved", "session_create_requested");
@@ -7816,7 +7915,7 @@ async function registerTasks(ctx, configuredModel) {
         try {
           task = ledger.transition(tc.sessionID, task.taskID, "session_bound", "start_unconfirmed", { lastErrorCode: "SESSION_MISMATCH" });
         } catch {}
-        return response({ ok: false, task: taskView(task, undefined, { lifecycle: "active", periodID }), error: { code: "SESSION_MISMATCH", message: "\u4F1A\u8BDD\u8EAB\u4EFD\u4E0D\u5339\u914D\u3002" }, warnings: [] });
+        return response({ ok: false, task: taskView(task, undefined, { lifecycle: "active", periodID }), error: errorPayload("SESSION_MISMATCH"), warnings: [] });
       }
       validateWorktree(project.primaryDirectory, input.directory, input.baseline, input.scope);
       task = ledger.transition(tc.sessionID, task.taskID, "session_bound", "prompt_requested");
@@ -7826,7 +7925,7 @@ ${input.goal}
 Scope:
 ${input.scope.join(`
 `)}
-Decided: bind-only\uFF0Cscope \u4E0D\u662F\u6C99\u7BB1\u3002cwd: ${input.directory}; baseline: ${input.baseline}; key: ${input.key}\u3002\u7981\u6B62 commit\u3001push\u3001merge\u3001\u540E\u53F0\u8FDB\u7A0B\u3001\u8131\u79BB\u8FDB\u7A0B\u7EC4\u3001\u670D\u52A1\u548C\u8303\u56F4\u5916\u5199\u5165\u3002\u7981\u6B62\u4F7F\u7528 /tmp\u3002\u91CD\u6D3B\u5148 slot audit/status \u7559\u65E5\u5FD7\u5E76\u7ECF slot \u63D0\u4EA4\u3002
+Decided: bind-only\uFF0Cscope \u4E0D\u662F\u6C99\u7BB1\u3002cwd: ${input.directory}; baseline: ${input.baseline}; key: ${input.key}\u3002\u7981\u6B62 commit\u3001push\u3001merge\u3001\u540E\u53F0\u8FDB\u7A0B\u3001\u8131\u79BB\u8FDB\u7A0B\u7EC4\u3001\u670D\u52A1\u548C\u8303\u56F4\u5916\u5199\u5165\u3002
 Approach: \u884C\u4E3A\u53D8\u66F4\u5148\u4EC5\u5199\u6D4B\u8BD5\u5E76\u8FD0\u884C\u7EA2\u706F\uFF0C\u518D\u5B9E\u73B0\u5E76\u8FD0\u884C\u7EFF\u706F\uFF1B\u4FDD\u7559\u8BC1\u636E\u3002
 Acceptance:
 ${input.acceptance}
@@ -7841,7 +7940,7 @@ ${REPORT_STATUS_PROMPT_HINT}`;
       try {
         task = ledger.transition(tc.sessionID, task.taskID, task.state, "start_unconfirmed", { lastErrorCode: "START_UNCONFIRMED" });
       } catch {}
-      return response({ ok: false, task: taskView(task, undefined, { lifecycle: "active", periodID }), error: { code: "START_UNCONFIRMED", message: "\u542F\u52A8\u7ED3\u679C\u672A\u786E\u8BA4\uFF0C\u8BF7\u4EBA\u5DE5\u8C03\u67E5\u3002" }, warnings: [] });
+      return response({ ok: false, task: taskView(task, undefined, { lifecycle: "active", periodID }), error: errorPayload("START_UNCONFIRMED"), warnings: [] });
     }
   };
   const status = async (raw, tc) => {
@@ -7856,7 +7955,7 @@ ${REPORT_STATUS_PROMPT_HINT}`;
       const views = await Promise.all(entries.map(async (entry) => taskView(entry.record, entry.lifecycle === "active" ? await observe(entry.record, id.project.commonDir) : undefined, { lifecycle: entry.lifecycle, periodID: entry.periodID, closeout: entry.closeout })));
       return response({ ok: true, ...raw.taskID ? views[0] ? { task: views[0] } : {} : { tasks: views }, warnings: [] });
     } catch (e) {
-      return failure(errorCode(e));
+      return failureFrom(e);
     }
   };
   const stop = async (raw, tc) => {
@@ -7870,7 +7969,7 @@ ${REPORT_STATUS_PROMPT_HINT}`;
     try {
       const entry = id.ledger.find(tc.sessionID, raw.taskID);
       if (!entry)
-        return failure("HOST_ERROR");
+        return failure("TASK_NOT_FOUND");
       if (entry.lifecycle === "closed")
         return response({ ok: true, task: taskView(entry.record, undefined, { lifecycle: "closed", periodID: entry.periodID, closeout: entry.closeout }), warnings: ["\u5DF2\u7ED3\u6848\uFF0C\u4E0D\u4F1A\u91CD\u590D\u4E2D\u65AD\u3002"] });
       let task = entry.record;
@@ -7900,13 +7999,34 @@ ${REPORT_STATUS_PROMPT_HINT}`;
       task = id.ledger.transition(tc.sessionID, task.taskID, "stop_requested", "stop_unconfirmed", { interruptResult });
       return response({ ok: true, task: taskView(task, undefined, meta), warnings: ["\u505C\u6B62\u548C\u8FDB\u7A0B\u5B89\u5168\u5747\u672A\u786E\u8BA4\u3002"] });
     } catch (e) {
-      return failure(errorCode(e));
+      return failureFrom(e);
     }
   };
+  const descriptions = {
+    start: [
+      "\u5728\u624B\u5DE5\u51C6\u5907\u7684\u72EC\u7ACB detached worktree \u4E2D\u542F\u52A8 engineer \u4F1A\u8BDD\u5E76\u4E00\u6B21\u6027\u6295\u9012\u4EFB\u52A1\u3002",
+      "\u524D\u63D0\uFF1A\u53EA\u80FD\u4ECE\u4E3B worktree \u6839\u76EE\u5F55\u7684 Root \u4F1A\u8BDD\u8C03\u7528\uFF1B\u4E3B\u3001\u76EE\u6807 worktree \u5747\u5E72\u51C0\uFF0C\u76EE\u6807\u5C5E\u4E8E\u540C\u4E00\u4ED3\u5E93\u4E14\u4E0D\u4E0E\u4E3B worktree \u5D4C\u5957\uFF0C\u4E8C\u8005 HEAD \u4E0E baseline \u5747\u4E3A\u540C\u4E00\u5B8C\u6574 commit OID\u3002",
+      "\u53C2\u6570\uFF1Akey \u5728\u9879\u76EE\u7684 active \u4E0E closed \u4EFB\u52A1\u5386\u53F2\u4E2D\u5168\u5C40\u552F\u4E00\uFF1Bdirectory \u4E3A\u7EDD\u5BF9\u8DEF\u5F84\uFF1Bscope \u4E3A 1\uFF5E32 \u4E2A\u7CBE\u786E\u76F8\u5BF9\u6587\u4EF6\u8DEF\u5F84\u6216\u4EE5 / \u7ED3\u5C3E\u7684\u76EE\u5F55\u524D\u7F00\uFF0C\u4E0D\u652F\u6301 glob\uFF1Bgoal\u3001acceptance\u3001check \u662F\u4EFB\u52A1\u6587\u672C\uFF0C\u4E0D\u4F5C\u4E3A\u63D2\u4EF6 shell \u547D\u4EE4\u6267\u884C\u3002",
+      "\u5E42\u7B49\uFF1A\u540C\u4E00 Root \u4F1A\u8BDD\u4E2D\uFF0C\u76F8\u540C key\u3001\u76F8\u540C\u8F93\u5165\u8FD4\u56DE\u539F\u8BB0\u5F55\uFF0C\u5305\u62EC\u5DF2\u7ED3\u6848\u8BB0\u5F55\uFF0C\u4E0D\u91CD\u65B0\u521B\u5EFA\u4F1A\u8BDD\u6216\u6295\u9012\uFF1B\u4E0D\u540C\u8F93\u5165\u6216\u5176\u4ED6 Root \u590D\u7528 key \u4F1A\u51B2\u7A81\u3002\u91CD\u8BD5\u5FC5\u987B\u6362\u65B0\u7684 key\u3002",
+      "\u5BB9\u91CF\uFF1A\u6700\u591A\u4FDD\u7559 2 \u4E2A\u672A\u7ED3\u6848\u5199\u5165\u9884\u7559\uFF1Bidle\u3001\u51FA\u9519\u548C stop \u5747\u4E0D\u91CA\u653E\uFF0C\u53EA\u80FD\u901A\u8FC7\u79BB\u7EBF\u7EF4\u62A4\u7ED3\u6848\u91CA\u653E\u3002",
+      "\u8FB9\u754C\uFF1Aworktree \u548C scope \u4E0D\u662F\u64CD\u4F5C\u7CFB\u7EDF\u7EA7\u9694\u79BB\u3002"
+    ].join(`
+`),
+    status: [
+      "\u67E5\u8BE2\u5F53\u524D Root \u4F1A\u8BDD\u53D1\u8D77\u7684\u4EFB\u52A1\uFF0C\u4E0D\u80FD\u67E5\u8BE2\u5176\u4ED6 Root \u7684\u4EFB\u52A1\u3002",
+      "\u4E0D\u4F20 taskID\uFF1A\u53EA\u5217\u51FA\u5F53\u524D Root \u7684\u672A\u7ED3\u6848\u4EFB\u52A1\u3002\u4F20 taskID\uFF1A\u53EF\u8FD4\u56DE\u5F53\u524D Root \u53D1\u8D77\u7684\u5BF9\u5E94\u672A\u7ED3\u6848\u6216\u5DF2\u7ED3\u6848\u8BB0\u5F55\uFF1B\u4EFB\u52A1\u4E0D\u5B58\u5728\u6216\u4E0D\u5C5E\u4E8E\u5F53\u524D Root \u65F6\u6210\u529F\u8FD4\u56DE\uFF0C\u4F46\u4E0D\u542B task \u5B57\u6BB5\u3002"
+    ].join(`
+`),
+    stop: [
+      "\u5BF9\u5F53\u524D Root \u7684\u672A\u7ED3\u6848\u4EFB\u52A1\u6700\u591A\u53D1\u9001\u4E00\u6B21\u4E2D\u65AD\u8BF7\u6C42\uFF1B\u91CD\u590D\u8C03\u7528\u4E0D\u4F1A\u518D\u6B21\u4E2D\u65AD\u3002\u5DF2\u7ED3\u6848\u8BB0\u5F55\u76F4\u63A5\u8FD4\u56DE\uFF0C\u4E0D\u53D1\u9001\u4E2D\u65AD\u3002",
+      "\u8FD4\u56DE\u53EA\u8BF4\u660E\u8BF7\u6C42\u7ED3\u679C\uFF0C\u4E0D\u80FD\u8BC1\u660E\u4F1A\u8BDD\u6216\u8FDB\u7A0B\u6811\u5DF2\u7ECF\u505C\u6B62\uFF0CprocessSafety \u4ECD\u4E3A unconfirmed\uFF0C\u4E5F\u4E0D\u4F1A\u91CA\u653E\u9884\u7559\u3002\u4EFB\u52A1\u4E0D\u5B58\u5728\u6216\u4E0D\u5C5E\u4E8E\u5F53\u524D Root \u65F6\u62D2\u7EDD\uFF0C\u4E0D\u8981\u91CD\u8BD5\u3002"
+    ].join(`
+`)
+  };
   await ctx.tool.transform((editor) => {
-    editor.add({ name: "crew_task_start", description: "\u7ED1\u5B9A\u624B\u5DE5\u51C6\u5907\u7684\u5DE5\u4F5C\u533A\u5E76\u4E00\u6B21\u6027\u6295\u9012\u4EFB\u52A1", input: schema({ key: str, directory: str, baseline: str, scope: { type: "array", items: str }, goal: str, acceptance: str, check: str }, ["key", "directory", "baseline", "scope", "goal", "acceptance", "check"]), output, execute: start });
-    editor.add({ name: "crew_task_status", description: "\u67E5\u8BE2\u5F53\u524D Root \u7684\u4EFB\u52A1", input: schema({ taskID: str }), output, execute: status });
-    editor.add({ name: "crew_task_stop", description: "\u6700\u591A\u8BF7\u6C42\u4E00\u6B21\u4E2D\u65AD\uFF1B\u505C\u6B62\u72B6\u6001\u672A\u786E\u8BA4", input: schema({ taskID: str }, ["taskID"]), output, execute: stop });
+    editor.add({ name: "crew_task_start", description: descriptions.start, input: schema({ key: str, directory: str, baseline: str, scope: { type: "array", items: str }, goal: str, acceptance: str, check: str }, ["key", "directory", "baseline", "scope", "goal", "acceptance", "check"]), output, execute: start });
+    editor.add({ name: "crew_task_status", description: descriptions.status, input: schema({ taskID: str }), output, execute: status });
+    editor.add({ name: "crew_task_stop", description: descriptions.stop, input: schema({ taskID: str }, ["taskID"]), output, execute: stop });
   });
 }
 
@@ -7918,11 +8038,34 @@ function fail3(message) {
 function object3(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+function instructions(value) {
+  if (value === undefined)
+    return [];
+  if (!Array.isArray(value))
+    fail3("options.engineerInstructions \u5FC5\u987B\u662F\u5B57\u7B26\u4E32\u6570\u7EC4");
+  if (value.length > 32)
+    fail3("options.engineerInstructions \u6700\u591A 32 \u9879");
+  let total = 0;
+  const out = value.map((item, index) => {
+    if (typeof item !== "string")
+      fail3(`options.engineerInstructions[${index}] \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
+    const text = item.trim();
+    if (!text)
+      fail3(`options.engineerInstructions[${index}] \u4E0D\u80FD\u4E3A\u7A7A`);
+    if (text.length > 2000)
+      fail3(`options.engineerInstructions[${index}] \u6700\u591A 2000 \u5B57\u7B26`);
+    total += text.length;
+    return text;
+  });
+  if (total > 8000)
+    fail3("options.engineerInstructions \u603B\u957F\u5EA6\u6700\u591A 8000 \u5B57\u7B26");
+  return out;
+}
 function options(input) {
   if (!object3(input))
     fail3("options \u5FC5\u987B\u662F\u5BF9\u8C61");
   for (const key of Object.keys(input))
-    if (!["models", "steps"].includes(key))
+    if (!["models", "steps", "engineerInstructions"].includes(key))
       fail3(`\u672A\u77E5 options.${key}`);
   const models = {}, steps = {};
   for (const field of ["models", "steps"]) {
@@ -7945,7 +8088,7 @@ function options(input) {
       }
     }
   }
-  return { models, steps };
+  return { models, steps, engineerInstructions: instructions(input.engineerInstructions) };
 }
 function loadRole(id) {
   const text = readFileSync2(new URL(`../agents/${id}.md`, import.meta.url), "utf8");
@@ -7979,7 +8122,7 @@ var src_default = Plugin.define({
           agent.name = id;
           agent.description = role.description;
           agent.mode = role.mode;
-          agent.system = composeRoleSystem(role.system, role.appendices, config.models[id]);
+          agent.system = composeRoleSystem(role.system, role.appendices, config.models[id], id === "engineer" ? config.engineerInstructions : undefined);
           agent.steps = config.steps[id] ?? role.steps;
           agent.model = config.models[id];
           if (id === "engineer")

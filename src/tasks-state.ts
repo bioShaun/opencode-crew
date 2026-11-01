@@ -168,7 +168,7 @@ export class Ledger {
    const checkedInput=normalizeTaskInput(input)
    if (JSON.stringify(checkedInput)!==JSON.stringify(input)) return fail('INVALID_INPUT')
    const baseline=registry ? (registry.schemaVersion === 1 ? registry.baseline : registry.periods.find(period => period.periodID === registry.currentPeriodID)!.baseline) : undefined
-   if (baseline !== undefined && baseline !== input.baseline) return fail('BASELINE_MISMATCH')
+   if (baseline !== undefined && baseline !== input.baseline) throw new TaskRegistryError('BASELINE_MISMATCH', { baseline: input.baseline, ledgerBaseline: baseline, reason: 'ledger_baseline' })
    if (records.some(task => task.input.directory === input.directory)) return fail('WRITER_RESERVED')
    const activeCount=registry === undefined ? 0 : registry.schemaVersion === 1 ? registry.tasks.length : registry.active.length
    if (activeCount >= 2) return fail('CAPACITY_RESERVED')
