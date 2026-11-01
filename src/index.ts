@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { parse } from "yaml"
 import { registerTasks } from "./tasks"
+import { composeRoleSystem, splitRoleBody, type RoleAppendices } from "./model-family"
 
 const IDS = ["root", "architect", "engineer", "explorer", "reviewer"] as const
 type RoleID = typeof IDS[number]
@@ -38,7 +39,9 @@ function options(input: unknown) {
   return { models, steps }
 }
 
-function loadRole(id: RoleID): Role {
+type LoadedRole = Role & { appendices: RoleAppendices }
+
+function loadRole(id: RoleID): LoadedRole {
   const text = readFileSync(new URL(`../agents/${id}.md`, import.meta.url), "utf8")
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]+)$/.exec(text)
   if (!match) fail(`agents/${id}.md 缺少 frontmatter 或正文`)
@@ -48,7 +51,8 @@ function loadRole(id: RoleID): Role {
   if (typeof meta.description !== "string" || !meta.description.trim() || meta.mode !== (id === "root" ? "primary" : "subagent")) fail(`agents/${id}.md 的 description/mode 无效`)
   if (meta.steps !== undefined && (!Number.isSafeInteger(meta.steps) || (meta.steps as number) <= 0)) fail(`agents/${id}.md steps 无效`)
   if (!Array.isArray(meta.permissions) || !meta.permissions.every(r => object(r) && typeof r.action === "string" && typeof r.resource === "string" && ["allow", "ask", "deny"].includes(String(r.effect)))) fail(`agents/${id}.md permissions 无效`)
-  return { ...meta, system: match[2].trim() } as Role
+  const { base, gpt, claude } = splitRoleBody(match[2].trim())
+  return { ...meta, system: base, appendices: { gpt, claude } } as LoadedRole
 }
 
 export default Plugin.define({
@@ -56,14 +60,14 @@ export default Plugin.define({
   async setup(ctx) {
     // Validate every input before registering anything; prompts/policies exist only in Markdown.
     const config = options(ctx.options ?? {})
-    const roles = Object.fromEntries(IDS.map(id => [id, loadRole(id)])) as Record<RoleID, Role>
+    const roles = Object.fromEntries(IDS.map(id => [id, loadRole(id)])) as Record<RoleID, LoadedRole>
     await ctx.agent.transform(editor => {
       for (const id of IDS) editor.update(id, agent => {
         const role = roles[id]
         agent.name = id
         agent.description = role.description
         agent.mode = role.mode
-        agent.system = role.system
+        agent.system = composeRoleSystem(role.system, role.appendices, config.models[id])
         agent.steps = config.steps[id] ?? role.steps
         agent.model = config.models[id]
         // An empty Root policy adds no rules; retain the host's existing permissions.

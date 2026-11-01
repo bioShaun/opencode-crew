@@ -106,6 +106,17 @@ test('configured model wins, absent model and dirty primary refuse launch',async
  const g=await fixture(); delete g.owner.model;expect((await g.run('crew_task_start',g.input)).ok).toBe(false);expect(g.calls.filter(x=>x[0]==='create')).toHaveLength(0)
  const h=await fixture();writeFileSync(resolve(h.dir,'dirty-safety-test'),'dirty');expect((await h.run('crew_task_start',h.input)).ok).toBe(false);expect(h.calls.filter(x=>x[0]==='create')).toHaveLength(0)
 })
+test('GPT engineer model appends principle family hint to task prompt',async()=>{
+ const f=await fixture({models:{engineer:'openai/gpt-4o'}}); await f.run('crew_task_start',f.input)
+ const prompt=f.calls.find(x=>x[0]==='prompt'); expect(prompt).toBeDefined()
+ expect(prompt[1].text).toContain('Model style (GPT/principle)')
+ expect(prompt[1].text).toContain('<status>COMPLETE|BLOCKED|INCOMPLETE</status>')
+ const g=await fixture({models:{engineer:'anthropic/claude-sonnet-4'}}); await g.run('crew_task_start',g.input)
+ const gp=g.calls.find(x=>x[0]==='prompt'); expect(gp[1].text).toContain('Model style (Claude/mechanics)')
+ expect(gp[1].text).not.toContain('GPT/principle')
+ const h=await fixture(); await h.run('crew_task_start',h.input)
+ const hp=h.calls.find(x=>x[0]==='prompt'); expect(hp[1].text).not.toContain('Model style')
+})
 test('independent registrations racing the same key launch once',async()=>{
  const f=await fixture();const second=new Map<string,any>();await plugin.setup({...f.ctx,tool:{transform:async(fn:any)=>fn({add:(t:any)=>second.set(t.name,t)})}})
  await Promise.all([f.run('crew_task_start',f.input),second.get('crew_task_start').execute(f.input,f.tc)])
