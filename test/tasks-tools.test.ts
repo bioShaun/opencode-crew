@@ -114,6 +114,16 @@ test('configured model wins, absent model and dirty primary refuse launch',async
  const g=await fixture(); delete g.owner.model;expect((await g.run('crew_task_start',g.input)).ok).toBe(false);expect(g.calls.filter(x=>x[0]==='create')).toHaveLength(0)
  const h=await fixture();writeFileSync(resolve(h.dir,'dirty-safety-test'),'dirty');expect((await h.run('crew_task_start',h.input)).ok).toBe(false);expect(h.calls.filter(x=>x[0]==='create')).toHaveLength(0)
 })
+test('missing engineer model returns MODEL_NOT_CONFIGURED; same-key replay needs no model',async()=>{
+ const g=await fixture(); delete g.owner.model
+ const r:any=await g.run('crew_task_start',g.input)
+ expect(r.ok).toBe(false);expect(r.error.code).toBe('MODEL_NOT_CONFIGURED');expect(r.error.nextAction).toContain('models.engineer')
+ expect(g.calls.filter(x=>['create','prompt'].includes(x[0]))).toHaveLength(0)
+ const s:any=await g.run('crew_task_status',{});expect(s.tasks).toHaveLength(0)
+ const f=await fixture();await f.run('crew_task_start',f.input);delete f.owner.model
+ const replay:any=await f.run('crew_task_start',f.input);expect(replay.ok).toBe(true)
+ expect(f.calls.filter(x=>x[0]==='create')).toHaveLength(1)
+})
 test('GPT engineer model appends principle family hint to task prompt',async()=>{
  const f=await fixture({models:{engineer:'openai/gpt-4o'}}); await f.run('crew_task_start',f.input)
  const prompt=f.calls.find(x=>x[0]==='prompt'); expect(prompt).toBeDefined()

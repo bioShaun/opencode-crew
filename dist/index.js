@@ -7789,6 +7789,10 @@ var ERROR_INFO = {
     message: "\u4EFB\u52A1\u4E0D\u5B58\u5728\u6216\u4E0D\u5C5E\u4E8E\u5F53\u524D Root\u3002",
     nextAction: "\u4E0D\u8981\u91CD\u8BD5\uFF0C\u4E5F\u4E0D\u8981\u5C1D\u8BD5\u64CD\u4F5C\u5176\u4ED6 Root \u7684\u4EFB\u52A1\u3002"
   },
+  MODEL_NOT_CONFIGURED: {
+    message: "\u672A\u914D\u7F6E engineer \u6A21\u578B\uFF0C\u4E14\u5F53\u524D Root \u4F1A\u8BDD\u6CA1\u6709\u53EF\u7EE7\u627F\u7684\u6A21\u578B\uFF0C\u672C\u6B21\u672A\u521B\u5EFA\u4F1A\u8BDD\u3002",
+    nextAction: "\u914D\u7F6E options.models.engineer\uFF0C\u6216\u786E\u4FDD\u8C03\u7528\u65B9 Root \u4F1A\u8BDD\u5DF2\u6709\u6A21\u578B\u540E\u91CD\u65B0\u6D3E\u53D1\uFF1B\u4E0D\u8981\u628A\u5B83\u5F53\u4F5C\u5BBF\u4E3B\u6545\u969C\u3002"
+  },
   SESSION_MISMATCH: {
     message: "\u4F1A\u8BDD\u8EAB\u4EFD\u4E0D\u5339\u914D\uFF0C\u542F\u52A8\u7ED3\u679C\u672A\u786E\u8BA4\u3002",
     nextAction: "\u4FDD\u7559\u9884\u7559\u4E0E\u73B0\u573A\uFF0C\u7528 status \u83B7\u53D6\u8BB0\u5F55\u5E76\u4EBA\u5DE5\u8C03\u67E5\uFF1B\u4E0D\u8981\u6362 key \u91CD\u6D3E\uFF0C\u4E0D\u8981\u58F0\u79F0\u672A\u521B\u5EFA\u4F1A\u8BDD\u6216\u6CA1\u6709 orphan\u3002"
@@ -7897,7 +7901,7 @@ async function registerTasks(ctx, configuredModel) {
     try {
       const existing = ledger.findByKey(input.key);
       if (!existing && !(configuredModel ?? owner.model))
-        return failure("HOST_ERROR");
+        return failure("MODEL_NOT_CONFIGURED");
       const reservation = ledger.reserve(tc.sessionID, input, () => validateWorktree(project.primaryDirectory, input.directory, input.baseline, input.scope));
       task = reservation.task;
       periodID = reservation.periodID;

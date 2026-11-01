@@ -65,7 +65,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 }
 ```
 
-以上是待替换的占位模型，provider、凭证和模型可用性由目标机配置提供，包内不包含密钥或具体模型默认值。`models` 可省略部分角色；省略表示遵循 OpenCode 原生模型继承规则，不是字符串 `inherit`。子代理继承父会话模型；主会话保持其已选模型。`/crew` 会显式选择已配置的 Root 模型，未配置则保留当前会话模型。
+以上是待替换的占位模型，provider、凭证和模型可用性由目标机配置提供，包内不包含密钥或具体模型默认值。`models` 可省略部分角色；省略表示遵循 OpenCode 原生模型继承规则，不是字符串 `inherit`。子代理继承父会话模型；主会话保持其已选模型。`/crew` 会显式选择已配置的 Root 模型，未配置则保留当前会话模型。当 `models.engineer` 和调用方 Root 会话都拿不出模型时，`crew_task_start` 在写 ledger 或创建会话之前以 `MODEL_NOT_CONFIGURED` 拒派；同 key 重放已有记录不做该检查。
 
 `engineerInstructions` 是可选配置。非空数组会作为 `## 项目补充规则` 小节追加一次到 **engineer 角色 system**，位于共享正文和适用的模型族附录之后。它刻意不注入 `crew_task_start` 任务包，因此原生 engineer 会话与 worktree engineer 获得同一组项目规则，且不会重复出现。默认值为 `[]`：未配置时，engineer system 和任务包都不出现 `slot`，也不包含“禁止使用 `/tmp`”。值必须是去除首尾空白后非空的单行字符串（最多 32 项，每项最多 2000 字符，总计最多 8000 字符）；含 `\r` 或 `\n` 的原始项在注册前被拒绝，避免多行内容破坏小节结构。插件只把配置文本当作受信任的项目提示：不解析、不执行其中的命令，不授予权限，也不安装依赖。配置者必须确保所称工具和权限在目标环境真实存在。特别是当前 engineer 角色默认 deny `execute`，仅配置 slot 文案不会赋予执行能力。
 

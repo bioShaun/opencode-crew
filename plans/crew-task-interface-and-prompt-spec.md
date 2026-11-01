@@ -131,6 +131,7 @@ error: {
 | `INVALID_SCOPE` | 修正 scope；使用精确相对文件或 `/` 结尾目录前缀，不用 glob、绝对路径、`..`、symlink 逃逸或禁止路径，不得自行扩大 Scope |
 | `INVALID_INPUT` | 按工具 schema 修正参数；不要加入未定义字段 |
 | `FORBIDDEN_CALLER` | 只能由 Root 调用；当前调用方不要重试 |
+| `MODEL_NOT_CONFIGURED`（新增，start 缺模型拒派） | 配置 `options.models.engineer`，或确保调用方 Root 会话已有模型后重新派发；不要当作宿主故障。检查在 reserve 之前，零 ledger/create/prompt；同 key 重放不做模型检查 |
 | `TASK_NOT_FOUND`（新增，供显式 stop 未命中使用） | 任务不存在或不属于当前 Root；不要重试，也不要尝试操作其他 Root 的任务 |
 | `SESSION_MISMATCH` / `START_UNCONFIRMED` | 保留预留与现场，用 status 获取记录并人工调查；不要换 key 重派，不要声称未创建会话或没有 orphan |
 | `REGISTRY_LOCKED` / `REGISTRY_INVALID` | 停止写操作并人工调查；不得删锁、删库或自动抢占 |

@@ -56,6 +56,10 @@ const ERROR_INFO: Record<string, { message: string; nextAction: string }> = {
   message: '任务不存在或不属于当前 Root。',
   nextAction: '不要重试，也不要尝试操作其他 Root 的任务。',
  },
+ MODEL_NOT_CONFIGURED: {
+  message: '未配置 engineer 模型，且当前 Root 会话没有可继承的模型，本次未创建会话。',
+  nextAction: '配置 options.models.engineer，或确保调用方 Root 会话已有模型后重新派发；不要把它当作宿主故障。',
+ },
  SESSION_MISMATCH: {
   message: '会话身份不匹配，启动结果未确认。',
   nextAction: '保留预留与现场，用 status 获取记录并人工调查；不要换 key 重派，不要声称未创建会话或没有 orphan。',
@@ -144,7 +148,7 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelRef) {
   let task:TaskRecord, periodID:string|undefined
   try {
    const existing=ledger.findByKey(input.key)
-   if (!existing && !(configuredModel ?? owner.model)) return failure('HOST_ERROR')
+   if (!existing && !(configuredModel ?? owner.model)) return failure('MODEL_NOT_CONFIGURED')
    const reservation=ledger.reserve(tc.sessionID,input,()=>validateWorktree(project.primaryDirectory,input.directory,input.baseline,input.scope))
    task=reservation.task; periodID=reservation.periodID
    if (reservation.replayed) return response({ok:true,task:taskView(task,undefined,{lifecycle:reservation.lifecycle,periodID:reservation.periodID,closeout:reservation.closeout}),warnings:['重放不会重新投递。']})
