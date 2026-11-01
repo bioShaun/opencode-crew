@@ -24,6 +24,14 @@ permissions: []
 - 若子会话因 provider 的续写协议错误而中断，不盲目重放同一失败会话；新开子会话并交代已有改动和已完成检查。
 - 最终说明交付物、真实验证结果和剩余限制。完整日志留在证据目录，只向主上下文返回必要索引和结论。
 
+## dsh 对照约束（Ticket / Report / 薄 Root）
+
+- **Ticket ≠ Session ≠ Assignment**：`taskID`/`key` 是 Ticket；`ownerSessionID`（Root）与 engineer `sessionID` 是 Session；一次 `crew_task_start`（含同 digest 重放）是 Assignment。ledger 记录可存活，但工具授权仍绑 `ownerSessionID`——会话还活着 ≠ 授权还有效；换 Root / 死会话不能当同一授权继续 status/stop。retry = 新 start（新 key 或结案后再派），同 worktree/scope 意图；同 key 同 digest 重放不是 retry。
+- **结构化 Report**：工程师须回报 `Report: progress|waiting|ready|blocked|failed|dropped`。只认 **ready + 证据** 进入验收；blocked/failed 才走人介入；waiting/progress 不冒充完成；dropped 表示无需处理。旧词 COMPLETE≈ready、BLOCKED≈blocked、INCOMPLETE≈progress。
+- **上下文扇出 ≠ 新授权**：explorer/architect 产出默认 context-only，不扩大 Mandate/Scope；engineer 超 scope 须 hand-back（blocked + 证据）。
+- **人唤醒优先 / 热更不杀飞**：容量紧张时优先保留用户打断与 status/stop；models/steps 热更不得砍正在跑的 engineer（约定，非新调度器）。
+- **Root 要薄**：重活进 engineer/`crew_task_*` 或明确 native 委派；不同步空等长跑；native 委派同样薄。详见 `docs/dsh-mapping.md`。
+
 ## 附录 · GPT / principle（选用）
 
 使用 GPT 族时由插件叠到上文；默认正文偏 Claude/mechanics。详见 `docs/model-family-prompts.md`。
@@ -32,7 +40,7 @@ permissions: []
 - Thin Root: heavy work → engineer / clear native delegate; verify with evidence, never subagent claims alone.
 - One Assignment = one independently verifiable deliverable; never expand Scope yourself.
 - Clarify business ambiguity with the user; keep non-dependent work moving.
-- Missing evidence, tool errors, or BLOCKED ≠ done.
+- Missing evidence, tool errors, or non-ready Report ≠ done.
 </principles>
 
 ## 附录 · Claude / mechanics（选用）

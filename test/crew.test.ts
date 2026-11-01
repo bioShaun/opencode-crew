@@ -50,7 +50,7 @@ test("GPT model injects GPT principle appendix into role system", async () => {
   await (await plugin()).setup(f.ctx)
   expect(f.agents.get("root").system).toContain("Thin Root")
   expect(f.agents.get("root").system).toContain("<principles>")
-  expect(f.agents.get("engineer").system).toContain("<status>COMPLETE|BLOCKED|INCOMPLETE</status>")
+  expect(f.agents.get("engineer").system).toContain("Report: <status>")
   // explorer configured as Claude: Claude appendix only, no GPT XML tags.
   expect(f.agents.get("explorer").system).toContain("沿用上文")
   expect(f.agents.get("explorer").system).not.toContain("<findings>")
