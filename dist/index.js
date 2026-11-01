@@ -8049,6 +8049,8 @@ function instructions(value) {
   const out = value.map((item, index) => {
     if (typeof item !== "string")
       fail3(`options.engineerInstructions[${index}] \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
+    if (/[\r\n]/.test(item))
+      fail3(`options.engineerInstructions[${index}] \u4E0D\u80FD\u5305\u542B\u6362\u884C`);
     const text = item.trim();
     if (!text)
       fail3(`options.engineerInstructions[${index}] \u4E0D\u80FD\u4E3A\u7A7A`);

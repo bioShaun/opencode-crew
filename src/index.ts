@@ -22,6 +22,7 @@ function instructions(value: unknown): string[] {
   let total = 0
   const out = value.map((item, index) => {
     if (typeof item !== "string") fail(`options.engineerInstructions[${index}] 必须为字符串`)
+    if (/[\r\n]/.test(item)) fail(`options.engineerInstructions[${index}] 不能包含换行`)
     const text = item.trim()
     if (!text) fail(`options.engineerInstructions[${index}] 不能为空`)
     if (text.length > 2000) fail(`options.engineerInstructions[${index}] 最多 2000 字符`)
