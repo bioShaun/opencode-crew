@@ -69,6 +69,14 @@ test('denial, non-root, and wrong owner location have zero launch effects',async
  await f.run('crew_task_start',f.input,{...f.tc,agent:'engineer'});f.owner.location={directory:'/wrong'};await f.run('crew_task_start',f.input)
  expect(f.calls.filter(x=>['create','prompt','interrupt'].includes(x[0]))).toHaveLength(0)
 })
+test('non-root callers get FORBIDDEN_CALLER from all three tools before any side effect',async()=>{
+ const f=await fixture()
+ for(const [name,args] of [['crew_task_start',f.input],['crew_task_status',{}],['crew_task_stop',{taskID:'ct_one'}]] as const){
+  const r:any=await f.run(name,args,{...f.tc,agent:'engineer'})
+  expect(r.ok).toBe(false);expect(r.error.code).toBe('FORBIDDEN_CALLER');expect(r.error.message).not.toContain('宿主')
+ }
+ expect(f.calls.filter(x=>['create','prompt','interrupt','assert'].includes(x[0]))).toHaveLength(0)
+})
 test('stop requests at most one interrupt and identity mismatch never interrupts',async()=>{
  const f=await fixture();await f.run('crew_task_start',f.input);const child=f.sessions.get('child');child.agent='other';await f.run('crew_task_stop',{taskID:'ct_one'});expect(f.calls.filter(x=>x[0]==='interrupt')).toHaveLength(0)
  child.agent='engineer';const a:any=await f.run('crew_task_stop',{taskID:'ct_one'});const b:any=await f.run('crew_task_stop',{taskID:'ct_one'});expect(a.task.state).toBe('stop_unconfirmed');expect(b.task.state).toBe('stop_unconfirmed');expect(f.calls.filter(x=>x[0]==='interrupt')).toHaveLength(1)

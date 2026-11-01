@@ -7843,7 +7843,7 @@ async function registerTasks(ctx, configuredModel) {
   });
   async function caller(tc) {
     if (tc.agent !== "root")
-      throw new TaskRegistryError("HOST_ERROR");
+      throw new TaskRegistryError("FORBIDDEN_CALLER");
     const project = inspectProject(ctx.location.directory);
     const owner = await ctx.session.get({ sessionID: tc.sessionID });
     if (owner.id !== tc.sessionID || owner.agent !== "root" || owner.location?.directory !== project.primaryDirectory || ctx.location.directory !== project.primaryDirectory)
@@ -7857,7 +7857,7 @@ async function registerTasks(ctx, configuredModel) {
     try {
       return await caller(tc);
     } catch (e) {
-      return { error: tc.agent !== "root" ? "FORBIDDEN_CALLER" : errorCode(e) };
+      return { error: errorCode(e) };
     }
   }
   async function observe(t, commonDir) {

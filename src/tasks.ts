@@ -108,7 +108,7 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelRef) {
   } catch { /* No verified binding: leave the host decision untouched. */ }
  })
  async function caller(tc:any) {
-  if (tc.agent !== 'root') throw new TaskRegistryError('HOST_ERROR')
+  if (tc.agent !== 'root') throw new TaskRegistryError('FORBIDDEN_CALLER')
   const project=inspectProject(ctx.location.directory)
   const owner=await ctx.session.get({sessionID:tc.sessionID})
   if (owner.id!==tc.sessionID || owner.agent!=='root' || owner.location?.directory!==project.primaryDirectory || ctx.location.directory!==project.primaryDirectory) throw new TaskRegistryError('PROJECT_MISMATCH')
@@ -118,7 +118,7 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelRef) {
   await ctx.permission.assert({sessionID:tc.sessionID,agent:tc.agent,action,resources,source:{type:'tool',messageID:tc.messageID,id:tc.id}})
  }
  async function identity(tc:any) {
-  try { return await caller(tc) } catch(e) { return {error:tc.agent!=='root' ? 'FORBIDDEN_CALLER' : errorCode(e)} }
+  try { return await caller(tc) } catch(e) { return {error:errorCode(e)} }
  }
  async function observe(t:TaskRecord,commonDir:string) {
   const checkedAt=new Date().toISOString()
