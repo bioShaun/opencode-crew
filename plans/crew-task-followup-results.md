@@ -58,3 +58,20 @@ attempt7（不配置 `engineerInstructions`）：engineer agent system（`/api/a
 | V4 | PASS | — |
 
 证据均来自真实 2.2.5 host 私有 fixture；未用单元测试冒称 host 结果。私有 DB/cache 不分享。
+
+## 行为变更红绿证据（4.2–4.5）
+
+| 项 | 红灯 | 绿灯 | 提交 |
+|---|---|---|---|
+| 4.2 结构断言 | 纯测试可维护性改动，无生产行为变化 | `bun test` 192→192 pass | `20b698a` |
+| 4.4 FORBIDDEN_CALLER 直接抛出 | 外部契约原本成立（identity 特判已兜底），新测试作为表征测试钉住契约 | 193 pass + build | `3aef92a` |
+| 4.5 拒绝换行 engineerInstructions | `invalid engineerInstructions` 1 fail：换行用例当时通过校验（行为缺失，非语法错） | 193 pass + build | `a28c666` |
+| 4.3 MODEL_NOT_CONFIGURED | `Expected "MODEL_NOT_CONFIGURED", Received "HOST_ERROR"` | 194 pass + build | `88d014e`（错误契约变更，消费方若按 HOST_ERROR 判等需更新） |
+
+## 发布与收尾检查（4.6）
+
+- **版本**：保持 `0.1.0`。仓库无 tag、无 CHANGELOG、无发布记录，本轮为 0.1.0 开发线上的契约加固，未触发发布；不补造 tag/changelog。
+- **打包**：在 `test/.work/pack-fixture` 独立目录执行 `npm pack --dry-run --json`（prepack 只在该副本内 build）。包内容确认：`dist/index.js`、全部 8 个 `src/*.ts`、全部 5 个 `agents/*.md`、双 README、`THIRD_PARTY_NOTICES.md`，共 16 个文件、113538 bytes。
+- **构建产物**：`dist/index.js` 全程仅由 `bun run build` 生成，未手工编辑。
+- **未跟踪文件**：`plans/worktree-stage1-closeout-spec.md`（2026-11-01，Stage 1 收尾规范，自述"用户接受偏差收尾后状态为 CLOSED_WITH_DEVIATIONS"）非本轮产物，且处于待用户接受状态。**保持未跟踪、不删除**，归属与处置由用户决定。
+- **全量验证**：`bun test` 194 pass / 0 fail；`bun run build` 成功；`git diff --check` 干净。
