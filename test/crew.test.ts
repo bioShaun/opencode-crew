@@ -29,6 +29,9 @@ function fixture(options: any = {}, rootPermissions: any[] = [], seeds: Record<s
   return { ctx, agents, commands, calls }
 }
 const models = { root: "example/root#high", engineer: "example/worker#medium", reviewer: "other/review", explorer: "fast/search" }
+function roleBody(id: string) {
+  return readFileSync(new URL(`../agents/${id}.md`, import.meta.url), "utf8").split(/^---\s*$/m).slice(2).join("---").trim()
+}
 function effect(agent: any, action: string, resource = "*") {
   // Exact resources + '*' suffice for these test cases; not a replacement for the host evaluator.
   return agent.permissions.filter((p: any) => (p.action === action || p.action === "*") && (p.resource === resource || p.resource === "*")).at(-1)?.effect
@@ -39,30 +42,27 @@ test("registers Crew and five distinct Markdown-backed roles", async () => {
   expect(p.id).toBe("opencode-crew")
   expect([...f.agents.keys()].sort()).toEqual(["architect", "engineer", "explorer", "reviewer", "root"])
   for (const [id, a] of f.agents) {
-    const body = readFileSync(new URL(`../agents/${id}.md`, import.meta.url), "utf8").split(/^---\s*$/m).slice(2).join("---").trim()
     // Unknown/example models keep shared contract only; appendices stay optional.
-    expect(a.system).toBe(splitRoleBody(body).base)
+    expect(a.system).toBe(splitRoleBody(roleBody(id)).base)
     expect(a.system).not.toContain("## 附录")
   }
 })
-test("GPT model injects GPT principle appendix into role system", async () => {
+test("model family selects exactly one appendix per role: gpt gets gpt, claude gets claude, unknown gets base only", async () => {
   const f = fixture({ models: { root: "openai/gpt-4o#high", engineer: "openai/gpt-4.1", explorer: "anthropic/claude-sonnet-4" } })
   await (await plugin()).setup(f.ctx)
-  expect(f.agents.get("root").system).toContain("重活委派，轻活自己做")
-  expect(f.agents.get("root").system).toContain("<principles>")
-  expect(f.agents.get("engineer").system).toContain("Report: <status>")
-  // explorer configured as Claude: Claude appendix only, no GPT XML tags.
-  expect(f.agents.get("explorer").system).toContain("沿用上文")
-  expect(f.agents.get("explorer").system).not.toContain("<findings>")
-  expect(f.agents.get("explorer").system).not.toContain("Context-only")
+  const family: Record<string, "gpt" | "claude" | "unknown"> = { root: "gpt", engineer: "gpt", explorer: "claude", architect: "unknown", reviewer: "unknown" }
+  for (const [id, a] of f.agents) {
+    const parts = splitRoleBody(roleBody(id))
+    expect(a.system).toBe([parts.base, parts[family[id]]].filter(Boolean).join("\n\n"))
+    const other = family[id] === "claude" ? parts.gpt : parts.claude
+    if (other) expect(a.system).not.toContain(other)
+  }
 })
 test("Root can edit, execute and delegate; native policy permits direct verified work", async () => {
   const f = fixture(); await (await plugin()).setup(f.ctx)
   const a = f.agents.get("root"); expect(a).toBeDefined()
   expect(a.mode).toBe("primary")
   for (const tool of ["edit", "shell", "execute", "subagent"]) expect(effect(a, tool)).not.toBe("deny")
-  expect(a.system).toContain("不是只能做规划的代理")
-  expect(a.system).toContain("一次委派")
 })
 test("Root preserves host rules including asks and denies without adding an allow", async () => {
   const rules = [
@@ -134,12 +134,10 @@ test("bare /crew switches role without sending an empty model request", async ()
   await f.commands[0].execute({ sessionID: "ses_test", prompt: { text: "" }, delivery: "steer" })
   expect(f.calls.map(c => c[0])).toEqual(["agent", "model"])
 })
-test("engineer has verification and BLOCKED rules and cannot recursively delegate", async () => {
+test("engineer cannot recursively delegate and keeps the configured step cap", async () => {
   const f = fixture(); await (await plugin()).setup(f.ctx)
   const a = f.agents.get("engineer"); expect(a).toBeDefined()
   expect(effect(a, "subagent")).toBe("deny")
-  expect(a.system).toContain("BLOCKED")
-  expect(a.system).toContain("先只写测试")
   expect(a.steps).toBe(80)
 })
 test("engineer retains ordered host defaults and custom rules before Crew denies without mutating inputs", async () => {

@@ -212,8 +212,8 @@ test('engineerInstructions reach only the engineer system, once, after family ap
   const f = await fixture({ models: { engineer: 'openai/gpt-4o' }, engineerInstructions: rules })
   await f.run('crew_task_start', f.input)
   const engineer = f.agents.get('engineer').system
-  expect(engineer).toContain('## 项目补充规则')
-  expect(engineer).toContain(rules[0])
+  expect(engineer.split('## 项目补充规则')).toHaveLength(2)
+  expect(engineer.split(rules[0])).toHaveLength(2)
   expect(engineer).toContain(rules[1])
   expect(engineer.indexOf('## 附录')).toBeLessThan(engineer.indexOf('## 项目补充规则'))
   for (const id of ['root', 'architect', 'explorer', 'reviewer']) expect(f.agents.get(id).system).not.toContain('## 项目补充规则')
