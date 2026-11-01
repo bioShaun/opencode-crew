@@ -84,7 +84,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 - `/crew`：切换到 Root 和已配置的 Root 模型，不发送空模型请求。
 - `/crew <任务>`：切换并提交任务；保留附件、技能和投递方式。
 - `default_agent: root` 用于未选角色的新会话，不强行改变已有会话；已有会话使用 `/crew`。
-- 模型/步数/engineerInstructions 在插件 options 修改，按 OpenCode 配置热加载机制生效，无需重启服务。热更新只作用于后续新建会话；不要为应用新提示而中断正在运行的 engineer。
+- 模型/步数/engineerInstructions 在插件 options 修改，按 OpenCode 配置热加载机制生效，无需重启服务。热更新作用于下一次 provider 请求：会话 system 并非创建时快照，运行中 engineer 的下一轮同样按新配置重组；若要求规则在任务期内稳定，等任务结束再改。
 
 ### 显式 worktree 任务
 

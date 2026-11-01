@@ -194,7 +194,7 @@ details: {
 - 将非空 `engineerInstructions` 组成 `## 项目补充规则` 小节，追加到 **engineer role system**，位于共享正文和适用模型族附录之后。
 - 不在 `crew_task_start` 任务包中再次注入这些配置，避免同一子会话重复出现。原生 engineer 与 `crew_task_start` 创建的 engineer 都从 role system 获得同一组项目规则。
 - Root、architect、explorer、reviewer 不受该字段影响。
-- 配置热更新只作用于后续新建会话；不得为应用新提示而中断正在运行的 engineer。Root 第 5 节和 README 的热更新说明同步泛化到该配置。
+- 配置热更新作用于下一次 provider 请求：已存在会话的下一轮也按新配置重组，并非只对新建会话生效（2.2.5 私有 host 实测，见 `crew-task-followup-results.md` V3）。若要求规则在任务期内稳定，等任务结束再改。Root 第 5 节和 README 的热更新说明同步泛化到该配置。
 
 ## 9. 实施映射
 
