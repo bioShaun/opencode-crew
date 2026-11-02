@@ -9,4 +9,9 @@ test/.work/
 plans/evidence/worktree-stage0/
 plans/evidence/worktree-stage1/
 plans/evidence/crew-followup/
+plans/evidence/closeout-stop-gate-round1/
+plans/evidence/closeout-stop-gate-fix/
+plans/evidence/closeout-exception-evidence-feasibility/
+plans/evidence/tool-summary/
+plans/evidence/tool-summary-compact/
 .DS_Store
