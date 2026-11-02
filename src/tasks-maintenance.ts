@@ -142,6 +142,7 @@ function parseJSON(bytes: Buffer): any {
 
 interface VerifiedClose { evidence: { ref: string; kind: typeof kinds[number]; digest: string }[]; bundleRef: string; listingRef: string; evidenceDigest: string; disposition: Disposition }
 function verifyClose(request: Record<string, any>, project: ProjectIdentity, item: { periodID: string; record: TaskRecord }, budget = newBudget()): VerifiedClose {
+  if (item.record.state !== 'stop_requested' && item.record.state !== 'stop_unconfirmed') evidence()
   const bundleRef = request.evidence as string
   const root = readEvidence(project, bundleRef, budget), bundle = parseBundle(parseJSON(root.bytes))
   if (bundle.operatorRef !== request.operatorRef || bundle.authorizationRef !== request.authorizationRef) throw new TaskRegistryError('MAINTENANCE_AUTHORIZATION_MISMATCH')

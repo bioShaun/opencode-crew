@@ -99,6 +99,127 @@ function closePlan(f: Fixture, rec: any, over: Record<string, unknown> = {}) {
   return planMaintenance(closeRequest(f, rec, over)) as any
 }
 
+function submittedFixture() {
+  const f = setup(), task = start(f)
+  expect(task.state).toBe('reserved')
+  migrated(f)
+  f.ledger.transition('owner', task.taskID, 'reserved', 'session_create_requested')
+  f.ledger.transition('owner', task.taskID, 'session_create_requested', 'session_bound', { sessionID: 'fixture-session' })
+  f.ledger.transition('owner', task.taskID, 'session_bound', 'prompt_requested')
+  f.ledger.transition('owner', task.taskID, 'prompt_requested', 'submitted')
+  const rec = record(f, task.taskID)
+  const reg = JSON.parse(readFileSync(join(f.mgmt, 'registry.json'), 'utf8'))
+  expect(reg.schemaVersion).toBe(2); expect(reg.active[0].record).toEqual(rec)
+  expect(rec.state).toBe('submitted'); expect(rec.sessionID).toBe('fixture-session'); expect(rec.interruptResult).toBeUndefined()
+  bundle(f, rec)
+  return { f, rec }
+}
+
+const nonStopStates = ['reserved', 'session_create_requested', 'session_bound', 'prompt_requested', 'submitted', 'start_unconfirmed'] as const
+function nonStopFixture(state: typeof nonStopStates[number]) {
+  const f = setup(), task = start(f); migrated(f)
+  if (state === 'start_unconfirmed') f.ledger.transition('owner', task.taskID, 'reserved', state, { lastErrorCode: 'START_UNCONFIRMED' })
+  else {
+    const path = ['reserved', 'session_create_requested', 'session_bound', 'prompt_requested', 'submitted'] as const
+    for (let i = 1; i <= path.indexOf(state); i++) f.ledger.transition('owner', task.taskID, path[i-1], path[i], path[i] === 'session_bound' ? { sessionID: 'fixture-session' } : undefined)
+  }
+  const rec = record(f); const reg = JSON.parse(readFileSync(join(f.mgmt, 'registry.json'), 'utf8'))
+  expect(reg.schemaVersion).toBe(2); expect(reg.active[0].record).toEqual(rec); expect(rec.state).toBe(state)
+  expect(rec.sessionID).toBe(['session_bound', 'prompt_requested', 'submitted'].includes(state) ? 'fixture-session' : undefined)
+  expect(rec.interruptResult).toBeUndefined(); bundle(f, rec); return { f, rec }
+}
+function canonicalLocal(v: any): string {
+  if (Array.isArray(v)) return '[' + v.map(canonicalLocal).join(',') + ']'
+  if (v !== null && typeof v === 'object') return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonicalLocal(v[k])).join(',') + '}'
+  return JSON.stringify(v)
+}
+function legacyPlan(f: Fixture, rec: any) {
+  const request = closeRequest(f, rec), bytes = readFileSync(join(f.mgmt, 'registry.json')), reg = JSON.parse(bytes.toString())
+  const item = reg.active.find((x: any) => x.record.taskID === rec.taskID)
+  const b = JSON.parse(readFileSync(join(f.mgmt, request.evidence), 'utf8'))
+  const refs = [[request.evidence, 'bundle'], [b.review.listingRef, 'listing'], ...b.drain.inFlightEvidenceRefs.map((r: string) => [r, 'drain']), ...b.externalWriters.evidenceRefs.map((r: string) => [r, 'external-writer']), ...b.quiescence.evidenceRefs.map((r: string) => [r, 'quiescence']), ...b.review.resolutions.map((r: any) => [r.ref, 'resolution'])]
+  const plan = { request, paramsDigest: sha(canonicalLocal(request)), generation: reg.generation, registryDigest: sha(bytes), changes: [{ taskID: rec.taskID, ownerSessionID: rec.ownerSessionID, lifecycle: 'active', from: { periodID: item.periodID, state: rec.state }, to: { periodID: item.periodID, state: rec.state, closeout: { disposition: request.disposition } }, evidenceRefs: [request.evidence, b.review.listingRef] }], expectedActive: reg.active.filter((x: any) => x.record.taskID !== rec.taskID).map((x: any) => x.record.taskID), evidence: refs.map(([ref, kind]: string[]) => ({ ref, kind, digest: sha(readFileSync(join(f.mgmt, ref))) })), warnings: ['结案只释放账本名额，不代表进程已停止、成果已保存或 worktree 可清理。'] }
+  return { v: 1, ok: true, plan, planDigest: sha(canonicalLocal(plan)) }
+}
+for (const state of nonStopStates) {
+  test('close stop gate plan ' + state, () => {
+    const { f, rec } = nonStopFixture(state), before = gateSnapshot(f)
+    observeGate(f, before, () => planMaintenance(closeRequest(f, rec)))
+  })
+  test('close stop gate apply ' + state, () => {
+    const { f, rec } = nonStopFixture(state), plan = legacyPlan(f, rec), before = gateSnapshot(f)
+    observeGate(f, before, () => applyMaintenance(plan))
+  })
+}
+test('legacy builder parity stop_unconfirmed', () => { const { f, rec } = prepared(); expect(legacyPlan(f, rec)).toEqual(closePlan(f, rec)) })
+
+function files(path: string): any {
+  if (!existsSync(path)) return null
+  return Object.fromEntries(readdirSync(path, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).map(e => [e.name, e.isDirectory() ? files(join(path, e.name)) : readFileSync(join(path, e.name)).toString('base64')]))
+}
+function gateSnapshot(f: Fixture) {
+  const registry = readFileSync(join(f.mgmt, 'registry.json'))
+  const reg = JSON.parse(registry.toString())
+  const leftovers = (path: string): string[] => !existsSync(path) ? [] : readdirSync(path, { withFileTypes: true }).flatMap(e => {
+    const p = join(path, e.name)
+    return e.isDirectory() ? leftovers(p) : (/\.lock$|\.tmp(?:\.|$)/.test(e.name) ? [p.slice(f.base.length + 1)] : [])
+  })
+  return { registry: registry.toString('base64'), active: reg.active, closed: reg.closed, generation: reg.generation, backups: files(join(f.mgmt, 'backups')), archives: files(join(f.mgmt, 'archives')), evidence: files(join(f.mgmt, 'evidence')), target: readFileSync(join(f.target, 'a.txt')).toString('base64'), worktree: existsSync(f.target), leftovers: leftovers(f.mgmt) }
+}
+function observeGate(f: Fixture, before: ReturnType<typeof gateSnapshot>, run: () => unknown) {
+  let result: any, error: any
+  try { result = run() } catch (e) { error = e }
+  const after = gateSnapshot(f)
+  const unchanged = Object.fromEntries(Object.keys(before).map(k => [k, JSON.stringify(before[k as keyof typeof before]) === JSON.stringify(after[k as keyof typeof after])]))
+  console.log('ROUND1_OBSERVATION', JSON.stringify({ fixture: f.base, resultOk: result?.ok, errorCode: error?.code, beforeGeneration: before.generation, afterGeneration: after.generation, beforeActive: before.active.length, afterActive: after.active.length, beforeClosed: before.closed.length, afterClosed: after.closed.length, beforeBackups: before.backups && Object.keys(before.backups), afterBackups: after.backups && Object.keys(after.backups), beforeArchives: before.archives && Object.keys(before.archives), afterArchives: after.archives && Object.keys(after.archives), leftovers: after.leftovers, unchanged }))
+  expect({ errorCode: error?.code, unchanged, leftovers: after.leftovers }).toEqual({ errorCode: 'MAINTENANCE_EVIDENCE_INSUFFICIENT', unchanged: Object.fromEntries(Object.keys(before).map(k => [k, true])), leftovers: [] })
+}
+
+test('round1 stop gate plan rejects submitted without interrupt', () => {
+  const { f, rec } = submittedFixture()
+  const before = gateSnapshot(f)
+  observeGate(f, before, () => planMaintenance(closeRequest(f, rec)))
+})
+
+test('round1 stop gate apply rejects submitted without interrupt', () => {
+  const { f, rec } = submittedFixture()
+  const plan = legacyPlan(f, rec)
+  const before = gateSnapshot(f)
+  observeGate(f, before, () => applyMaintenance(plan))
+})
+
+test('stop_requested compatibility only, not policy approval', () => {
+  const f = setup(), task = start(f); migrated(f)
+  f.ledger.transition('owner', task.taskID, 'reserved', 'stop_requested')
+  const rec = record(f); expect(rec.interruptResult).toBeUndefined(); bundle(f, rec)
+  expect((applyMaintenance(closePlan(f, rec)) as any).ok).toBe(true)
+})
+test('stop_unconfirmed with session compatibility', () => {
+  const { f, rec } = nonStopFixture('submitted')
+  f.ledger.transition('owner', rec.taskID, 'submitted', 'stop_requested')
+  f.ledger.transition('owner', rec.taskID, 'stop_requested', 'stop_unconfirmed', { interruptResult: { interrupted: 'unknown', result: 'request_completed' } })
+  const stopped = record(f); expect(stopped.sessionID).toBe('fixture-session'); bundle(f, stopped)
+  expect((applyMaintenance(closePlan(f, stopped)) as any).ok).toBe(true)
+})
+test('historical submitted close replay without evidence is zero-write', () => {
+  const { f, rec } = nonStopFixture('submitted'), oldPlan = legacyPlan(f, rec), request = closeRequest(f, rec)
+  const closedAt = new Date().toISOString()
+  new AtomicRegistry(f.project.commonDir, f.project).withLock(store => {
+    const reg: any = store.read(), item = reg.active.shift()
+    reg.closed.push({ ...item, closeout: { operationID: request.operationID, paramsDigest: oldPlan.plan.paramsDigest, closedAt, operatorRef: request.operatorRef, authorizationRef: request.authorizationRef, disposition: request.disposition, stopEvidenceRef: request.evidence, quiescenceEvidenceRef: request.evidence, reviewEvidenceRef: 'evidence/listing.json', evidenceDigest: sha(readFileSync(join(f.mgmt, request.evidence))), archiveRef: 'archives/' + request.operationID + '.json', archiveDigest: sha('synthetic') } })
+    reg.generation++; store.write(reg)
+  })
+  const loaded: any = new Ledger(f.project).load().registry
+  expect(loaded.closed[0].record).toEqual(rec)
+  rmSync(join(f.mgmt, 'evidence'), { recursive: true })
+  const before = gateSnapshot(f), replayPlan: any = planMaintenance(request)
+  expect(replayPlan.plan.changes).toEqual([])
+  const result = { taskID: rec.taskID, periodID: 'pd_1', closedAt, disposition: 'preserved' }
+  expect(applyMaintenance(replayPlan)).toEqual({ v: 1, ok: true, replayed: true, result })
+  expect(applyMaintenance(oldPlan)).toEqual({ v: 1, ok: true, replayed: true, result })
+  expect(gateSnapshot(f)).toEqual(before); expect(before.closed[0].record.state).toBe('submitted')
+})
+
 test('plan is read-only and binds generation, registry digest, changes, and evidence', () => {
   const { f, rec } = prepared()
   const before = readFileSync(join(f.mgmt, 'registry.json'))
