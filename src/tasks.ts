@@ -208,7 +208,7 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelRef) {
  }
  const descriptions = {
   start: [
-   '在手工准备的独立 detached worktree 中启动 engineer 会话并一次性投递任务。',
+   '在手工准备的独立 detached worktree 中启动 engineer；同一 Root 同 key、同输入返回原记录（含已结案），不重投；重试换新 key；最多2个未结案预留，idle/出错/stop不释放，仅离线结案释放。',
    '前提：只能从主 worktree 根目录的 Root 会话调用；主、目标 worktree 均干净，目标属于同一仓库且不与主 worktree 嵌套，二者 HEAD 与 baseline 均为同一完整 commit OID。',
    '参数：key 在项目的 active 与 closed 任务历史中全局唯一；directory 为绝对路径；scope 为 1～32 个精确相对文件路径或以 / 结尾的目录前缀，不支持 glob；goal、acceptance、check 是任务文本，不作为插件 shell 命令执行。',
    '幂等：同一 Root 会话中，相同 key、相同输入返回原记录，包括已结案记录，不重新创建会话或投递；不同输入或其他 Root 复用 key 会冲突。重试必须换新的 key。',
@@ -216,11 +216,11 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelRef) {
    '边界：worktree 和 scope 不是操作系统级隔离。',
   ].join('\n'),
   status: [
-   '查询当前 Root 会话发起的任务，不能查询其他 Root 的任务。',
+   '查询当前 Root 会话发起的任务，不能查询其他 Root 的任务；不传 taskID 只列出当前 Root 的未结案任务；传 taskID 时任务不存在或不属于当前 Root 则成功返回，但不含 task 字段。',
    '不传 taskID：只列出当前 Root 的未结案任务。传 taskID：可返回当前 Root 发起的对应未结案或已结案记录；任务不存在或不属于当前 Root 时成功返回，但不含 task 字段。',
   ].join('\n'),
   stop: [
-   '对当前 Root 的未结案任务最多发送一次中断请求；重复调用不会再次中断。已结案记录直接返回，不发送中断。',
+   '对当前 Root 的未结案任务最多发送一次中断请求；重复调用不会再次中断。已结案记录直接返回，不发送中断。返回不能证明会话或进程树已经停止，processSafety 仍为 unconfirmed，也不会释放预留。',
    '返回只说明请求结果，不能证明会话或进程树已经停止，processSafety 仍为 unconfirmed，也不会释放预留。任务不存在或不属于当前 Root 时拒绝，不要重试。',
   ].join('\n'),
  }

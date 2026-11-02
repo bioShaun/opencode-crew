@@ -64,6 +64,31 @@ async function fixture(options: any = {}) {
   return { base, dir, wt, oid, tools, agents, hooks, sessions, calls, controls, owner, tc, input, run, runFull, worktree, advance, ctx }
 }
 
+test('start first line fits observed 2.2.5 catalog budget', async () => {
+  const { tools } = await registration()
+  const line = tools.get('crew_task_start').description.split('\n')[0]
+  // 117 characters is the observed prefix budget, not a promise for other hosts.
+  expect(line.length).toBeLessThanOrEqual(117)
+})
+
+test('start description first line exposes replay and capacity constraints', async () => {
+  const { tools } = await registration()
+  const line = tools.get('crew_task_start').description.split('\n')[0]
+  for (const text of ['手工准备的独立 detached worktree', 'engineer', '同一 Root 同 key、同输入返回原记录（含已结案），不重投', '重试换新 key', '最多2个未结案预留', 'idle/出错/stop不释放', '仅离线结案释放']) expect(line).toContain(text)
+})
+
+test('status description first line exposes owner and empty-result constraints', async () => {
+  const { tools } = await registration()
+  const line = tools.get('crew_task_status').description.split('\n')[0]
+  for (const text of ['当前 Root', '不能查询其他 Root', '不传 taskID', '只列出当前 Root 的未结案任务', '任务不存在或不属于当前 Root', '成功返回', '不含 task 字段']) expect(line).toContain(text)
+})
+
+test('stop description first line exposes interrupt and safety constraints', async () => {
+  const { tools } = await registration()
+  const line = tools.get('crew_task_stop').description.split('\n')[0]
+  for (const text of ['最多发送一次中断请求', '重复调用不会再次中断', '已结案记录直接返回，不发送中断', '不能证明会话或进程树已经停止', 'processSafety 仍为 unconfirmed', '不会释放预留']) expect(line).toContain(text)
+})
+
 test('tool descriptions freeze the calling contract', async () => {
   const { tools } = await registration()
   const start = tools.get('crew_task_start').description
