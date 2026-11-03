@@ -174,6 +174,32 @@ test("Subagents counts native sessions and folds crew_task usage into engineer",
   expect(plain(view.subagents!.title)).toContain("2 sessions")
 })
 
+test("Subagents keeps the cache suffix when the token pair outgrows the column", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING).toBe(false); return }
+  const wide = m.buildSidebar(input({
+    sessions: [
+      session("root", { agent: "root" }),
+      session("eng", { agent: "engineer", tokens: tok(3748269, 0, 0, 0, 157507712) }),
+    ],
+    costs: { eng: 13.68 },
+  }))
+  const eng = wide.subagents!.rows.find((r: any[]) => plain(r).startsWith("engineer"))
+  expect(plain(eng)).toContain("3.7M+158M")
+  expect(m.cells(plain(eng))).toBe(37)
+
+  const huge = m.buildSidebar(input({
+    sessions: [
+      session("root", { agent: "root" }),
+      session("eng", { agent: "engineer", tokens: tok(123456789, 0, 0, 0, 1234567890) }),
+    ],
+  }))
+  const row = huge.subagents!.rows.find((r: any[]) => plain(r).startsWith("engineer"))
+  expect(plain(row)).toContain("123M+1.2B")
+  expect(m.cells(plain(row))).toBe(37)
+  expect(m.cells(plain(huge.subagents!.header))).toBe(37)
+})
+
 test("stalled running session shows 无输出 and the whole row is warning", async () => {
   const m = await vm() as any
   if (MISSING) { expect(MISSING).toBe(false); return }

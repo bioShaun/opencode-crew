@@ -157,6 +157,21 @@ export const tokenTotal = (t?: TokenUsage): number =>
   t ? (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + (t.cache?.write ?? 0) : 0
 export const compactTokens = (n: number): string =>
   n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(Math.round(n))
+/** Integer-precision shorthand, used only when the exact pair overflows the column. */
+const tightTokens = (n: number): string =>
+  n >= 1e9 ? (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B' : n >= 1e6 ? Math.round(n / 1e6) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(Math.round(n))
+const TOKENS_WIDTH = 10
+/** Work + cache cell. Drops precision, never the cache value, to stay inside the column. */
+function tokenCell(work: number, cacheRead: number): string {
+  const exact = compactTokens(work)
+  if (!cacheRead) return exact
+  const options = [
+    `${exact}+${compactTokens(cacheRead)}`,
+    `${exact}+${tightTokens(cacheRead)}`,
+    `${tightTokens(work)}+${tightTokens(cacheRead)}`,
+  ]
+  return options.find(text => cells(text) <= TOKENS_WIDTH) ?? options[options.length - 1]
+}
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 export const money = (n: number): string => usd.format(n)
 const overBudget = (steps: number, limit: number): boolean => limit > 0 && steps >= limit * WARN_STEP_RATIO
@@ -339,9 +354,7 @@ export function buildSidebar(input: ViewInput): SidebarView {
     const body = used.map(x => {
       const w = warn.has(x.role)
       const tone: Tone = w ? 'warning' : 'muted'
-      const work = compactTokens(x.tokens)
-      const suffix = x.cacheRead ? `+${compactTokens(x.cacheRead)}` : ''
-      const tokens = cells(work + suffix) <= 10 ? work + suffix : work
+      const tokens = tokenCell(x.tokens, x.cacheRead ?? 0)
       return [
         span(padEndCells(truncateCells(x.role, 10), 10), w ? 'warning' : 'base'),
         span(
