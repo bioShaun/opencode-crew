@@ -3,7 +3,7 @@ import { For } from "solid-js"
 import type { SidebarView } from "./view-model"
 import { Row } from "./rows"
 
-/** Delegations block: running subagents, crew_task rows, +N done. */
+/** Delegations block: running subagents and crew_task rows. */
 export function Delegations(props: { block: NonNullable<SidebarView["delegations"]> }) {
   return (
     <box flexDirection="column">

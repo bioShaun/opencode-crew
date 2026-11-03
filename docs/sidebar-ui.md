@@ -22,13 +22,13 @@ HTML 可直接在浏览器打开，用 `?state=<name>` 或页面顶部切换栏�
 
 | 状态 | 演示内容 |
 | --- | --- |
-| `active`（默认） | 日常情况：engineer 运行中，下面嵌套一个 explorer，另有 `+2 done`；Subagents 4 个角色；无 `crew_task`，提醒区为空 |
+| `active`（默认） | 日常情况：engineer 运行中，下面嵌套一个 explorer；Subagents 4 个角色；无 `crew_task`，提醒区为空 |
 | `idle` | 无运行中的 delegation，Delegations 隐藏；Subagents 显示本次汇总；Todo 全部完成 |
 | `blocked` | 两个 `crew_task`（blocked、failed）和对应提醒，作为 `crew_task` 两行样式示例；engineer 因一次用满 `~80/80` 在 Subagents 中标黄 |
 | `stall` | 一个普通子代理长时间无输出，活动列为 `无输出 6m`，整行 warning |
-| `overflow` | 4 个运行中的子代理（含嵌套）、1 个 waiting 的 `crew_task`、1 条权限提醒、`+3 done`、8 条 Todo；内容超高，`sidebar.content` 垂直滚动，标题和 footer 固定 |
+| `overflow` | 4 个运行中的子代理（含嵌套）、1 个 waiting 的 `crew_task`、1 条权限提醒、8 条 Todo；内容超高，`sidebar.content` 垂直滚动，标题和 footer 固定 |
 | `long` | 超长会话标题、任务 ID、自定义角色名（三层嵌套）、活动、check 命令、路径和分支名，验证省略号截断 |
-| `anomaly` | explorer 调用 9 次、640k tokens、$1.41，其中一次用满 `~30/30`；Delegations 中的 explorer 行和 Subagents 中的 explorer 行都为 warning |
+| `anomaly` | explorer 9 个子会话、640k tokens、$1.41，其中一次用满 `~30/30`；Delegations 中的 explorer 行和 Subagents 中的 explorer 行都为 warning |
 
 ## 宿主约束与参考
 
@@ -63,7 +63,7 @@ OpenCode v2.2.5 的原生侧栏结构为：
 - 正在运行的 delegation 一直可见，包括后台运行和嵌套的子代理；
 - 步数预算（已用 / 上限）；
 - 每个子代理当前的活动和卡住提示；
-- 各角色本次的调用次数、tokens 和费用，用来发现异常。
+- 各角色本次的子会话数、`crew_task` 数、tokens 和费用，用来发现异常。
 
 `crew_task` 的工程师会话由 [`src/tasks.ts:158`](../src/tasks.ts#L158) 的 `ctx.session.create` 创建，没有 parentID，不在 Root 会话族里，原生的权限汇总、通知和页签都覆盖不到它，所以它的权限、blocked、failed 进入提醒区。由于 `crew_task` 很少触发，侧栏以普通子代理为主体，`crew_task` 只是 Delegations 里的一种条目。
 
@@ -93,13 +93,12 @@ OpenCode v2.2.5 的原生侧栏结构为：
 
 只列当前 Root 会话族里正在运行的 delegation，外加 Root 拥有的 `crew_task` 会话。标题 `Delegations (N running)`：`Delegations` 粗体 text.base，括号部分 muted；N 为运行中的普通子代理数加 progress / waiting 的 `crew_task` 数。
 
-普通子代理每个占一行，三列：角色名 10 列、活动、右对齐的步数 6 列，列间空 1 列，合计 37 列。嵌套的每层在角色名前多缩进 2 列（例如 engineer 派出的 explorer），缩进计入 10 列。`active` 状态：
+普通子代理每个占一行，三列：角色名 10 列、活动、右对齐的步数（通常 6 列，步数超长时最多扩到 12 列并压缩活动列），列间空 1 列，合计 37 列。嵌套的每层在角色名前多缩进 2 列（例如 engineer 派出的 explorer），缩进计入 10 列。`active` 状态：
 
 ```text
 Delegations (2 running)
 engineer   Running command…    ~41/80
   explorer Running read…        ~8/30
-+2 done
 ```
 
 - 活动文案照搬原生 `busyLabel`：思考中为 `Thinking…`；工具运行中为 `Running <noun>…`，工具输入仍在流式生成时为 `Preparing <noun>…`；noun 为工具名，`shell` 写作 `command`，`execute` 写作 `code`（如 `Running read…`、`Running edit…`、`Preparing write…`）。
@@ -120,33 +119,36 @@ ct_fixture             blocked ~17/80
 next 补充 ledger fixture
 ct_migrate              failed ~80/80
 next 查看失败日志
-+1 done
 ```
 
 - Report 状态颜色：`progress` 为 info，`waiting` / `ready` 为 warning，`blocked` / `failed` 为 error；`dropped` 不展示。
 - `crew_task` 步数达到 80% 时，任务 ID 和步数改为 warning，状态保留原色，failed / blocked 仍为红色。
 
-本轮已经结束的 delegation 折叠成一行 muted 的 `+N done`。没有运行中、没有 `crew_task`、也没有本轮已结束的 delegation 时，整块隐藏。条目不设数量上限，超高时随 `sidebar.content` 垂直滚动。
+没有运行中的 delegation、也没有 `crew_task` 时，整块隐藏。条目不设数量上限，超高时随 `sidebar.content` 垂直滚动。
 
 ### 4. Subagents
 
-本次 Root 会话族里各角色的用量汇总，`idle` 时也显示，方便事后回看。标题 `Subagents (N calls · $X.XX)`，括号部分 muted；下面一行 faint 列头，然后每个角色一行：角色名 10 列，`calls` 7 列、`tokens` 10 列、`cost` 10 列，后三列右对齐，合计 37 列。`active` 状态：
+本次 Root 会话族里各角色的用量汇总，`idle` 时也显示，方便事后回看。标题 `Subagents (N sessions · $X.XX)`（N 为 1 时写 `1 session`），括号部分 muted，N 为各角色子会话数之和；下面一行 faint 列头，然后每个角色一行：角色名 10 列，`sess` 6 列 + 1 列间隔、`tok+cache` 10 列、`cost` 10 列，后三列右对齐，合计 37 列。`active` 状态：
 
 ```text
-Subagents (7 calls · $1.33)
-            calls    tokens      cost
-architect       1       38k     $0.15
-engineer        2      412k     $0.62
-explorer        3      161k     $0.35
-reviewer        1       52k     $0.21
+Subagents (7 sessions · $1.33)
+            sess  tok+cache      cost
+architect      1   38k+120k     $0.15
+engineer       2  412k+1.2M     $0.62
+explorer       3  161k+800k     $0.35
+reviewer       1   52k+210k     $0.21
 ```
 
-- 只列至少调用过一次的角色；`crew_task` 的工程师会话计入 engineer。
-- tokens 用 k / M 缩写（`38k`、`1.2M`）；费用保留两位小数（`$0.42`、`$12.30`）。
+- 只列有会话或有 crew_task 用量的角色；`crew_task` 不单独占一行，其 tokens / cost 并入 engineer，但不增加 `sess`。
+- `sess` 是会话族里该角色的原生子会话数；复用同一 session 的多次 `subagent` 调用不计数，tokens / cost 仍按子会话去重后的累计，不要用 `cost ÷ sess` 对账。
+- Subagents 是本次 Root 会话族的累计口径（包含之前轮次创建的会话）；Delegations 只显示当前运行中的 delegation 和 `crew_task`。
+- `tok+cache` = 工作 token（input + output + reasoning + cache.write）+ cache.read；cache.read 只展示，不参与异常阈值。cost 由宿主按实际模型和分项价格计算，所以 `$ / M` 本来就不会等于单一模型单价。
+- 不同角色可以在 `options.models` 配置不同模型；同一角色也可能因缓存命中率不同而出现不同的 `$ / M`。
+- `tok+cache` 用 k / M 缩写（`38k+120k`、`1.2M+5M`）；超过 10 列时只显示工作 token，避免撑破布局。费用保留两位小数（`$0.42`、`$12.30`）。
 - 颜色：角色名 text.base，数字 muted。
 - 异常角色整行 warning。示意规则，满足任一条即可：
   1. 有某次调用用满了步数上限；
-  2. calls ≥ 5，且 ≥ 其他角色最高值的 2 倍；
+  2. `sess` ≥ 5，且 ≥ 其他角色最高值的 2 倍；
   3. tokens ≥ 500k，且 ≥ 其他角色最高值的 2 倍；
   4. cost ≥ $1.00，且 ≥ 其他角色最高值的 2 倍。
 
@@ -158,13 +160,12 @@ reviewer        1       52k     $0.21
 Delegations (2 running)
 engineer   Running edit…       ~33/80
   explorer Running grep…       ~26/30
-+9 done
 
-Subagents (11 calls · $2.00)
-            calls    tokens      cost
-architect       1       38k     $0.15
-engineer        1      290k     $0.44
-explorer        9      640k     $1.41
+Subagents (11 sessions · $2.00)
+            sess  tok+cache      cost
+architect      1        38k     $0.15
+engineer       1       290k     $0.44
+explorer       9       640k     $1.41
 ```
 
 ### 5. Todo / Context
@@ -190,15 +191,14 @@ explorer        9      640k     $1.41
 
 | 内容 | 来源 | 口径与边界 |
 | --- | --- | --- |
-| 会话族、agent、嵌套关系 | `data.session.family(rootID)`、`get`、`list`、`status` | `SessionInfo.agent` 给角色，`parentID` 建树；`status` 为 `running` 的子会话进入 Delegations，包括后台运行的 |
-| 本轮已结束 | 同上 | 本轮 Root 用户消息之后启动、现已 idle 的子会话，计为 `+N done` |
+| 会话族、agent、嵌套关系 | 宿主 `data.session.family` + 事件；`active()` 校准；`session.get` 补 parentID | Delegations 的 running 由 `/active` 快照校准：有运行中成员时每 15s，空闲时每 60s 只探测 active；`session.created` / `session.execution.*` 事件立即更新，没有事件的成员由校准发现。宿主的 `family` 缓存不保证包含本轮新派出的嵌套子会话，因此未知 session 只做一次 `session.get` 归属核对并缓存。快照首次返回前退回 `time.busy`/`idle` 水位，再退回 `status` |
 | 步数上限 | `data.location.agent` 的 `AgentInfo.steps` | 来自 `agents/*.md` 的 `steps` 和配置 `options.steps`，由 [`src/index.ts:88`](../src/index.ts#L88) 写入；当前 architect 40、engineer 80、explorer 30、reviewer 30 |
-| 已用步数 | 子会话 `data.session.message.list` | OpenCode 按 runner 的逻辑 step 计数（[`runner/llm.ts`](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/session/runner/llm.ts)），重试、压缩、截断续写会让一个 step 对应多条消息，TUI 只能用子会话 assistant 消息数近似，显示为 `~N/M`；80% 与用满的判定也基于该近似值 |
-| 调用次数 | 会话族消息中的 `subagent` 工具调用 | 原生 subagent 工具可带 `sessionID` 复用子会话（[`tool/plugin/subagent.ts`](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/tool/plugin/subagent.ts)），所以数工具调用次数而不是子会话数；`crew_task` 每个任务会话计 1 次 engineer |
-| tokens | assistant 消息的 `tokens`（`TokenUsageInfo`） | input + output + reasoning + cache.write，不含 cache.read；缺失的消息跳过 |
-| 费用 | `data.session.cost(childID)` | 只算该子会话；传 Root ID 时会累加会话族中已知的会话，因此 Context 的 `$ spent` 不低于 Subagents 合计 |
-| 当前活动 | 子会话最新 assistant 消息的 `content` | 取状态为 `streaming` / `running` 的 tool，或尚未完成的 reasoning，按 `busyLabel` 规则生成文案 |
-| 卡住 | `SessionInfo.time.updated` | 运行中但长时间未更新时提示，是启发式判断，不是宿主给出的确定结论 |
+| 已用步数 | 运行中会话 `client.message.list({ type: "assistant", limit: 100 })` | OpenCode 按 runner 的逻辑 step 计数（[`runner/llm.ts`](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/session/runner/llm.ts)），重试、压缩、截断续写会让一个 step 对应多条消息，TUI 只能用子会话 assistant 消息数近似，显示为 `~N/M`；同一会话跨轮复用时消息数继续累计，因此可能长期超过单轮上限；80% 与用满的判定也基于该近似值 |
+| 子会话数 | 会话族里的 `SessionInfo.agent` | 按会话去重，不数工具调用；标题的 N 为各角色合计。`crew_task` 的 tokens / cost 并入 engineer，但不计入子会话数 |
+| tokens | `SessionInfo.tokens`；`crew_task` 快照的消息 tokens | Subagents 显示 `工作 + cache.read`；工作 token = input + output + reasoning + cache.write，缺失的消息跳过；异常阈值只用工作 token |
+| 费用 | `data.session.cost(childID)`；运行中会话用 `SessionInfo.cost` | 只算该子会话；传 Root ID 时会累加会话族中已知的会话，因此 Context 的 `$ spent` 不低于 Subagents 合计 |
+| 当前活动 | 运行中会话最新 assistant 消息的 `content` | 取状态为 `streaming` / `running` 的 tool，或尚未完成的 reasoning，按 `busyLabel` 规则生成文案 |
+| 卡住 | 运行中会话的 `SessionInfo.time.updated` | 运行中但长时间未更新时提示，是启发式判断，不是宿主给出的确定结论 |
 | 提醒区权限 | `data.session.permission.list(taskSessionID)` | 任务会话 ID 来自 Server 快照；只用于提示和跳转，不直接授权 |
 | VCS 分支、路径 | 原生 footer / `data.location.vcs` | Crew 不替换 footer |
 | Todo、Context | 宿主原生功能 | 不重复实现 |
@@ -235,7 +235,7 @@ Server 不依赖 Solid / OpenTUI；TUI 不导入 ledger 实现或直接访问任
 
 1. Crew 内容插入后，原生标题、Todo、Context 和 footer 仍存在，顺序不变。
 2. `active`、`idle`、`blocked`、`stall`、`overflow`、`long`、`anomaly` 七个状态都有明确布局：无内容的提醒区和 Delegations 整块隐藏，Subagents 在 `idle` 时仍显示，超高时只垂直滚动，超长内容截断。
-3. 调用次数按 `subagent` 工具调用计数，tokens 按 input + output + reasoning + cache.write 计算（不含 cache.read），费用按子会话 `data.session.cost` 计算；异常规则集中在 `view-model.ts` 并有单测。
+3. 角色用量按 `sess`（原生子会话数，按会话去重）计数；Subagents 的 tokens 显示工作 token + cache.read（工作 token = input + output + reasoning + cache.write），异常阈值只用工作 token；费用按子会话 `data.session.cost` 计算；异常规则集中在 `view-model.ts` 并有单测。
 4. 步数显示为 `~N/M` 近似值，上限取自 agent 的 `steps`；80% 与用满时显示 warning。
 5. `crew_task` 的任务数据只来自 Server 按 `ownerSessionID` 隔离的快照，TUI 不直接读取或修改 ledger。
 6. `ready` 不被呈现为测试通过或验收完成，界面不使用绿色。
@@ -243,7 +243,9 @@ Server 不依赖 Solid / OpenTUI；TUI 不导入 ledger 实现或直接访问任
 
 ## 未决事项
 
-- 插件首次渲染时会话族数据可能不完整：`data.session.sync` 只接受 `sessionID`，没有暴露 `children` 选项，需要确认如何补齐子会话及其消息。
+- ~~插件首次渲染时会话族数据可能不完整~~ 已绕开：Delegations 不再依赖宿主的 `family` / `message` 缓存渲染运行中的会话。运行中的会话由 step/tool/usage 等事件在本地 250ms 窗口内合并更新（不逐 delta 发请求），另有 15s 校准从 `/active` 取 liveness、`message.list` 补齐漏掉的事件；空闲时 60s 只探测 `/active`，不拉消息。宿主的 `session.sync(rootID, {children:true})` 仍保留为冷启动补齐（只在其缓存 miss 时生效）。
+- 宿主的 `session.created` 会把 `session.message:<id>` 标记为已完成但不拉取历史，之后 `message.sync` 直接 no-op；因此本轮新建的子会话在宿主 store 里可能只有零散事件行。侧栏对缺失基线只做一次定向 `message.list` 补取，按消息 id 合并，失败留到下一次校准重试；非运行会话仍读宿主 store。
+- 服务端 `/session/active` 快照本身可能短暂包含刚结束的会话（重连时尤其明显），客户端也可能漏收终止事件；sidebar 在 15s（空闲 60s）校准中发现 active 消失时补取最终快照并保留，失败则保留待校准标记重试，不退回旧 host 缓存。若上游能保证 active 快照与终止事件一致，可去掉 busy/idle 兜底。注意 `server.connected` 是用 `reconcile` 覆盖 active 表（会删除快照外的 key），问题在快照内容或事件丢失，而非“只增不减”。
 - `crew_task` 会话不在 Root 会话族里，尚未核实 `data.session.get` / `message.list` / `permission.list` / `cost` 能否直接读到它，是否需要先 `sync(taskSessionID)`。
 - 精确步数需要 Server 另外按 runner step 计数并提供；在此之前只显示近似值。
-- 异常阈值（80% 步数、无输出时长、calls / tokens / cost 的倍数和下限）待实测调整。
+- 异常阈值（80% 步数、无输出时长、sessions / tokens / cost 的倍数和下限）待实测调整。

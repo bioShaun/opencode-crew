@@ -152,7 +152,7 @@ const rootTodos = [
 // running: depth 0 = called by Root, each extra level is a subagent called by the row above.
 // tasks: crew_task engineer sessions (no parentID, outside the Root session family).
 // steps: approximate, counted as assistant messages in the child session (OpenCode counts runner iterations).
-// subagents: per-role totals for the Root session family; fullSteps = calls that hit the step limit.
+// subagents: per-role totals for the Root session family; sessions = native subagent sessions; fullSteps = sessions that hit the step limit.
 const STATES = {
   active: {
     title:'change-closeout',
@@ -165,10 +165,10 @@ const STATES = {
       tasks:[], done:2,
     },
     subagents:[
-      {role:'architect', calls:1, tokens:38000, cost:0.15},
-      {role:'engineer', calls:2, tokens:412000, cost:0.62},
-      {role:'explorer', calls:3, tokens:161000, cost:0.35},
-      {role:'reviewer', calls:1, tokens:52000, cost:0.21},
+      {role:'architect', sessions:1, tokens:38000, cost:0.15},
+      {role:'engineer', sessions:2, tokens:412000, cost:0.62},
+      {role:'explorer', sessions:3, tokens:161000, cost:0.35},
+      {role:'reviewer', sessions:1, tokens:52000, cost:0.21},
     ],
     todos:rootTodos,
     context:{tokens:18420, percent:62, cost:1.71},
@@ -189,10 +189,10 @@ const STATES = {
     alerts:[],
     delegations:{running:[], tasks:[], done:0},
     subagents:[
-      {role:'architect', calls:1, tokens:38000, cost:0.15},
-      {role:'engineer', calls:2, tokens:486000, cost:0.73},
-      {role:'explorer', calls:3, tokens:175000, cost:0.39},
-      {role:'reviewer', calls:2, tokens:97000, cost:0.39},
+      {role:'architect', sessions:1, tokens:38000, cost:0.15},
+      {role:'engineer', sessions:2, tokens:486000, cost:0.73},
+      {role:'explorer', sessions:3, tokens:175000, cost:0.39},
+      {role:'reviewer', sessions:2, tokens:97000, cost:0.39},
     ],
     todos:rootTodos.map(t => ({...t, status:'completed'})),
     context:{tokens:6240, percent:18, cost:1.92},
@@ -223,9 +223,9 @@ const STATES = {
       done:1,
     },
     subagents:[
-      {role:'architect', calls:1, tokens:38000, cost:0.15},
-      {role:'engineer', calls:2, tokens:523000, cost:0.78, fullSteps:1},
-      {role:'reviewer', calls:1, tokens:21000, cost:0.08},
+      {role:'architect', sessions:1, tokens:38000, cost:0.15},
+      {role:'engineer', sessions:2, tokens:523000, cost:0.78, fullSteps:1},
+      {role:'reviewer', sessions:1, tokens:21000, cost:0.08},
     ],
     todos:rootTodos,
     context:{tokens:24310, percent:71, cost:1.12},
@@ -252,8 +252,8 @@ const STATES = {
       tasks:[], done:1,
     },
     subagents:[
-      {role:'architect', calls:1, tokens:38000, cost:0.15},
-      {role:'engineer', calls:1, tokens:204000, cost:0.31},
+      {role:'architect', sessions:1, tokens:38000, cost:0.15},
+      {role:'engineer', sessions:1, tokens:204000, cost:0.31},
     ],
     todos:rootTodos,
     context:{tokens:19870, percent:65, cost:0.91},
@@ -286,10 +286,10 @@ const STATES = {
       done:3,
     },
     subagents:[
-      {role:'architect', calls:2, tokens:81000, cost:0.32},
-      {role:'engineer', calls:3, tokens:418000, cost:0.63},
-      {role:'explorer', calls:4, tokens:212000, cost:0.47},
-      {role:'reviewer', calls:2, tokens:64000, cost:0.26},
+      {role:'architect', sessions:2, tokens:81000, cost:0.32},
+      {role:'engineer', sessions:3, tokens:418000, cost:0.63},
+      {role:'explorer', sessions:4, tokens:212000, cost:0.47},
+      {role:'reviewer', sessions:2, tokens:64000, cost:0.26},
     ],
     todos:[
       {content:'拆分侧栏改动', status:'completed'},
@@ -332,9 +332,9 @@ const STATES = {
       done:12,
     },
     subagents:[
-      {role:'engineer', calls:2, tokens:1240000, cost:1.86},
-      {role:'explorer', calls:1, tokens:48000, cost:0.11},
-      {role:'security-auditor-extended', calls:1, tokens:9000, cost:0.02},
+      {role:'engineer', sessions:2, tokens:1240000, cost:1.86},
+      {role:'explorer', sessions:1, tokens:48000, cost:0.11},
+      {role:'security-auditor-extended', sessions:1, tokens:9000, cost:0.02},
     ],
     todos:[
       {content:'为没有 parentID 的工程师会话建立权限转发，并在 Root 侧栏提示', status:'in_progress'},
@@ -363,9 +363,9 @@ const STATES = {
       tasks:[], done:9,
     },
     subagents:[
-      {role:'architect', calls:1, tokens:38000, cost:0.15},
-      {role:'engineer', calls:1, tokens:290000, cost:0.44},
-      {role:'explorer', calls:9, tokens:640000, cost:1.41, fullSteps:1},
+      {role:'architect', sessions:1, tokens:38000, cost:0.15},
+      {role:'engineer', sessions:1, tokens:290000, cost:0.44},
+      {role:'explorer', sessions:9, tokens:640000, cost:1.41, fullSteps:1},
     ],
     todos:rootTodos,
     context:{tokens:41870, percent:88, cost:2.31},
@@ -475,40 +475,39 @@ function renderCrewTask(t) {
 
 function renderDelegations(d) {
   const tasks = d.tasks.filter(t => t.status !== 'dropped');
-  if (!d.running.length && !tasks.length && !d.done) return '';
+  if (!d.running.length && !tasks.length) return '';
   const running = d.running.length + tasks.filter(t => t.status === 'progress' || t.status === 'waiting').length;
   return `<div class="block delegations"><div class="ln"><b class="base">Delegations</b><span class="muted"> (${running} running)</span></div>`
     + d.running.map(renderDelegation).join('')
     + tasks.map(renderCrewTask).join('')
-    + (d.done ? `<div class="ln muted">+${d.done} done</div>` : '')
     + `</div>`;
 }
 
 const compactTokens = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
 
-// Illustrative anomaly rule: any call hit its step limit, or calls / tokens / cost are at least
+// Illustrative anomaly rule: any session hit its step limit, or sessions / tokens / cost are at least
 // double the next-highest role (with absolute floors so a small session does not light up).
 function subagentAnomalies(list) {
   const second = (key, role) => Math.max(0, ...list.filter(x => x.role !== role).map(x => x[key]));
   return new Set(list.filter(x =>
     (x.fullSteps ?? 0) > 0
-    || (x.calls >= 5 && x.calls >= 2 * second('calls', x.role))
+    || (x.sessions >= 5 && x.sessions >= 2 * second('sessions', x.role))
     || (x.tokens >= 500000 && x.tokens >= 2 * second('tokens', x.role))
     || (x.cost >= 1 && x.cost >= 2 * second('cost', x.role))
   ).map(x => x.role));
 }
 
 function renderSubagents(list) {
-  const used = list.filter(x => x.calls > 0);
+  const used = list.filter(x => x.sessions > 0);
   if (!used.length) return '';
   const warn = subagentAnomalies(used);
-  const calls = used.reduce((n, x) => n + x.calls, 0);
+  const total = used.reduce((n, x) => n + x.sessions, 0);
   const cost = used.reduce((n, x) => n + x.cost, 0);
-  return `<div class="block subagents"><div class="ln"><b class="base">Subagents</b><span class="muted"> (${calls} calls · ${money.format(cost)})</span></div>`
-    + `<div class="sa ln faint"><span></span><span>calls</span><span>tokens</span><span>cost</span></div>`
+  return `<div class="block subagents"><div class="ln"><b class="base">Subagents</b><span class="muted"> (${total} session${total === 1 ? '' : 's'} · ${money.format(cost)})</span></div>`
+    + `<div class="sa ln faint"><span></span><span>sess </span><span>tokens</span><span>cost</span></div>`
     + used.map(x => {
       const w = warn.has(x.role);
-      return `<div class="sa ln ${w ? 'warning' : 'muted'}"><span class="${w ? '' : 'base'}">${esc(x.role)}</span><span>${x.calls}</span><span>${compactTokens(x.tokens)}</span><span>${money.format(x.cost)}</span></div>`;
+      return `<div class="sa ln ${w ? 'warning' : 'muted'}"><span class="${w ? '' : 'base'}">${esc(x.role)}</span><span>${x.sessions} </span><span>${compactTokens(x.tokens)}</span><span>${money.format(x.cost)}</span></div>`;
     }).join('')
     + `</div>`;
 }

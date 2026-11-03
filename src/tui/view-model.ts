@@ -21,7 +21,10 @@ export interface SessionView {
   agent?: string
   created: number
   updated: number
+  busy?: number
+  idle?: number
   tokens?: TokenUsage
+  cost?: number
 }
 export interface CrewTaskView {
   taskID: string
@@ -35,6 +38,7 @@ export interface CrewTaskView {
   report?: { status: ReportStatus; reason?: string }
   steps: number
   tokens?: number
+  cacheRead?: number
   cost?: number
   permissions?: { action: string; resources: string[] }[]
 }
@@ -46,21 +50,25 @@ export interface PartView {
   time?: { created?: number; completed?: number }
 }
 export interface MessageView {
+  id?: string
   type: string
   agent?: string
   tokens?: TokenUsage
-  time?: { created?: number; completed?: number }
+  time?: { created?: number; streamed?: number; completed?: number }
   content?: PartView[]
 }
 export interface ViewInput {
   rootID: string
   sessions: SessionView[]
-  boundary: number
   tasks: CrewTaskView[]
   now: number
   status: (id: string) => 'idle' | 'running'
+  /** Authoritative liveness when the caller has one (e.g. the server active snapshot). */
+  running?: (session: SessionView) => boolean
   messages: (id: string) => MessageView[]
   cost: (id: string) => number
+  /** Last confirmed output from events, when the caller tracks it separately. */
+  lastActivity?: (id: string) => number
   limit: (agent: string | undefined) => number
 }
 export interface AlertRow { spans: Span[]; sessionID?: string }
@@ -118,6 +126,33 @@ export function sessionActivity(messages: MessageView[]): string {
 // --- counting ---
 
 export const countSteps = (messages: MessageView[]): number => messages.filter(m => m.type === 'assistant').length
+
+export const messageStamp = (m: MessageView): number => Math.max(
+  m.time?.created ?? 0,
+  m.time?.streamed ?? 0,
+  m.time?.completed ?? 0,
+  ...(m.content ?? []).flatMap(p => [p.time?.created ?? 0, p.time?.completed ?? 0]),
+)
+
+/**
+ * Last confirmed output in a transcript. The host's cached `session.updated`
+ * does not advance for step/tool events, so stall detection must also look at
+ * message and part timestamps; a successful poll is never an activity signal.
+ */
+export const lastActivityOf = (messages: MessageView[]): number =>
+  messages.reduce((max, m) => Math.max(max, messageStamp(m)), 0)
+
+// Fallback when no authoritative liveness source is available: a terminal
+// event can leave status pinned at 'running', and a started event can hide a
+// live session. The busy/idle watermarks veto a stale running status only
+// when the completion (idle) landed; they cannot tell a live run from one
+// whose terminal event was lost. Callers with a server snapshot should pass
+// `running` to buildSidebar instead.
+export function sessionRunning(s: SessionView, status: (id: string) => 'idle' | 'running'): boolean {
+  if (s.busy !== undefined) return s.busy > (s.idle ?? 0)
+  if (s.idle !== undefined) return false
+  return status(s.id) === 'running'
+}
 export const tokenTotal = (t?: TokenUsage): number =>
   t ? (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + (t.cache?.write ?? 0) : 0
 export const compactTokens = (n: number): string =>
@@ -126,17 +161,17 @@ const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' 
 export const money = (n: number): string => usd.format(n)
 const overBudget = (steps: number, limit: number): boolean => limit > 0 && steps >= limit * WARN_STEP_RATIO
 
-export interface RoleStat { role: string; calls: number; tokens: number; cost: number; fullSteps: number }
+export interface RoleStat { role: string; sessions: number; tokens: number; cacheRead?: number; cost: number; fullSteps: number }
 
-// Illustrative anomaly rule: a call hit its step limit, or calls / tokens / cost
-// are at least double the next-highest role (with absolute floors so a small
-// session does not light up). Thresholds are placeholders pending measurement.
+// Illustrative anomaly rule: a session hit its step limit, or sessions / tokens
+// / cost are at least double the next-highest role (with absolute floors so a
+// small session does not light up). Thresholds are placeholders.
 export function subagentAnomalies(list: RoleStat[]): Set<string> {
-  const second = (key: 'calls' | 'tokens' | 'cost', role: string) =>
+  const second = (key: 'sessions' | 'tokens' | 'cost', role: string) =>
     Math.max(0, ...list.filter(x => x.role !== role).map(x => x[key]))
   return new Set(list.filter(x =>
     x.fullSteps > 0
-    || (x.calls >= 5 && x.calls >= 2 * second('calls', x.role))
+    || (x.sessions >= 5 && x.sessions >= 2 * second('sessions', x.role))
     || (x.tokens >= 500000 && x.tokens >= 2 * second('tokens', x.role))
     || (x.cost >= 1 && x.cost >= 2 * second('cost', x.role))
   ).map(x => x.role))
@@ -172,31 +207,38 @@ const effectiveReport = (t: CrewTaskView): Exclude<ReportStatus, 'dropped'> =>
 
 function delegationRow(s: SessionView, depth: number, input: ViewInput): Span[] {
   const limit = input.limit(s.agent)
-  const steps = countSteps(input.messages(s.id))
-  const stalled = input.now - s.updated >= STALL_MS
+  const messages = input.messages(s.id)
+  const steps = countSteps(messages)
+  const seen = Math.max(s.updated, lastActivityOf(messages), input.lastActivity?.(s.id) ?? 0)
+  const stalled = input.now - seen >= STALL_MS
   const warn = stalled || overBudget(steps, limit)
-  const activity = stalled ? `无输出 ${Math.max(1, Math.floor((input.now - s.updated) / 60000))}m` : sessionActivity(input.messages(s.id))
+  const activity = stalled ? `无输出 ${Math.max(1, Math.floor((input.now - seen) / 60000))}m` : sessionActivity(messages)
   const role = '  '.repeat(Math.min(depth, 4)) + (s.agent ?? '?')
   const tone: Tone = warn ? 'warning' : 'base'
+  const step = `~${steps}/${limit || '—'}`
+  const stepWidth = Math.min(12, Math.max(6, cells(step)))
+  const activityWidth = WIDTH - 10 - 1 - 1 - stepWidth
   return [
     span(padEndCells(truncateCells(role, 10), 10), tone),
     span(' ', tone),
-    span(padEndCells(truncateCells(activity, 19), 19), warn ? 'warning' : 'info'),
+    span(padEndCells(truncateCells(activity, activityWidth), activityWidth), warn ? 'warning' : 'info'),
     span(' ', tone),
-    span(padStartCells(`~${steps}/${limit || '—'}`, 6), warn ? 'warning' : 'faint'),
+    span(padStartCells(truncateCells(step, stepWidth), stepWidth), warn ? 'warning' : 'faint'),
   ]
 }
 
 function taskRows(t: CrewTaskView, limit: number): Span[][] {
   const report = effectiveReport(t)
   const warn = overBudget(t.steps, limit)
-  const idWidth = WIDTH - 1 - cells(report) - 1 - 6
+  const step = `~${t.steps}/${limit}`
+  const stepWidth = Math.min(12, Math.max(6, cells(step)))
+  const idWidth = WIDTH - 1 - cells(report) - 1 - stepWidth
   const head: Span[] = [
     span(padEndCells(truncateCells(t.taskID, idWidth), idWidth), warn ? 'warning' : 'base'),
     span(' ', 'base'),
     span(report, REPORT_TONE[report]),
     span(' ', 'base'),
-    span(padStartCells(`~${t.steps}/${limit}`, 6), warn ? 'warning' : 'faint'),
+    span(padStartCells(truncateCells(step, stepWidth), stepWidth), warn ? 'warning' : 'faint'),
   ]
   const detail = report === 'ready'
     ? { key: 'next', value: 'Root 验收证据' }
@@ -232,14 +274,12 @@ export function buildSidebar(input: ViewInput): SidebarView {
 
   const rows: Span[][] = []
   let runningCount = 0
-  let done = 0
+  const isRunning = input.running ?? ((s: SessionView) => sessionRunning(s, input.status))
   const visit = (parent: string, depth: number) => {
     for (const s of (childrenOf.get(parent) ?? []).slice().sort((a, b) => a.created - b.created)) {
-      if (input.status(s.id) === 'running') {
+      if (isRunning(s)) {
         runningCount++
         rows.push(delegationRow(s, depth, input))
-      } else if (s.created > input.boundary) {
-        done++
       }
       visit(s.id, depth + 1)
     }
@@ -251,7 +291,6 @@ export function buildSidebar(input: ViewInput): SidebarView {
     if (report === 'progress' || report === 'waiting') runningCount++
     rows.push(...taskRows(t, input.limit('engineer')))
   }
-  if (done) rows.push([span(`+${done} done`, 'muted')])
   const delegations = rows.length
     ? { title: title('Delegations', `(${runningCount} running)`), rows, runningCount }
     : undefined
@@ -260,59 +299,61 @@ export function buildSidebar(input: ViewInput): SidebarView {
   const put = (role: string) => {
     const hit = stats.get(role)
     if (hit) return hit
-    const created: RoleStat = { role, calls: 0, tokens: 0, cost: 0, fullSteps: 0 }
+    const created: RoleStat = { role, sessions: 0, tokens: 0, cacheRead: 0, cost: 0, fullSteps: 0 }
     stats.set(role, created)
     return created
   }
-  const sessionsOfRole = new Map<string, number>()
   for (const s of family) {
     const role = s.agent ?? 'unknown'
-    sessionsOfRole.set(role, (sessionsOfRole.get(role) ?? 0) + 1)
     const stat = put(role)
+    stat.sessions++
     stat.tokens += tokenTotal(s.tokens)
+    stat.cacheRead = (stat.cacheRead ?? 0) + (s.tokens?.cache?.read ?? 0)
     stat.cost += input.cost(s.id)
     if (countSteps(input.messages(s.id)) >= input.limit(role)) stat.fullSteps++
   }
-  const attributed = new Map<string, number>()
-  for (const s of input.sessions) {
-    for (const m of input.messages(s.id)) {
-      if (m.type !== 'assistant') continue
-      for (const p of m.content ?? []) {
-        if (p.type !== 'tool' || canonicalToolName(p.name ?? '') !== 'subagent' || p.state?.status === 'streaming') continue
-        const input0 = p.state?.input
-        const agent = typeof (input0 as any)?.agent === 'string' ? (input0 as any).agent
-          : typeof (input0 as any)?.sessionID === 'string' ? byID.get((input0 as any).sessionID)?.agent : undefined
-        if (agent) attributed.set(agent, (attributed.get(agent) ?? 0) + 1)
-      }
-    }
-  }
-  for (const [role, n] of attributed) put(role).calls = Math.max(put(role).calls, n)
-  for (const [role, n] of sessionsOfRole) put(role).calls = Math.max(put(role).calls, n)
   for (const t of input.tasks) {
+    // crew_task usage belongs to engineer; it is not a native subagent session.
     const stat = put('engineer')
-    stat.calls += 1
     stat.tokens += t.tokens ?? 0
+    stat.cacheRead = (stat.cacheRead ?? 0) + (t.cacheRead ?? 0)
     stat.cost += t.cost ?? 0
     if (t.steps >= input.limit('engineer')) stat.fullSteps++
   }
 
   const roleRank = (role: string) => ROLE_ORDER.indexOf(role) === -1 ? ROLE_ORDER.length : ROLE_ORDER.indexOf(role)
-  const used = [...stats.values()].filter(x => x.calls > 0)
+  const used = [...stats.values()].filter(x => x.sessions > 0 || x.tokens > 0 || x.cost > 0)
     .sort((a, b) => roleRank(a.role) - roleRank(b.role) || a.role.localeCompare(b.role))
   const subagents = used.length ? (() => {
     const warn = subagentAnomalies(used)
-    const calls = used.reduce((n, x) => n + x.calls, 0)
+    const total = used.reduce((n, x) => n + x.sessions, 0)
     const cost = used.reduce((n, x) => n + x.cost, 0)
-    const head = [span(' '.repeat(10) + padStartCells('calls', 7) + padStartCells('tokens', 10) + padStartCells('cost', 10), 'faint')]
+    const head = [span(
+      ' '.repeat(10)
+      + padStartCells('sess', 6)
+      + ' '
+      + padStartCells('tok+cache', 10)
+      + padStartCells('cost', 10),
+      'faint',
+    )]
     const body = used.map(x => {
       const w = warn.has(x.role)
       const tone: Tone = w ? 'warning' : 'muted'
+      const work = compactTokens(x.tokens)
+      const suffix = x.cacheRead ? `+${compactTokens(x.cacheRead)}` : ''
+      const tokens = cells(work + suffix) <= 10 ? work + suffix : work
       return [
         span(padEndCells(truncateCells(x.role, 10), 10), w ? 'warning' : 'base'),
-        span(padStartCells(String(x.calls), 7) + padStartCells(compactTokens(x.tokens), 10) + padStartCells(money(x.cost), 10), tone),
+        span(
+          padStartCells(String(x.sessions), 6)
+          + ' '
+          + padStartCells(tokens, 10)
+          + padStartCells(money(x.cost), 10),
+          tone,
+        ),
       ]
     })
-    return { title: title('Subagents', `(${calls} calls · ${money(cost)})`), header: head, rows: body }
+    return { title: title('Subagents', `(${total} session${total === 1 ? '' : 's'} · ${money(cost)})`), header: head, rows: body }
   })() : undefined
 
   return { alerts, delegations, subagents }

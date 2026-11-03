@@ -22,7 +22,7 @@ function input(over: any = {}) {
   const { sessions = [], messages = {}, statuses = {}, costs = {}, limits, ...rest } = over
   const lim: Record<string, number> = limits ?? { architect: 40, engineer: 80, explorer: 30, reviewer: 30 }
   return {
-    rootID: "root", sessions, boundary: 0, tasks: [], now: 60_000_000,
+    rootID: "root", sessions, tasks: [], now: 60_000_000,
     status: (id: string) => statuses[id] ?? "idle",
     messages: (id: string) => messages[id] ?? [],
     cost: (id: string) => costs[id] ?? 0,
@@ -90,27 +90,27 @@ test("compactTokens and money format the Subagents columns", async () => {
 test("subagentAnomalies implements all four warning rules with floors", async () => {
   const m = await vm() as any
   if (MISSING) { expect(MISSING).toBe(false); return }
-  const stat = (role: string, extra: any = {}) => ({ role, calls: 1, tokens: 1000, cost: 0.05, fullSteps: 0, ...extra })
-  const quiet = [stat("engineer", { calls: 3, tokens: 300000, cost: 0.6 }), stat("explorer", { calls: 2 })]
+  const stat = (role: string, extra: any = {}) => ({ role, sessions: 1, tokens: 1000, cost: 0.05, fullSteps: 0, ...extra })
+  const quiet = [stat("engineer", { sessions: 3, tokens: 300000, cost: 0.6 }), stat("explorer", { sessions: 2 })]
   expect(m.subagentAnomalies(quiet).size).toBe(0)
   const full = [stat("engineer"), stat("explorer", { fullSteps: 1 })]
   expect(m.subagentAnomalies(full).has("explorer")).toBe(true)
-  const calls = [stat("engineer", { calls: 2 }), stat("explorer", { calls: 5 })]
-  expect(m.subagentAnomalies(calls).has("explorer")).toBe(true)
-  const callsLow = [stat("engineer"), stat("explorer", { calls: 4 })]
-  expect(m.subagentAnomalies(callsLow).size).toBe(0)
+  const runs = [stat("engineer", { sessions: 2 }), stat("explorer", { sessions: 5 })]
+  expect(m.subagentAnomalies(runs).has("explorer")).toBe(true)
+  const runsLow = [stat("engineer"), stat("explorer", { sessions: 4 })]
+  expect(m.subagentAnomalies(runsLow).size).toBe(0)
   const tokens = [stat("engineer", { tokens: 200000 }), stat("explorer", { tokens: 500000 })]
   expect(m.subagentAnomalies(tokens).has("explorer")).toBe(true)
   const tokensLow = [stat("engineer", { tokens: 100000 }), stat("explorer", { tokens: 250000 })]
   expect(m.subagentAnomalies(tokensLow).size).toBe(0)
   const cost = [stat("engineer", { cost: 0.4 }), stat("explorer", { cost: 1.0 })]
   expect(m.subagentAnomalies(cost).has("explorer")).toBe(true)
-  const anomaly = [stat("architect", { tokens: 38000, cost: 0.15 }), stat("engineer", { tokens: 290000, cost: 0.44 }), stat("explorer", { calls: 9, tokens: 640000, cost: 1.41, fullSteps: 1 })]
+  const anomaly = [stat("architect", { tokens: 38000, cost: 0.15 }), stat("engineer", { tokens: 290000, cost: 0.44 }), stat("explorer", { sessions: 9, tokens: 640000, cost: 1.41, fullSteps: 1 })]
   expect(m.subagentAnomalies(anomaly).has("explorer")).toBe(true)
   expect(m.subagentAnomalies(anomaly).has("engineer")).toBe(false)
 })
 
-test("active state: nested running rows, running count and +N done", async () => {
+test("active state: nested running rows and running count", async () => {
   const m = await vm() as any
   if (MISSING) { expect(MISSING).toBe(false); return }
   const view = m.buildSidebar(input({
@@ -128,10 +128,9 @@ test("active state: nested running rows, running count and +N done", async () =>
     },
   }))
   expect(view.delegations.runningCount).toBe(2)
-  expect(view.delegations.rows.length).toBe(3)
+  expect(view.delegations.rows.length).toBe(2)
   expect(plain(view.delegations.rows[0])).toBe("engineer   Running command…     ~1/80")
   expect(plain(view.delegations.rows[1])).toBe("  explorer Running read…        ~1/30")
-  expect(plain(view.delegations.rows[2])).toBe("+2 done")
   expect(view.alerts.length).toBe(0)
 })
 
@@ -139,7 +138,6 @@ test("idle state: delegations hidden, subagents still listed", async () => {
   const m = await vm() as any
   if (MISSING) { expect(MISSING).toBe(false); return }
   const view = m.buildSidebar(input({
-    boundary: 5000,
     sessions: [
       session("root", { agent: "root" }),
       session("eng", { created: 2000, tokens: tok(200000, 212000), cost: 0 }),
@@ -149,31 +147,31 @@ test("idle state: delegations hidden, subagents still listed", async () => {
   }))
   expect(view.delegations).toBeUndefined()
   expect(view.subagents).toBeDefined()
-  expect(plain(view.subagents!.title)).toBe("Subagents (2 calls · $0.83)")
+  expect(plain(view.subagents!.title)).toBe("Subagents (2 sessions · $0.83)")
   const rows = view.subagents!.rows.map(plain)
   expect(rows.some((r: string) => r.startsWith("engineer"))).toBe(true)
   expect(rows.some((r: string) => r.startsWith("reviewer"))).toBe(true)
 })
 
-test("calls are counted from subagent tool calls, not sessions", async () => {
+test("Subagents counts native sessions and folds crew_task usage into engineer", async () => {
   const m = await vm() as any
   if (MISSING) { expect(MISSING).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
       session("eng", { created: 2000, agent: "engineer" }),
+      session("eng2", { created: 2100, agent: "engineer" }),
     ],
-    messages: {
-      root: [
-        assistant([tool("subagent", "completed", { agent: "engineer" }), tool("task", "completed", { agent: "engineer", sessionID: "eng" })]),
-        assistant([tool("subagent", "completed", { agent: "explorer", sessionID: "missing" })]),
-      ],
-      eng: [assistant([tool("subagent", "completed", { agent: "explorer" })])],
-    },
+    tasks: [
+      task({ taskID: "ct_a", report: { status: "progress" }, steps: 3, tokens: 5000, cost: 0.10 }),
+    ],
   }))
-  const rows = Object.fromEntries(view.subagents!.rows.map((r: any[]) => [plain(r).trim().split(/\s+/)[0], r]))
-  expect(plain(rows.engineer)).toContain("2")
-  expect(plain(view.subagents!.title)).toContain("4 calls")
+  const eng = view.subagents!.rows.find((r: any[]) => plain(r).startsWith("engineer"))
+  expect(plain(eng)).toContain("     2 ")
+  expect(plain(eng)).toContain("$0.10")
+  expect(m.cells(plain(eng))).toBe(37)
+  expect(m.cells(plain(view.subagents!.header))).toBe(37)
+  expect(plain(view.subagents!.title)).toContain("2 sessions")
 })
 
 test("stalled running session shows 无输出 and the whole row is warning", async () => {
@@ -192,6 +190,33 @@ test("stalled running session shows 无输出 and the whole row is warning", asy
   const row = view.delegations.rows[0]
   expect(plain(row)).toContain("无输出 6m")
   expect(row.every((s: any) => s.tone === "warning")).toBe(true)
+})
+
+test("stale host updated with recent message activity is not 无输出", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING).toBe(false); return }
+  const now = 10 * 60_000
+  const base = {
+    now,
+    sessions: [
+      session("root", { agent: "root" }),
+      // The host stops advancing session.updated for step/tool events.
+      session("eng", { created: 2000, updated: now - 6 * 60_000 }),
+    ],
+    statuses: { eng: "running" },
+  }
+  const active = m.buildSidebar(input({
+    ...base,
+    messages: { eng: [assistant([tool("shell", "running")], { time: { created: now - 1_000 } })] },
+  }))
+  expect(plain(active.delegations.rows[0])).not.toContain("无输出")
+
+  const tracked = m.buildSidebar(input({ ...base, messages: {}, lastActivity: () => now - 1_000 }))
+  expect(plain(tracked.delegations.rows[0])).not.toContain("无输出")
+
+  // A poll that fetched nothing is not activity: no override and no message time.
+  const silent = m.buildSidebar(input({ ...base, messages: {} }))
+  expect(plain(silent.delegations.rows[0])).toContain("无输出 6m")
 })
 
 test("a delegation row warns at 80% of the step limit", async () => {
@@ -289,24 +314,123 @@ test("anomaly state: warning rows in both Delegations and Subagents", async () =
   expect(expRow.every((s: any) => s.tone === "warning")).toBe(true)
   const sa = view.subagents!.rows.find((r: any[]) => plain(r).startsWith("explorer"))
   expect(sa.every((s: any) => s.tone === "warning")).toBe(true)
-  expect(plain(view.subagents!.title)).toContain("10 calls")
+  expect(plain(view.subagents!.title)).toContain("3 sessions")
 })
 
-test("crew_task sessions count as one engineer call each in Subagents", async () => {
+test("Subagents shows work tokens plus cache.read", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING).toBe(false); return }
+  const view = m.buildSidebar(input({
+    sessions: [
+      session("root", { agent: "root" }),
+      session("exp", { agent: "explorer", created: 2000, tokens: tok(300000, 20000, 0, 0, 5_000_000) }),
+    ],
+    costs: { exp: 0.15 },
+    statuses: { exp: "running" },
+    messages: { exp: [assistant([tool("grep", "running")])] },
+  }))
+  const row = view.subagents!.rows.find((r: any[]) => plain(r).startsWith("explorer"))
+  expect(plain(row)).toContain("320k+5M")
+})
+
+test("crew_task usage adds to engineer without a session count", async () => {
   const m = await vm() as any
   if (MISSING) { expect(MISSING).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [session("root", { agent: "root" })],
     tasks: [
-      task({ taskID: "ct_a", report: { status: "progress" }, steps: 3, tokens: 5000, cost: 0.10 }),
+      task({ taskID: "ct_a", report: { status: "progress" }, steps: 3, tokens: 5000, cacheRead: 1_000_000, cost: 0.10 }),
       task({ taskID: "ct_b", report: { status: "ready" }, steps: 81, tokens: 7000, cost: 0.20 }),
     ],
   }))
   const eng = view.subagents!.rows.find((r: any[]) => plain(r).startsWith("engineer"))
-  expect(plain(eng)).toContain("2")
-  expect(plain(eng)).toContain("12k")
+  expect(plain(eng)).toContain("     0 ")
+  expect(plain(eng)).toContain("12k+1M")
   expect(plain(eng)).toContain("$0.30")
   expect(eng.every((s: any) => s.tone === "warning")).toBe(true)
+})
+
+test("a stale running status is vetoed by the record's idle watermark", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING).toBe(false); return }
+  const view = m.buildSidebar(input({
+    sessions: [
+      session("root", { agent: "root" }),
+      session("arch", { agent: "architect", created: 2000, busy: 3000, idle: 4000 }),
+      session("eng", { created: 2500, busy: 6000, idle: 4000 }),
+    ],
+    statuses: { arch: "running" },
+    messages: {
+      arch: [assistant([tool("read", "completed")])],
+      eng: [assistant([tool("shell", "running")])],
+    },
+  }))
+  expect(view.delegations.runningCount).toBe(1)
+  expect(view.delegations.rows.length).toBe(1)
+  expect(plain(view.delegations.rows[0])).toBe("engineer   Running command…     ~1/80")
+})
+
+test("an idle-only record is hidden even with a stale running status", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING).toBe(false); return }
+  const view = m.buildSidebar(input({
+    sessions: [
+      session("root", { agent: "root" }),
+      session("arch", { agent: "architect", created: 2000, idle: 4000 }),
+    ],
+    statuses: { arch: "running" },
+    messages: { arch: [assistant([tool("read", "completed")])] },
+  }))
+  expect(view.delegations).toBeUndefined()
+})
+
+test("status() still decides when the record has no execution watermarks", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING).toBe(false); return }
+  const view = m.buildSidebar(input({
+    sessions: [session("root", { agent: "root" }), session("eng", { created: 2000 })],
+    statuses: { eng: "running" },
+    messages: { eng: [assistant([tool("shell", "running")])] },
+  }))
+  expect(view.delegations.runningCount).toBe(1)
+  expect(plain(view.delegations.rows[0])).toBe("engineer   Running command…     ~1/80")
+})
+
+test("an authoritative running set overrides the watermarks in both directions", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING).toBe(false); return }
+  const view = m.buildSidebar(input({
+    sessions: [
+      session("root", { agent: "root" }),
+      session("arch", { agent: "architect", created: 2000, busy: 6000, idle: 4000 }),
+      session("eng", { created: 2500, busy: 3000, idle: 4000 }),
+    ],
+    statuses: { arch: "running", eng: "idle" },
+    running: (s: any) => s.id === "eng",
+    messages: {
+      arch: [assistant([tool("read", "completed")])],
+      eng: [assistant([tool("shell", "running")])],
+    },
+  }))
+  expect(view.delegations.runningCount).toBe(1)
+  expect(view.delegations.rows.length).toBe(1)
+  expect(plain(view.delegations.rows[0])).toBe("engineer   Running command…     ~1/80")
+})
+
+test("overflowing step counts keep delegation rows at 37 cells", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING).toBe(false); return }
+  const view = m.buildSidebar(input({
+    sessions: [
+      session("root", { agent: "root" }),
+      session("eng", { created: 2000 }),
+    ],
+    statuses: { eng: "running" },
+    tasks: [task({ steps: 324, report: { status: "progress" } })],
+    messages: { eng: Array.from({ length: 324 }, () => assistant([])) },
+  }))
+  expect(plain(view.delegations.rows[0])).toContain("~324/80")
+  for (const row of view.delegations.rows) expect(m.cells(plain(row))).toBeLessThanOrEqual(37)
 })
 
 test("long identifiers are truncated inside their columns", async () => {

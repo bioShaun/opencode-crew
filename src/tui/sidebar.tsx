@@ -4,11 +4,13 @@ import { usePlugin } from "@opencode/plugin/tui"
 import { crewTasks, parseTasksOutput } from "../snapshot"
 import {
   buildSidebar,
+  sessionRunning,
   type CrewTaskView,
   type MessageView,
-  type SidebarView,
   type SessionView,
+  type SidebarView,
 } from "./view-model"
+import { LIVE_MESSAGES, LiveController, type LiveEvent, type LiveSnapshot } from "./live"
 import { Alerts } from "./alerts"
 import { Delegations } from "./delegations"
 import { Subagents } from "./subagents"
@@ -18,7 +20,6 @@ type Block =
   | { kind: "delegations"; block: NonNullable<SidebarView["delegations"]> }
   | { kind: "subagents"; block: NonNullable<SidebarView["subagents"]> }
 
-const POLL_MS = 5_000
 const DEBOUNCE_MS = 800
 
 const attempt = <T,>(run: () => T, fallback: T): T => {
@@ -33,8 +34,62 @@ const attempt = <T,>(run: () => T, fallback: T): T => {
 export function Sidebar(props: { sessionID: string }) {
   const context = usePlugin()
   const [tasks, setTasks] = createSignal<CrewTaskView[]>([])
+  const [live, setLive] = createSignal<LiveSnapshot>({ views: new Map(), running: new Set(), known: false })
 
   const location = () => context.location ?? attempt(() => context.data.location.default(), undefined)
+  const rootOf = (id: string) => attempt(() => context.data.session.root(id), "") || id
+
+  // session.sync accepts an undocumented {children:true} in the host; it
+  // hydrates the root plus its direct children (info incl. busy/idle) on mount
+  // and when the family grows. The host caches a successful sync, so this is
+  // not a refresh loop.
+  const syncSession = context.data.session.sync as (id: string, options?: { children?: boolean }) => Promise<void>
+  const quiet = (p: Promise<unknown>) => p.catch(() => {})
+
+  const hydrate = () => {
+    const id = props.sessionID
+    const rootID = rootOf(id)
+    quiet(syncSession(id))
+    quiet(context.data.session.message.sync(id))
+    quiet(syncSession(rootID, { children: true }))
+    for (const sid of attempt(() => context.data.session.family(rootID), [] as string[])) {
+      quiet(syncSession(sid))
+      quiet(context.data.session.message.sync(sid))
+    }
+    quiet(context.data.location.agent.sync(location()))
+  }
+
+  const storeView = (id: string): SessionView | undefined => {
+    const s = attempt(() => context.data.session.get(id), undefined)
+    return s
+      ? {
+        id: s.id,
+        parentID: s.parentID,
+        agent: s.agent,
+        created: s.time.created,
+        updated: s.time.updated,
+        busy: s.time.busy,
+        idle: s.time.idle,
+        tokens: s.tokens,
+        cost: s.cost,
+      }
+      : undefined
+  }
+
+  const toView = (info: Awaited<ReturnType<typeof context.client.session.get>>): SessionView => ({
+    id: info.id,
+    parentID: info.parentID,
+    agent: info.agent,
+    created: info.time.created,
+    updated: info.time.updated,
+    busy: info.time.busy,
+    idle: info.time.idle,
+    tokens: info.tokens,
+    cost: info.cost,
+  })
+
+  const storeMessages = (id: string): MessageView[] =>
+    attempt(() => context.data.session.message.list(id) as unknown as MessageView[], [])
 
   const refresh = async () => {
     const client = context.client.rpc(crewTasks)
@@ -46,6 +101,27 @@ export function Sidebar(props: { sessionID: string }) {
     }
   }
 
+  // Events drive the live snapshot; the controller polls only to repair misses
+  // (15s while the family has running work, 60s with an active-set probe only).
+  const controller = new LiveController({
+    rootID: props.sessionID,
+    family: () => attempt(() => context.data.session.family(rootOf(props.sessionID)), [] as string[]),
+    store: { session: storeView, messages: storeMessages },
+    fetch: {
+      active: async () => new Set(Object.keys(await context.client.session.active())),
+      session: id => context.client.session.get({ sessionID: id }).then(toView).catch(() => undefined),
+      // Newest assistant page; the sidebar needs the tail for activity and steps.
+      messages: id => context.client.message
+        .list({ sessionID: id, limit: LIVE_MESSAGES, order: "desc", type: "assistant" })
+        .then(page => [...page.data].reverse() as unknown as MessageView[])
+        .catch(() => undefined),
+    },
+    onChange: snapshot => setLive(snapshot),
+    // The crew_task snapshot shares the calibration cadence instead of adding
+    // a second timer.
+    onCalibration: () => { void refresh() },
+  })
+
   let pending: ReturnType<typeof setTimeout> | undefined
   const schedule = () => {
     pending ??= setTimeout(() => {
@@ -53,44 +129,38 @@ export function Sidebar(props: { sessionID: string }) {
       refresh()
     }, DEBOUNCE_MS)
   }
-  const unlisten = context.data.listen(() => schedule())
-  const timer = setInterval(refresh, POLL_MS)
+  const unlisten = context.data.listen(({ details }) => {
+    controller.ingest(details as LiveEvent)
+    schedule()
+  })
   onCleanup(() => {
+    controller.dispose()
     unlisten()
-    clearInterval(timer)
     if (pending !== undefined) clearTimeout(pending)
   })
   createEffect(on(() => props.sessionID, () => {
     setTasks([])
     refresh()
+    controller.setRoot(props.sessionID)
   }))
 
   // Keep the reactive session/family caches hydrated for this session.
-  createEffect(() => {
-    const id = props.sessionID
-    const quiet = (p: Promise<void>) => p.catch(() => {})
-    quiet(context.data.session.sync(id))
-    quiet(context.data.session.message.sync(id))
-    for (const sid of context.data.session.family(id) ?? []) {
-      quiet(context.data.session.sync(sid))
-      quiet(context.data.session.message.sync(sid))
-    }
-    quiet(context.data.location.agent.sync(location()))
-  })
+  createEffect(() => hydrate())
 
+  const statusOf = (id: string) => attempt(() => context.data.session.status(id), "idle" as const)
   const view = createMemo<SidebarView>(() => {
-    const rootID = attempt(() => context.data.session.root(props.sessionID), "") || props.sessionID
-    const ids = [...new Set([rootID, ...(attempt(() => context.data.session.family(rootID), [] as string[]))])]
+    const rootID = rootOf(props.sessionID)
+    const snapshot = live()
+    const ids = [...new Set([
+      rootID,
+      ...attempt(() => context.data.session.family(rootID), [] as string[]),
+      ...snapshot.views.keys(),
+      ...snapshot.running,
+    ])]
     const sessions: SessionView[] = ids.flatMap(id => {
-      const s = context.data.session.get(id)
-      return s ? [{ id: s.id, parentID: s.parentID, agent: s.agent, created: s.time.created, updated: s.time.updated, tokens: s.tokens }] : []
+      const session = snapshot.views.get(id)?.session ?? storeView(id)
+      return session ? [session] : []
     })
-    const boundary = Math.max(
-      0,
-      ...attempt(() => context.data.session.message.list(rootID) as unknown as MessageView[], [] as MessageView[])
-        .filter(m => m.type === "user")
-        .map(m => m.time?.created ?? 0),
-    )
     const agents = context.data.location.agent.list(location()) ?? []
     const stepsOf = (agent: string | undefined) =>
       agents.find(a => a.id === agent)?.steps
@@ -99,12 +169,15 @@ export function Sidebar(props: { sessionID: string }) {
     return buildSidebar({
       rootID,
       sessions,
-      boundary,
       tasks: tasks(),
       now: Date.now(),
-      status: id => attempt(() => context.data.session.status(id), "idle" as const),
-      messages: id => attempt(() => context.data.session.message.list(id) as unknown as MessageView[], []),
-      cost: id => attempt(() => context.data.session.cost(id), 0),
+      status: statusOf,
+      // The server snapshot is authoritative once a probe succeeded; before
+      // that, fall back to the host's busy/idle watermarks.
+      running: snapshot.known ? s => snapshot.running.has(s.id) : s => sessionRunning(s, statusOf),
+      messages: id => snapshot.views.get(id)?.messages ?? storeMessages(id),
+      cost: id => snapshot.views.get(id)?.session.cost ?? attempt(() => context.data.session.cost(id), 0),
+      lastActivity: id => snapshot.views.get(id)?.lastActivity ?? 0,
       limit: stepsOf,
     })
   })
