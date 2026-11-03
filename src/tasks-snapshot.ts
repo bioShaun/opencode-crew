@@ -39,6 +39,7 @@ export function buildTaskSnapshot(
     report?: CrewTaskView['report']
     steps?: number
     tokens?: number
+    cacheRead?: number
     cost?: number
     permissions?: { action: string; resources: string[] }[]
   } = {},
@@ -58,6 +59,7 @@ export function buildTaskSnapshot(
   if (extras.observed && Object.keys(extras.observed).length) view.observed = extras.observed
   if (extras.report) view.report = extras.report
   if (extras.tokens !== undefined) view.tokens = extras.tokens
+  if (extras.cacheRead !== undefined) view.cacheRead = extras.cacheRead
   if (extras.cost !== undefined) view.cost = extras.cost
   return view
 }
@@ -95,6 +97,7 @@ export async function registerTaskSnapshot(ctx: Host) {
           report: messages ? extractReport(messages as MessageView[]) : undefined,
           steps: messages ? (messages as MessageView[]).filter(m => m.type === 'assistant').length : 0,
           tokens: messages ? (messages as MessageView[]).reduce((n, m) => n + tokenTotal(m.tokens), 0) : undefined,
+          cacheRead: messages ? (messages as MessageView[]).reduce((n, m) => n + (m.tokens?.cache?.read ?? 0), 0) : undefined,
           cost: session?.cost,
           permissions: permissions?.map(p => ({ action: p.action, resources: [...p.resources] })),
         })

@@ -37,6 +37,7 @@ const taskSchema = {
     },
     steps: { type: "integer" },
     tokens: { type: "number" },
+    cacheRead: { type: "number" },
     cost: { type: "number" },
     permissions: {
       type: "array",
@@ -115,6 +116,7 @@ function task(value: unknown): CrewTaskView | undefined {
     }
   }
   if (num(value.tokens)) view.tokens = value.tokens
+  if (num(value.cacheRead)) view.cacheRead = value.cacheRead
   if (num(value.cost)) view.cost = value.cost
   if (Array.isArray(value.permissions)) {
     const permissions = value.permissions.flatMap(p =>

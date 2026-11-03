@@ -23,7 +23,7 @@ test("buildTaskSnapshot emits only whitelisted fields", async () => {
   const view = m.buildTaskSnapshot(entry(), {
     observed: { outcome: "failed" },
     report: { status: "failed", reason: "bun test 退出 1" },
-    steps: 80, tokens: 640000, cost: 1.41,
+    steps: 80, tokens: 640000, cacheRead: 125000, cost: 1.41,
     permissions: [{ action: "edit", resources: ["/repo/wt/src/api.ts"] }],
   })
   expect(view).toEqual({
@@ -31,7 +31,7 @@ test("buildTaskSnapshot emits only whitelisted fields", async () => {
     state: "submitted", lifecycle: "active", check: "bun test",
     observed: { outcome: "failed" },
     report: { status: "failed", reason: "bun test 退出 1" },
-    steps: 80, tokens: 640000, cost: 1.41,
+    steps: 80, tokens: 640000, cacheRead: 125000, cost: 1.41,
     permissions: [{ action: "edit", resources: ["/repo/wt/src/api.ts"] }],
   })
   expect("ownerSessionID" in view).toBe(false)
@@ -78,7 +78,7 @@ test("parseTasksOutput validates and whitelists the RPC payload", async () => {
       state: "submitted", lifecycle: "active", check: "bun test",
       report: { status: "blocked", reason: "缺 fixture" },
       observed: { outcome: "failed" },
-      steps: 17, tokens: 640000, cost: 1.41,
+      steps: 17, tokens: 640000, cacheRead: 90000, cost: 1.41,
       permissions: [{ action: "edit", resources: ["/repo/wt/src/api.ts"] }],
       internal: "drop-me",
     }, { bogus: true }, "junk"],
@@ -90,7 +90,7 @@ test("parseTasksOutput validates and whitelists the RPC payload", async () => {
     state: "submitted", lifecycle: "active", check: "bun test",
     report: { status: "blocked", reason: "缺 fixture" },
     observed: { outcome: "failed" },
-    steps: 17, tokens: 640000, cost: 1.41,
+    steps: 17, tokens: 640000, cacheRead: 90000, cost: 1.41,
     permissions: [{ action: "edit", resources: ["/repo/wt/src/api.ts"] }],
   })
   expect("internal" in parsed[0]).toBe(false)

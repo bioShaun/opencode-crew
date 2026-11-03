@@ -8096,6 +8096,7 @@ var taskSchema = {
     },
     steps: { type: "integer" },
     tokens: { type: "number" },
+    cacheRead: { type: "number" },
     cost: { type: "number" },
     permissions: {
       type: "array",
@@ -8186,6 +8187,8 @@ function buildTaskSnapshot(entry, extras = {}) {
     view.report = extras.report;
   if (extras.tokens !== undefined)
     view.tokens = extras.tokens;
+  if (extras.cacheRead !== undefined)
+    view.cacheRead = extras.cacheRead;
   if (extras.cost !== undefined)
     view.cost = extras.cost;
   return view;
@@ -8228,6 +8231,7 @@ async function registerTaskSnapshot(ctx) {
           report: messages ? extractReport(messages) : undefined,
           steps: messages ? messages.filter((m) => m.type === "assistant").length : 0,
           tokens: messages ? messages.reduce((n, m) => n + tokenTotal(m.tokens), 0) : undefined,
+          cacheRead: messages ? messages.reduce((n, m) => n + (m.tokens?.cache?.read ?? 0), 0) : undefined,
           cost: session?.cost,
           permissions: permissions?.map((p) => ({ action: p.action, resources: [...p.resources] }))
         });
