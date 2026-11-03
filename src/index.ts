@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { parse } from "yaml"
 import { registerTasks } from "./tasks"
+import { registerTaskSnapshot } from "./tasks-snapshot"
 import { composeRoleSystem, splitRoleBody, type RoleAppendices } from "./model-family"
 
 const IDS = ["root", "architect", "engineer", "explorer", "reviewer"] as const
@@ -105,5 +106,6 @@ export default Plugin.define({
       },
     }))
     await registerTasks(ctx, config.models.engineer)
+    await registerTaskSnapshot(ctx)
   },
 })

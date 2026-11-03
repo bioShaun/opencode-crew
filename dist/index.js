@@ -7734,6 +7734,36 @@ function composeRoleSystem(base, appendices, model, instructions) {
 }
 
 // src/report-status.ts
+var REPORT_STATUSES = [
+  "progress",
+  "waiting",
+  "ready",
+  "blocked",
+  "failed",
+  "dropped"
+];
+var LEGACY_ALIASES = {
+  COMPLETE: "ready",
+  BLOCKED: "blocked",
+  INCOMPLETE: "progress"
+};
+function isReportStatus(value) {
+  return typeof value === "string" && REPORT_STATUSES.includes(value);
+}
+function parseReportStatus(raw) {
+  if (typeof raw !== "string")
+    return;
+  const token = raw.trim();
+  if (isReportStatus(token))
+    return token;
+  const upper = token.toUpperCase();
+  if (upper in LEGACY_ALIASES)
+    return LEGACY_ALIASES[upper];
+  const lower = token.toLowerCase();
+  if (isReportStatus(lower))
+    return lower;
+  return;
+}
 var REPORT_STATUS_PROMPT_HINT = [
   "Report: \u672B\u884C\u6216\u6BB5\u9996\u5FC5\u987B\u5199 `Report: <status>`\uFF0Cstatus \u4EC5\u53EF\u4E3A progress|waiting|ready|blocked|failed|dropped\u3002",
   "Root \u9A8C\u6536\u53EA\u8BA4 ready + \u8BC1\u636E\uFF1Bblocked/failed \u624D\u8D70\u4EBA\u4ECB\u5165\uFF1Bwaiting/progress \u4E0D\u5192\u5145\u5B8C\u6210\uFF1Bdropped \u8868\u793A\u65E0\u9700\u5904\u7406\u3002",
@@ -8008,7 +8038,7 @@ ${REPORT_STATUS_PROMPT_HINT}`;
   };
   const descriptions = {
     start: [
-      "\u5728\u624B\u5DE5\u51C6\u5907\u7684\u72EC\u7ACB detached worktree \u4E2D\u542F\u52A8 engineer \u4F1A\u8BDD\u5E76\u4E00\u6B21\u6027\u6295\u9012\u4EFB\u52A1\u3002",
+      "\u5728\u624B\u5DE5\u51C6\u5907\u7684\u72EC\u7ACB detached worktree \u4E2D\u542F\u52A8 engineer\uFF1B\u540C\u4E00 Root \u540C key\u3001\u540C\u8F93\u5165\u8FD4\u56DE\u539F\u8BB0\u5F55\uFF08\u542B\u5DF2\u7ED3\u6848\uFF09\uFF0C\u4E0D\u91CD\u6295\uFF1B\u91CD\u8BD5\u6362\u65B0 key\uFF1B\u6700\u591A2\u4E2A\u672A\u7ED3\u6848\u9884\u7559\uFF0Cidle/\u51FA\u9519/stop\u4E0D\u91CA\u653E\uFF0C\u4EC5\u79BB\u7EBF\u7ED3\u6848\u91CA\u653E\u3002",
       "\u524D\u63D0\uFF1A\u53EA\u80FD\u4ECE\u4E3B worktree \u6839\u76EE\u5F55\u7684 Root \u4F1A\u8BDD\u8C03\u7528\uFF1B\u4E3B\u3001\u76EE\u6807 worktree \u5747\u5E72\u51C0\uFF0C\u76EE\u6807\u5C5E\u4E8E\u540C\u4E00\u4ED3\u5E93\u4E14\u4E0D\u4E0E\u4E3B worktree \u5D4C\u5957\uFF0C\u4E8C\u8005 HEAD \u4E0E baseline \u5747\u4E3A\u540C\u4E00\u5B8C\u6574 commit OID\u3002",
       "\u53C2\u6570\uFF1Akey \u5728\u9879\u76EE\u7684 active \u4E0E closed \u4EFB\u52A1\u5386\u53F2\u4E2D\u5168\u5C40\u552F\u4E00\uFF1Bdirectory \u4E3A\u7EDD\u5BF9\u8DEF\u5F84\uFF1Bscope \u4E3A 1\uFF5E32 \u4E2A\u7CBE\u786E\u76F8\u5BF9\u6587\u4EF6\u8DEF\u5F84\u6216\u4EE5 / \u7ED3\u5C3E\u7684\u76EE\u5F55\u524D\u7F00\uFF0C\u4E0D\u652F\u6301 glob\uFF1Bgoal\u3001acceptance\u3001check \u662F\u4EFB\u52A1\u6587\u672C\uFF0C\u4E0D\u4F5C\u4E3A\u63D2\u4EF6 shell \u547D\u4EE4\u6267\u884C\u3002",
       "\u5E42\u7B49\uFF1A\u540C\u4E00 Root \u4F1A\u8BDD\u4E2D\uFF0C\u76F8\u540C key\u3001\u76F8\u540C\u8F93\u5165\u8FD4\u56DE\u539F\u8BB0\u5F55\uFF0C\u5305\u62EC\u5DF2\u7ED3\u6848\u8BB0\u5F55\uFF0C\u4E0D\u91CD\u65B0\u521B\u5EFA\u4F1A\u8BDD\u6216\u6295\u9012\uFF1B\u4E0D\u540C\u8F93\u5165\u6216\u5176\u4ED6 Root \u590D\u7528 key \u4F1A\u51B2\u7A81\u3002\u91CD\u8BD5\u5FC5\u987B\u6362\u65B0\u7684 key\u3002",
@@ -8017,12 +8047,12 @@ ${REPORT_STATUS_PROMPT_HINT}`;
     ].join(`
 `),
     status: [
-      "\u67E5\u8BE2\u5F53\u524D Root \u4F1A\u8BDD\u53D1\u8D77\u7684\u4EFB\u52A1\uFF0C\u4E0D\u80FD\u67E5\u8BE2\u5176\u4ED6 Root \u7684\u4EFB\u52A1\u3002",
+      "\u67E5\u8BE2\u5F53\u524D Root \u4F1A\u8BDD\u53D1\u8D77\u7684\u4EFB\u52A1\uFF0C\u4E0D\u80FD\u67E5\u8BE2\u5176\u4ED6 Root \u7684\u4EFB\u52A1\uFF1B\u4E0D\u4F20 taskID \u53EA\u5217\u51FA\u5F53\u524D Root \u7684\u672A\u7ED3\u6848\u4EFB\u52A1\uFF1B\u4F20 taskID \u65F6\u4EFB\u52A1\u4E0D\u5B58\u5728\u6216\u4E0D\u5C5E\u4E8E\u5F53\u524D Root \u5219\u6210\u529F\u8FD4\u56DE\uFF0C\u4F46\u4E0D\u542B task \u5B57\u6BB5\u3002",
       "\u4E0D\u4F20 taskID\uFF1A\u53EA\u5217\u51FA\u5F53\u524D Root \u7684\u672A\u7ED3\u6848\u4EFB\u52A1\u3002\u4F20 taskID\uFF1A\u53EF\u8FD4\u56DE\u5F53\u524D Root \u53D1\u8D77\u7684\u5BF9\u5E94\u672A\u7ED3\u6848\u6216\u5DF2\u7ED3\u6848\u8BB0\u5F55\uFF1B\u4EFB\u52A1\u4E0D\u5B58\u5728\u6216\u4E0D\u5C5E\u4E8E\u5F53\u524D Root \u65F6\u6210\u529F\u8FD4\u56DE\uFF0C\u4F46\u4E0D\u542B task \u5B57\u6BB5\u3002"
     ].join(`
 `),
     stop: [
-      "\u5BF9\u5F53\u524D Root \u7684\u672A\u7ED3\u6848\u4EFB\u52A1\u6700\u591A\u53D1\u9001\u4E00\u6B21\u4E2D\u65AD\u8BF7\u6C42\uFF1B\u91CD\u590D\u8C03\u7528\u4E0D\u4F1A\u518D\u6B21\u4E2D\u65AD\u3002\u5DF2\u7ED3\u6848\u8BB0\u5F55\u76F4\u63A5\u8FD4\u56DE\uFF0C\u4E0D\u53D1\u9001\u4E2D\u65AD\u3002",
+      "\u5BF9\u5F53\u524D Root \u7684\u672A\u7ED3\u6848\u4EFB\u52A1\u6700\u591A\u53D1\u9001\u4E00\u6B21\u4E2D\u65AD\u8BF7\u6C42\uFF1B\u91CD\u590D\u8C03\u7528\u4E0D\u4F1A\u518D\u6B21\u4E2D\u65AD\u3002\u5DF2\u7ED3\u6848\u8BB0\u5F55\u76F4\u63A5\u8FD4\u56DE\uFF0C\u4E0D\u53D1\u9001\u4E2D\u65AD\u3002\u8FD4\u56DE\u4E0D\u80FD\u8BC1\u660E\u4F1A\u8BDD\u6216\u8FDB\u7A0B\u6811\u5DF2\u7ECF\u505C\u6B62\uFF0CprocessSafety \u4ECD\u4E3A unconfirmed\uFF0C\u4E5F\u4E0D\u4F1A\u91CA\u653E\u9884\u7559\u3002",
       "\u8FD4\u56DE\u53EA\u8BF4\u660E\u8BF7\u6C42\u7ED3\u679C\uFF0C\u4E0D\u80FD\u8BC1\u660E\u4F1A\u8BDD\u6216\u8FDB\u7A0B\u6811\u5DF2\u7ECF\u505C\u6B62\uFF0CprocessSafety \u4ECD\u4E3A unconfirmed\uFF0C\u4E5F\u4E0D\u4F1A\u91CA\u653E\u9884\u7559\u3002\u4EFB\u52A1\u4E0D\u5B58\u5728\u6216\u4E0D\u5C5E\u4E8E\u5F53\u524D Root \u65F6\u62D2\u7EDD\uFF0C\u4E0D\u8981\u91CD\u8BD5\u3002"
     ].join(`
 `)
@@ -8034,12 +8064,185 @@ ${REPORT_STATUS_PROMPT_HINT}`;
   });
 }
 
+// src/snapshot.ts
+var taskSchema = {
+  type: "object",
+  properties: {
+    taskID: { type: "string" },
+    sessionID: { type: "string" },
+    directory: { type: "string" },
+    scopes: { type: "integer" },
+    state: { type: "string" },
+    lifecycle: { type: "string", enum: ["active", "closed"] },
+    check: { type: "string" },
+    observed: {
+      type: "object",
+      properties: {
+        outcome: { type: "string", enum: ["succeeded", "failed", "interrupted"] },
+        busyAt: { type: "string" },
+        idleAt: { type: "string" },
+        errorCode: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    report: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["progress", "waiting", "ready", "blocked", "failed", "dropped"] },
+        reason: { type: "string" }
+      },
+      required: ["status"],
+      additionalProperties: false
+    },
+    steps: { type: "integer" },
+    tokens: { type: "number" },
+    cost: { type: "number" },
+    permissions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { action: { type: "string" }, resources: { type: "array", items: { type: "string" } } },
+        required: ["action", "resources"],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ["taskID", "directory", "scopes", "state", "lifecycle", "check", "steps"],
+  additionalProperties: false
+};
+var crewTasks = {
+  id: "opencode-crew",
+  methods: {
+    tasks: {
+      input: {
+        type: "object",
+        properties: { sessionID: { type: "string" } },
+        required: ["sessionID"],
+        additionalProperties: false
+      },
+      output: {
+        type: "object",
+        properties: { tasks: { type: "array", items: taskSchema } },
+        required: ["tasks"],
+        additionalProperties: false
+      }
+    }
+  },
+  events: {}
+};
+var object3 = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+var str2 = (x) => typeof x === "string";
+function parseTasksInput(value) {
+  return object3(value) && str2(value.sessionID) && value.sessionID.length <= 512 ? { sessionID: value.sessionID } : undefined;
+}
+
+// src/tui/view-model.ts
+var STALL_MS = 5 * 60000;
+var tokenTotal = (t) => t ? (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + (t.cache?.write ?? 0) : 0;
+var usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+
+// src/tasks-snapshot.ts
+function extractReport(messages) {
+  for (const message of [...messages].reverse()) {
+    if (message.type !== "assistant")
+      continue;
+    for (const part of [...message.content ?? []].reverse()) {
+      if (part.type !== "text" || typeof part.text !== "string")
+        continue;
+      const match = /(?:^|\n)\s*Report:\s*([A-Za-z]+)\b[^\S\n]*(.*)/.exec(part.text);
+      if (!match)
+        continue;
+      const status = parseReportStatus(match[1]);
+      if (!status)
+        continue;
+      let reason = match[2]?.replace(/^[\s\uFF1A:\u2014\u2013\-,\uFF0C;\uFF1B]+/, "").trim() ?? "";
+      if (!reason) {
+        const tail = part.text.slice(match.index + match[0].length);
+        reason = tail.split(`
+`).map((line) => line.trim()).find((line) => line.length > 0) ?? "";
+      }
+      return { status, ...reason ? { reason: reason.slice(0, 200) } : {} };
+    }
+  }
+  return;
+}
+function buildTaskSnapshot(entry, extras = {}) {
+  const t = entry.record;
+  const view = {
+    taskID: t.taskID,
+    directory: t.input.directory,
+    scopes: t.input.scope.length,
+    state: t.state,
+    lifecycle: entry.lifecycle,
+    check: t.input.check,
+    steps: extras.steps ?? 0,
+    permissions: extras.permissions ?? []
+  };
+  if (t.sessionID)
+    view.sessionID = t.sessionID;
+  if (extras.observed && Object.keys(extras.observed).length)
+    view.observed = extras.observed;
+  if (extras.report)
+    view.report = extras.report;
+  if (extras.tokens !== undefined)
+    view.tokens = extras.tokens;
+  if (extras.cost !== undefined)
+    view.cost = extras.cost;
+  return view;
+}
+async function registerTaskSnapshot(ctx) {
+  await ctx.rpc?.register(crewTasks, {
+    async tasks(raw) {
+      const input = parseTasksInput(raw);
+      if (!input)
+        return { tasks: [] };
+      let ledger;
+      try {
+        ledger = new Ledger(inspectProject(ctx.location.directory));
+      } catch {
+        return { tasks: [] };
+      }
+      const entries = ledger.active(input.sessionID);
+      const tasks = await Promise.all(entries.map(async (entry) => {
+        const t = entry.record;
+        if (!t.sessionID)
+          return buildTaskSnapshot(entry);
+        const [session, messages, permissions] = await Promise.all([
+          ctx.session.get({ sessionID: t.sessionID }).catch(() => {
+            return;
+          }),
+          ctx.session.context({ sessionID: t.sessionID }).catch(() => {
+            return;
+          }),
+          ctx.permission.list({ sessionID: t.sessionID }).catch(() => {
+            return;
+          })
+        ]);
+        const observed = session ? {
+          ...session.outcome ? { outcome: session.outcome } : {},
+          ...session.time?.busy !== undefined ? { busyAt: new Date(session.time.busy).toISOString() } : {},
+          ...session.time?.idle !== undefined ? { idleAt: new Date(session.time.idle).toISOString() } : {}
+        } : { errorCode: "HOST_ERROR" };
+        return buildTaskSnapshot(entry, {
+          observed,
+          report: messages ? extractReport(messages) : undefined,
+          steps: messages ? messages.filter((m) => m.type === "assistant").length : 0,
+          tokens: messages ? messages.reduce((n, m) => n + tokenTotal(m.tokens), 0) : undefined,
+          cost: session?.cost,
+          permissions: permissions?.map((p) => ({ action: p.action, resources: [...p.resources] }))
+        });
+      }));
+      return { tasks };
+    }
+  });
+}
+
 // src/index.ts
 var IDS = ["root", "architect", "engineer", "explorer", "reviewer"];
 function fail3(message) {
   throw new Error(`[opencode-crew] ${message}`);
 }
-function object3(value) {
+function object4(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 function instructions(value) {
@@ -8068,7 +8271,7 @@ function instructions(value) {
   return out;
 }
 function options(input) {
-  if (!object3(input))
+  if (!object4(input))
     fail3("options \u5FC5\u987B\u662F\u5BF9\u8C61");
   for (const key of Object.keys(input))
     if (!["models", "steps", "engineerInstructions"].includes(key))
@@ -8076,7 +8279,7 @@ function options(input) {
   const models = {}, steps = {};
   for (const field of ["models", "steps"]) {
     const map = input[field] ?? {};
-    if (!object3(map))
+    if (!object4(map))
       fail3(`options.${field} \u5FC5\u987B\u662F\u89D2\u8272\u6620\u5C04`);
     for (const [id, value] of Object.entries(map)) {
       if (!IDS.includes(id))
@@ -8102,7 +8305,7 @@ function loadRole(id) {
   if (!match)
     fail3(`agents/${id}.md \u7F3A\u5C11 frontmatter \u6216\u6B63\u6587`);
   const meta = $parse(match[1]);
-  if (!object3(meta))
+  if (!object4(meta))
     fail3(`agents/${id}.md \u5143\u6570\u636E\u5FC5\u987B\u662F\u5BF9\u8C61`);
   for (const key of Object.keys(meta))
     if (!["description", "mode", "steps", "permissions"].includes(key))
@@ -8111,7 +8314,7 @@ function loadRole(id) {
     fail3(`agents/${id}.md \u7684 description/mode \u65E0\u6548`);
   if (meta.steps !== undefined && (!Number.isSafeInteger(meta.steps) || meta.steps <= 0))
     fail3(`agents/${id}.md steps \u65E0\u6548`);
-  if (!Array.isArray(meta.permissions) || !meta.permissions.every((r) => object3(r) && typeof r.action === "string" && typeof r.resource === "string" && ["allow", "ask", "deny"].includes(String(r.effect))))
+  if (!Array.isArray(meta.permissions) || !meta.permissions.every((r) => object4(r) && typeof r.action === "string" && typeof r.resource === "string" && ["allow", "ask", "deny"].includes(String(r.effect))))
     fail3(`agents/${id}.md permissions \u65E0\u6548`);
   const { base, gpt, claude } = splitRoleBody(match[2].trim());
   return { ...meta, system: base, appendices: { gpt, claude } };
@@ -8152,6 +8355,7 @@ var src_default = Plugin.define({
       }
     }));
     await registerTasks(ctx, config.models.engineer);
+    await registerTaskSnapshot(ctx);
   }
 });
 export {

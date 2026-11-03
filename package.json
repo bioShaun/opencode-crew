@@ -3,16 +3,44 @@
   "version": "0.1.0",
   "type": "module",
   "description": "File-based specialist roles with native Root execution and flexible delegation for OpenCode V2",
-  "repository": { "type": "git", "url": "https://github.com/bioShaun/opencode-crew.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bioShaun/opencode-crew.git"
+  },
   "homepage": "https://github.com/bioShaun/opencode-crew#readme",
-  "bugs": { "url": "https://github.com/bioShaun/opencode-crew/issues" },
-  "exports": { ".": "./dist/index.js" },
+  "bugs": {
+    "url": "https://github.com/bioShaun/opencode-crew/issues"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./tui": "./dist/tui.js"
+  },
   "files": ["dist", "src", "agents", "README.md", "README.zh-CN.md", "THIRD_PARTY_NOTICES.md"],
   "scripts": {
     "test": "bun test",
-    "build": "bun build src/index.ts --target bun --external @opencode/plugin --outfile dist/index.js",
+    "build": "bun build src/index.ts --target bun --external @opencode/plugin --outfile dist/index.js && bun build src/tui/index.tsx --target bun --external @opencode/plugin --external solid-js --external @opentui/core --external @opentui/solid --external @opencode/theme --outfile dist/tui.js",
     "prepack": "bun run build >&2"
   },
-  "dependencies": { "@opencode/plugin": "2.2.3" },
-  "devDependencies": { "yaml": "^2.8.1" }
+  "dependencies": {
+    "@opencode/plugin": "2.2.3"
+  },
+  "peerDependencies": {
+    "@opencode/theme": "2.2.3",
+    "@opentui/core": ">=0.8.0",
+    "@opentui/solid": ">=0.8.0",
+    "solid-js": ">=1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode/theme": { "optional": true },
+    "@opentui/core": { "optional": true },
+    "@opentui/solid": { "optional": true },
+    "solid-js": { "optional": true }
+  },
+  "devDependencies": {
+    "@opencode/theme": "2.2.3",
+    "@opentui/core": "0.8.0",
+    "@opentui/solid": "0.8.0",
+    "solid-js": "1.9.17",
+    "yaml": "^2.8.1"
+  }
 }

@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenCode Crew · Sidebar</title>
+<style>
+  :root{
+    color-scheme:dark;
+    --bg:#090909;
+    --bg-base:#0b0b0b;
+    --bg-raised:#111111;
+    --border:#222222;
+    --scrollbar:#2f2f2f;
+    --text-base:#d6d6d6;
+    --text-muted:#909090;
+    --text-faint:#585858;
+    --info:#809bb5;
+    --warning:#c5a15f;
+    --error:#c47a70;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono","PingFang SC","Noto Sans CJK SC",monospace;
+    /* One terminal cell: 1 row = 1 line-height, 1 column = 1ch. */
+    --row:1.5em;
+  }
+  *{box-sizing:border-box}
+  html{font-size:12px}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--text-base);
+    font-family:var(--mono);
+    font-size:12px;
+    line-height:var(--row);
+    -webkit-font-smoothing:antialiased;
+  }
+  button,a{font:inherit;color:inherit}
+  b{font-weight:700}
+  .base{color:var(--text-base)}
+  .muted{color:var(--text-muted)}
+  .faint{color:var(--text-faint)}
+  .info{color:var(--info)}
+  .warning{color:var(--warning)}
+  .error{color:var(--error)}
+
+  .wrap{max-width:1180px;margin:0 auto;padding:var(--row) 2ch}
+  .top{display:flex;align-items:center;gap:1ch;margin-bottom:var(--row);color:var(--text-faint);white-space:nowrap}
+  .top .name{color:var(--text-muted)}
+  .switch{margin-left:auto;display:flex;align-items:center;gap:1ch}
+  .switch button{appearance:none;border:0;background:none;padding:0;color:var(--text-faint);cursor:pointer}
+  .switch button:hover{color:var(--text-muted)}
+  .switch button.on{color:var(--text-base);text-decoration:underline;text-underline-offset:3px}
+
+  .term{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) 42ch;
+    height:calc(var(--row) * 31);
+    border:1px solid var(--border);
+    background:var(--bg-base);
+    overflow:hidden;
+  }
+
+  .chat{display:flex;flex-direction:column;min-width:0;padding:var(--row) 2ch 0;overflow:hidden}
+  .chat .ln{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .turn{margin-top:var(--row)}
+  .tool{display:grid;grid-template-columns:2ch 10ch 18ch 9ch minmax(0,1fr);white-space:nowrap}
+  .tool > span{overflow:hidden;text-overflow:ellipsis}
+  .composer{margin-top:auto;padding:var(--row) 0;border-top:1px solid var(--border)}
+  .caret{display:inline-block;width:1ch;height:1em;vertical-align:-0.15em;background:#737373;opacity:.75;animation:blink 1.2s steps(2,end) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  .side{display:flex;flex-direction:column;width:42ch;min-width:0;min-height:0;padding:var(--row) 2ch;background:var(--bg-raised);overflow:hidden}
+  .side .ln{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .side-title{flex:none;padding:0 2ch var(--row) 0}
+  .content-wrap{position:relative;flex:1;min-height:0}
+  .content{height:100%;overflow-x:hidden;overflow-y:auto;padding-right:1ch;scrollbar-width:none}
+  .content::-webkit-scrollbar{display:none}
+  .thumb{position:absolute;right:0;top:0;width:1ch;background:var(--scrollbar);display:none}
+  .block + .block{margin-top:var(--row)}
+  .split{display:flex}
+  .split > .l{flex:1 1 auto}
+  .split > .r{flex:none;margin-left:1ch}
+
+  .alert{display:grid;grid-template-columns:1ch 13ch minmax(0,1fr);column-gap:1ch;text-decoration:none;cursor:pointer;white-space:nowrap}
+  .alert > span{overflow:hidden;text-overflow:ellipsis}
+  .alert:hover > span{text-decoration:underline;text-underline-offset:3px}
+  .dl{display:grid;grid-template-columns:10ch minmax(0,1fr) 6ch;column-gap:1ch}
+  .dl > span, .ct-head > span, .sa > span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .dl > span:last-child{text-align:right}
+  .ct-head{display:grid;grid-template-columns:minmax(0,1fr) auto 6ch;column-gap:1ch}
+  .ct-head > span:last-child{text-align:right}
+  .sa{display:grid;grid-template-columns:10ch 7ch 10ch 10ch}
+  .sa > span:nth-child(n+2){text-align:right}
+
+  .todo-head{cursor:default;user-select:none}
+  .todo-head.toggle{cursor:pointer}
+  .todo-item{display:flex}
+  .todo-item .mark{flex:none;white-space:pre}
+  .todo-item .txt{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+  .todo-item.cancelled .txt{text-decoration:line-through}
+
+  .side-foot{flex:none;padding-top:var(--row);color:var(--text-muted)}
+  .side-foot .ln{cursor:default}
+  .side-foot .ln:hover{color:var(--text-base)}
+
+  .foot{margin-top:var(--row);display:flex;justify-content:space-between;gap:2ch;color:var(--text-faint)}
+  @media (max-width:980px){
+    .wrap{padding:var(--row) 1ch}
+    .top{flex-wrap:wrap}
+    .term{grid-template-columns:minmax(0,1fr);height:auto}
+    .chat{min-height:calc(var(--row) * 20);border-bottom:1px solid var(--border)}
+    .side{width:auto;height:calc(var(--row) * 31)}
+    .foot{flex-direction:column;gap:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <span class="name">opencode crew</span><span>/</span><span>sidebar</span>
+    <div class="switch" id="switch" aria-label="侧栏状态"></div>
+  </div>
+
+  <div class="term" id="term">
+    <main class="chat" id="chat"></main>
+    <aside class="side" id="side">
+      <div class="side-title ln" id="side-title"></div>
+      <div class="content-wrap">
+        <div class="content" id="content"></div>
+        <div class="thumb" id="thumb"></div>
+      </div>
+      <div class="side-foot" id="side-foot"></div>
+    </aside>
+  </div>
+
+  <div class="foot">
+    <span>sidebar.content prepend · native Todo / Context / footer · OpenCode 2.2.5 · 42 cols · tokens 不含 cache read · 步数为近似值</span>
+    <span>示意数据</span>
+  </div>
+</div>
+<script>
+const STATUS_COLOR = {progress:'info', waiting:'warning', ready:'warning', blocked:'error', failed:'error'};
+const CHAT_COLOR = {progress:'info', waiting:'warning', ready:'warning', blocked:'error', failed:'error', closed:'muted', done:'muted'};
+const STEP_LIMIT = {architect:40, engineer:80, explorer:30, reviewer:30};
+const WARN_STEP_RATIO = 0.8;
+
+const rootTodos = [
+  {content:'拆分侧栏改动', status:'completed'},
+  {content:'验收 engineer 证据', status:'in_progress'},
+  {content:'整合并更新文档', status:'pending'},
+];
+
+// running: depth 0 = called by Root, each extra level is a subagent called by the row above.
+// tasks: crew_task engineer sessions (no parentID, outside the Root session family).
+// steps: approximate, counted as assistant messages in the child session (OpenCode counts runner iterations).
+// subagents: per-role totals for the Root session family; fullSteps = calls that hit the step limit.
+const STATES = {
+  active: {
+    title:'change-closeout',
+    alerts:[],
+    delegations:{
+      running:[
+        {role:'engineer', depth:0, activity:'Running command…', steps:41},
+        {role:'explorer', depth:1, activity:'Running read…', steps:8},
+      ],
+      tasks:[], done:2,
+    },
+    subagents:[
+      {role:'architect', calls:1, tokens:38000, cost:0.15},
+      {role:'engineer', calls:2, tokens:412000, cost:0.62},
+      {role:'explorer', calls:3, tokens:161000, cost:0.35},
+      {role:'reviewer', calls:1, tokens:52000, cost:0.21},
+    ],
+    todos:rootTodos,
+    context:{tokens:18420, percent:62, cost:1.71},
+    path:'~/opencode/opencode-crew', branch:'main',
+    chat:{
+      user:'按新结构改侧栏，先出方案再实现。',
+      reply:'architect 已给出方案，explorer 已核对插槽，engineer 正在实现。',
+      meta:'Root · 12m',
+      tools:[
+        {name:'task', target:'architect', state:'done', detail:'plans/sidebar-ia.md'},
+        {name:'task', target:'explorer', state:'done', detail:'sidebar.content 插槽'},
+        {name:'task', target:'engineer', state:'progress', detail:'step ~41/80 · 派出 explorer'},
+      ],
+    },
+  },
+  idle: {
+    title:'change-closeout',
+    alerts:[],
+    delegations:{running:[], tasks:[], done:0},
+    subagents:[
+      {role:'architect', calls:1, tokens:38000, cost:0.15},
+      {role:'engineer', calls:2, tokens:486000, cost:0.73},
+      {role:'explorer', calls:3, tokens:175000, cost:0.39},
+      {role:'reviewer', calls:2, tokens:97000, cost:0.39},
+    ],
+    todos:rootTodos.map(t => ({...t, status:'completed'})),
+    context:{tokens:6240, percent:18, cost:1.92},
+    path:'~/opencode/opencode-crew', branch:'main',
+    chat:{
+      user:'验收完了就收尾。',
+      reply:'reviewer 复核通过，文档已更新，本轮结束。',
+      meta:'Root · 3m',
+      tools:[
+        {name:'task', target:'reviewer', state:'done', detail:'无阻断问题'},
+      ],
+    },
+  },
+  blocked: {
+    title:'change-closeout',
+    alerts:[
+      {task:'ct_fixture', kind:'blocked', text:'缺少 fixture'},
+      {task:'ct_migrate', kind:'failed', text:'bun test 退出 1'},
+    ],
+    delegations:{
+      running:[
+        {role:'reviewer', depth:0, activity:'Running read…', steps:6},
+      ],
+      tasks:[
+        {id:'ct_fixture', status:'blocked', steps:17, next:'补充 ledger fixture'},
+        {id:'ct_migrate', status:'failed', steps:80, next:'查看失败日志'},
+      ],
+      done:1,
+    },
+    subagents:[
+      {role:'architect', calls:1, tokens:38000, cost:0.15},
+      {role:'engineer', calls:2, tokens:523000, cost:0.78, fullSteps:1},
+      {role:'reviewer', calls:1, tokens:21000, cost:0.08},
+    ],
+    todos:rootTodos,
+    context:{tokens:24310, percent:71, cost:1.12},
+    path:'~/opencode/opencode-crew', branch:'main',
+    chat:{
+      user:'两个任务现在什么状态？',
+      reply:'ct_fixture 缺少 fixture，ct_migrate 测试失败；reviewer 在看已完成部分。',
+      meta:'Root · 8m',
+      tools:[
+        {name:'task', target:'architect', state:'done', detail:'plans/migrate.md'},
+        {name:'crew_task', target:'ct_fixture', state:'blocked', detail:'缺少 fixture'},
+        {name:'crew_task', target:'ct_migrate', state:'failed', detail:'~80/80 · bun test 退出 1'},
+        {name:'task', target:'reviewer', state:'progress', detail:'step ~6/30'},
+      ],
+    },
+  },
+  stall: {
+    title:'change-closeout',
+    alerts:[],
+    delegations:{
+      running:[
+        {role:'engineer', depth:0, stall:'6m', steps:41},
+      ],
+      tasks:[], done:1,
+    },
+    subagents:[
+      {role:'architect', calls:1, tokens:38000, cost:0.15},
+      {role:'engineer', calls:1, tokens:204000, cost:0.31},
+    ],
+    todos:rootTodos,
+    context:{tokens:19870, percent:65, cost:0.91},
+    path:'~/opencode/opencode-crew', branch:'main',
+    chat:{
+      user:'按新结构改侧栏，先出方案再实现。',
+      reply:'architect 已给出方案，engineer 正在实现。',
+      meta:'Root · 15m',
+      tools:[
+        {name:'task', target:'architect', state:'done', detail:'plans/sidebar-ia.md'},
+        {name:'task', target:'engineer', state:'progress', detail:'step ~41/80 · 无输出 6m', warn:true},
+      ],
+    },
+  },
+  overflow: {
+    title:'change-closeout',
+    alerts:[
+      {task:'ct_api', kind:'permission', text:'edit src/api.ts'},
+    ],
+    delegations:{
+      running:[
+        {role:'engineer', depth:0, activity:'Running edit…', steps:52},
+        {role:'explorer', depth:1, activity:'Running grep…', steps:11},
+        {role:'architect', depth:0, activity:'Preparing write…', steps:12},
+        {role:'reviewer', depth:0, activity:'Thinking…', steps:4},
+      ],
+      tasks:[
+        {id:'ct_api', status:'waiting', steps:23, check:'bun test test/api.test.ts'},
+      ],
+      done:3,
+    },
+    subagents:[
+      {role:'architect', calls:2, tokens:81000, cost:0.32},
+      {role:'engineer', calls:3, tokens:418000, cost:0.63},
+      {role:'explorer', calls:4, tokens:212000, cost:0.47},
+      {role:'reviewer', calls:2, tokens:64000, cost:0.26},
+    ],
+    todos:[
+      {content:'拆分侧栏改动', status:'completed'},
+      {content:'派 explorer 核对插槽', status:'completed'},
+      {content:'派 architect 定方案', status:'completed'},
+      {content:'验收 engineer 证据', status:'in_progress'},
+      {content:'处理 ct_api 权限', status:'pending'},
+      {content:'派 reviewer 复核', status:'pending'},
+      {content:'旧版角色列表', status:'cancelled'},
+      {content:'整合并更新文档', status:'pending'},
+    ],
+    context:{tokens:31200, percent:84, cost:2.05},
+    path:'~/opencode/opencode-crew', branch:'main',
+    chat:{
+      user:'API 单独开 crew_task，其余并行推进。',
+      reply:'四个子代理在运行，ct_api 在等权限。',
+      meta:'Root · 21m',
+      tools:[
+        {name:'task', target:'engineer', state:'progress', detail:'step ~52/80 · 派出 explorer'},
+        {name:'task', target:'architect', state:'progress', detail:'step ~12/40'},
+        {name:'task', target:'reviewer', state:'progress', detail:'step ~4/30'},
+        {name:'crew_task', target:'ct_api', state:'waiting', detail:'权限 edit src/api.ts'},
+      ],
+    },
+  },
+  long: {
+    title:'sidebar-permission-bridge-for-detached-engineer-sessions',
+    alerts:[
+      {task:'ct_sidebar-permission-bridge-for-detached-engineer-sessions', kind:'permission', text:'edit src/feature-plugins/sidebar/crew-permission-bridge.tsx'},
+    ],
+    delegations:{
+      running:[
+        {role:'engineer', depth:0, activity:'Running sidebar_permission_bridge_inspect…', steps:12},
+        {role:'explorer', depth:1, activity:'Running read…', steps:3},
+        {role:'security-auditor-extended', depth:2, activity:'Preparing webfetch_with_headers…', steps:2, limit:30},
+      ],
+      tasks:[
+        {id:'ct_sidebar-permission-bridge-for-detached-engineer-sessions', status:'progress', steps:41, check:'bun test test/sidebar-permission-bridge.test.ts test/tasks-process-races.test.ts --timeout 120000 --bail --rerun-each 3'},
+      ],
+      done:12,
+    },
+    subagents:[
+      {role:'engineer', calls:2, tokens:1240000, cost:1.86},
+      {role:'explorer', calls:1, tokens:48000, cost:0.11},
+      {role:'security-auditor-extended', calls:1, tokens:9000, cost:0.02},
+    ],
+    todos:[
+      {content:'为没有 parentID 的工程师会话建立权限转发，并在 Root 侧栏提示', status:'in_progress'},
+      {content:'verify-permission-bridge-with-detached-engineer-session-and-long-identifiers', status:'pending'},
+    ],
+    context:{tokens:128440, percent:97, cost:12.38},
+    path:'~/opencode/worktrees/opencode-crew-sidebar-permission-bridge-experiment', branch:'feature/sidebar-permission-bridge-for-detached-engineer-sessions',
+    chat:{
+      user:'给脱离会话族的工程师会话做权限转发。',
+      reply:'已派发 ct_sidebar-permission-bridge-for-detached-engineer-sessions，engineer 在核对调用链。',
+      meta:'Root · 4m',
+      tools:[
+        {name:'crew_task', target:'ct_sidebar-permission-bridge-for-detached-engineer-sessions', state:'progress', detail:'step ~41/80 · bun test test/sidebar-permission-bridge.test.ts'},
+        {name:'task', target:'engineer', state:'progress', detail:'step ~12/80 · Running sidebar_permission_bridge_inspect…'},
+      ],
+    },
+  },
+  anomaly: {
+    title:'change-closeout',
+    alerts:[],
+    delegations:{
+      running:[
+        {role:'engineer', depth:0, activity:'Running edit…', steps:33},
+        {role:'explorer', depth:1, activity:'Running grep…', steps:26},
+      ],
+      tasks:[], done:9,
+    },
+    subagents:[
+      {role:'architect', calls:1, tokens:38000, cost:0.15},
+      {role:'engineer', calls:1, tokens:290000, cost:0.44},
+      {role:'explorer', calls:9, tokens:640000, cost:1.41, fullSteps:1},
+    ],
+    todos:rootTodos,
+    context:{tokens:41870, percent:88, cost:2.31},
+    path:'~/opencode/opencode-crew', branch:'main',
+    chat:{
+      user:'先摸清插槽和权限链路，再实现。',
+      reply:'explorer 已调用多次，engineer 仍在派 explorer 查同一处。',
+      meta:'Root · 26m',
+      tools:[
+        {name:'task', target:'architect', state:'done', detail:'plans/sidebar-ia.md'},
+        {name:'task', target:'explorer', state:'done', detail:'~30/30 用满步数', warn:true},
+        {name:'task', target:'explorer', state:'done', detail:'sidebar.content 插槽'},
+        {name:'task', target:'engineer', state:'progress', detail:'step ~33/80 · 已派 explorer 7 次', warn:true},
+      ],
+    },
+  },
+};
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// Port of OpenCode's FilePath/truncateFilePath (POSIX paths only) with a CJK-aware cell width.
+const graphemes = s => Array.from(new Intl.Segmenter(undefined, {granularity:'grapheme'}).segment(s), x => x.segment);
+const cellWidth = s => graphemes(s).reduce((w, g) => w + (/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/u.test(g) ? 2 : 1), 0);
+const take = (s, max, reverse) => {
+  const segs = graphemes(s); if (reverse) segs.reverse();
+  const out = []; let w = 0;
+  for (const g of segs) { const n = cellWidth(g); if (w + n > max) break; out.push(g); w += n; }
+  if (reverse) out.reverse();
+  return out.join('');
+};
+const truncateBasename = (v, max) => {
+  if (cellWidth(v) <= max) return v;
+  if (max <= 1) return take('…', max);
+  const dot = v.lastIndexOf('.');
+  const ext = dot > 0 ? v.slice(dot) : '';
+  if (cellWidth(ext) >= max) return '…' + take(ext, max - 1, true);
+  const stem = ext ? v.slice(0, dot) : v;
+  return take(stem, max - cellWidth(ext) - 1) + '…' + ext;
+};
+const truncateFilePath = (value, max) => {
+  if (cellWidth(value) <= max) return value;
+  const root = value.startsWith('/') ? '/' : '';
+  const segs = value.slice(root.length).split('/').filter(Boolean);
+  const basename = segs.at(-1) ?? value;
+  if (segs.length < 2) return root + truncateBasename(basename, max - cellWidth(root));
+  const prefix = root + '…/';
+  const room = max - cellWidth(prefix);
+  if (room <= 0) return take(prefix, max);
+  const compact = truncateBasename(basename, room);
+  if (compact !== basename) return prefix + compact;
+  const selected = [basename];
+  let w = cellWidth(prefix + basename);
+  for (let i = segs.length - 2; i >= 0; i--) {
+    const next = cellWidth(segs[i]) + 1;
+    if (w + next > max) { const avail = max - w - 1; if (avail > 1) selected.unshift(take(segs[i], avail - 1) + '…'); break; }
+    selected.unshift(segs[i]); w += next;
+  }
+  return prefix + selected.join('/');
+};
+
+const TODO_MARK = {completed:'[✓]', in_progress:'[•]', cancelled:'[-]', pending:'[ ]'};
+const todoColor = s => s === 'in_progress' ? 'warning' : s === 'cancelled' ? 'faint' : 'muted';
+const money = new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'});
+
+let todoOpen = true;
+let current = 'active';
+
+function renderAlerts(alerts) {
+  if (!alerts.length) return '';
+  const rows = alerts.map(a => {
+    const tone = a.kind === 'failed' ? 'error' : 'warning';
+    const label = a.kind === 'permission' ? '权限' : a.kind;
+    return `<a class="alert ln" href="#" data-task="${esc(a.task)}" title="打开任务会话 ${esc(a.task)}">`
+      + `<span class="${tone}">!</span><span class="base">${esc(a.task)}</span>`
+      + `<span><span class="${tone}">${esc(label)}</span> <span class="muted">${esc(a.text)}</span></span></a>`;
+  }).join('');
+  return `<div class="block alerts">${rows}</div>`;
+}
+
+const limitOf = d => d.limit ?? STEP_LIMIT[d.role] ?? STEP_LIMIT.engineer;
+const overBudget = (steps, limit) => steps >= limit * WARN_STEP_RATIO;
+
+function renderDelegation(d) {
+  const limit = limitOf(d);
+  const warn = d.stall || overBudget(d.steps, limit);
+  const act = d.stall ? `无输出 ${d.stall}` : d.activity;
+  return `<div class="dl ln${warn ? ' warning' : ''}">`
+    + `<span class="${warn ? '' : 'base'}" style="padding-left:${d.depth * 2}ch">${esc(d.role)}</span>`
+    + `<span class="${warn ? '' : 'info'}">${esc(act)}</span>`
+    + `<span class="${warn ? '' : 'faint'}">~${d.steps}/${limit}</span></div>`;
+}
+
+function renderCrewTask(t) {
+  const limit = STEP_LIMIT.engineer;
+  const warn = overBudget(t.steps, limit);
+  let key, val;
+  if (t.status === 'progress' || t.status === 'waiting') { key = 'check'; val = t.check; }
+  else if (t.status === 'ready') { key = 'next'; val = 'Root 验收证据'; }
+  else { key = 'next'; val = t.next; }
+  // The Report status keeps its own color even when the row is over budget, so failed/blocked stay red.
+  return `<div class="ct" id="task-${esc(t.id)}">`
+    + `<div class="ct-head ln"><span class="${warn ? 'warning' : 'base'}">${esc(t.id)}</span>`
+    + `<span class="${STATUS_COLOR[t.status]}">${t.status}</span>`
+    + `<span class="${warn ? 'warning' : 'faint'}">~${t.steps}/${limit}</span></div>`
+    + `<div class="ln"><span class="faint">${key}</span> <span class="muted">${esc(val)}</span></div></div>`;
+}
+
+function renderDelegations(d) {
+  const tasks = d.tasks.filter(t => t.status !== 'dropped');
+  if (!d.running.length && !tasks.length && !d.done) return '';
+  const running = d.running.length + tasks.filter(t => t.status === 'progress' || t.status === 'waiting').length;
+  return `<div class="block delegations"><div class="ln"><b class="base">Delegations</b><span class="muted"> (${running} running)</span></div>`
+    + d.running.map(renderDelegation).join('')
+    + tasks.map(renderCrewTask).join('')
+    + (d.done ? `<div class="ln muted">+${d.done} done</div>` : '')
+    + `</div>`;
+}
+
+const compactTokens = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
+
+// Illustrative anomaly rule: any call hit its step limit, or calls / tokens / cost are at least
+// double the next-highest role (with absolute floors so a small session does not light up).
+function subagentAnomalies(list) {
+  const second = (key, role) => Math.max(0, ...list.filter(x => x.role !== role).map(x => x[key]));
+  return new Set(list.filter(x =>
+    (x.fullSteps ?? 0) > 0
+    || (x.calls >= 5 && x.calls >= 2 * second('calls', x.role))
+    || (x.tokens >= 500000 && x.tokens >= 2 * second('tokens', x.role))
+    || (x.cost >= 1 && x.cost >= 2 * second('cost', x.role))
+  ).map(x => x.role));
+}
+
+function renderSubagents(list) {
+  const used = list.filter(x => x.calls > 0);
+  if (!used.length) return '';
+  const warn = subagentAnomalies(used);
+  const calls = used.reduce((n, x) => n + x.calls, 0);
+  const cost = used.reduce((n, x) => n + x.cost, 0);
+  return `<div class="block subagents"><div class="ln"><b class="base">Subagents</b><span class="muted"> (${calls} calls · ${money.format(cost)})</span></div>`
+    + `<div class="sa ln faint"><span></span><span>calls</span><span>tokens</span><span>cost</span></div>`
+    + used.map(x => {
+      const w = warn.has(x.role);
+      return `<div class="sa ln ${w ? 'warning' : 'muted'}"><span class="${w ? '' : 'base'}">${esc(x.role)}</span><span>${x.calls}</span><span>${compactTokens(x.tokens)}</span><span>${money.format(x.cost)}</span></div>`;
+    }).join('')
+    + `</div>`;
+}
+
+function renderTodo(list) {
+  if (!list.length) return '';
+  const many = list.length > 2;
+  const remaining = list.filter(t => t.status === 'pending' || t.status === 'in_progress').length;
+  const head = `<div class="todo-head ln${many ? ' toggle' : ''}" id="todo-head">`
+    + (many ? `<span class="base">${todoOpen ? '▼' : '▶'}</span> ` : '')
+    + `<b class="base">Todo</b>`
+    + (many && !todoOpen ? `<span class="muted"> (${remaining} remaining)</span>` : '')
+    + `</div>`;
+  const items = (!many || todoOpen) ? list.map(t =>
+    `<div class="todo-item ${t.status.replace('_', '-')} ${todoColor(t.status)}"><span class="mark">${TODO_MARK[t.status]} </span><span class="txt">${esc(t.content)}</span></div>`
+  ).join('') : '';
+  return `<div class="block todo">${head}${items}</div>`;
+}
+
+function renderContext(c) {
+  return `<div class="block context"><div class="ln"><b class="base">Context</b></div>`
+    + `<div class="ln muted">${c.tokens.toLocaleString('en-US')} tokens</div>`
+    + `<div class="ln muted">${c.percent}% used</div>`
+    + `<div class="ln muted">${money.format(c.cost)} spent</div></div>`;
+}
+
+function renderChat(s) {
+  const c = s.chat;
+  const tools = c.tools.map(t =>
+    `<div class="tool"><span class="faint">·</span><span class="muted">${esc(t.name)}</span><span class="base">${esc(t.target)}</span><span class="${CHAT_COLOR[t.state]}">${t.state}</span><span class="${t.warn ? 'warning' : 'faint'}">${esc(t.detail)}</span></div>`
+  ).join('');
+  return `<div class="ln faint">${esc(s.title)}</div>`
+    + `<div class="turn"><div class="ln base"><span class="faint">&gt;</span> ${esc(c.user)}</div></div>`
+    + `<div class="turn"><div class="ln faint">${esc(c.meta)}</div>`
+    + `<div class="ln muted">${esc(c.reply)}</div>${tools}</div>`
+    + `<div class="composer"><div class="ln faint"><span class="muted">&gt;</span> 问 crew，或输入 / 查看命令 <span class="caret"></span></div></div>`;
+}
+
+function updateThumb() {
+  const content = document.getElementById('content');
+  const thumb = document.getElementById('thumb');
+  const {scrollHeight:sh, clientHeight:ch, scrollTop:st} = content;
+  if (sh <= ch) { thumb.style.display = 'none'; return; }
+  const h = Math.max(ch * ch / sh, 12);
+  thumb.style.display = 'block';
+  thumb.style.height = h + 'px';
+  thumb.style.top = (st / (sh - ch)) * (ch - h) + 'px';
+}
+
+function render() {
+  const s = STATES[current];
+  document.getElementById('chat').innerHTML = renderChat(s);
+  const title = document.getElementById('side-title');
+  title.innerHTML = `<b>${esc(s.title)}</b>`;
+  title.title = s.title;
+  document.getElementById('content').innerHTML =
+    renderAlerts(s.alerts) + renderDelegations(s.delegations) + renderSubagents(s.subagents) + renderTodo(s.todos) + renderContext(s.context);
+  const loc = `${s.path}:${s.branch}`;
+  document.getElementById('side-foot').innerHTML = `<div class="ln" title="${esc(loc)}">${esc(truncateFilePath(loc, 38))}</div>`;
+  document.getElementById('term').dataset.state = current;
+  for (const b of document.querySelectorAll('#switch button')) b.classList.toggle('on', b.dataset.state === current);
+  const head = document.getElementById('todo-head');
+  if (head && head.classList.contains('toggle')) head.addEventListener('mousedown', () => { todoOpen = !todoOpen; render(); });
+  for (const a of document.querySelectorAll('.alert')) a.addEventListener('click', e => e.preventDefault());
+  document.getElementById('content').scrollTop = 0;
+  updateThumb();
+}
+
+function setState(name) {
+  if (!STATES[name]) name = 'active';
+  current = name;
+  todoOpen = true;
+  const url = new URL(location.href);
+  url.searchParams.set('state', name);
+  history.replaceState(null, '', url);
+  render();
+}
+
+document.getElementById('switch').innerHTML = Object.keys(STATES)
+  .map(n => `<button type="button" data-state="${n}">${n}</button>`).join('<span class="faint">/</span>');
+for (const b of document.querySelectorAll('#switch button')) b.addEventListener('click', () => setState(b.dataset.state));
+document.getElementById('content').addEventListener('scroll', updateThumb);
+window.addEventListener('resize', updateThumb);
+setState(new URLSearchParams(location.search).get('state') || 'active');
+</script>
+</body>
+</html>
