@@ -8,8 +8,9 @@ import { Ledger, normalizeTaskInput } from '../src/tasks-state'
 import { AtomicRegistry } from '../src/tasks-ledger'
 import { reviewTask } from '../src/tasks-review'
 import { planMaintenance, applyMaintenance } from '../src/tasks-maintenance'
+import { WORK } from './workdir'
 
-const work = join(import.meta.dir, '.work/tasks-maintenance')
+const work = join(WORK, 'tasks-maintenance')
 const tmp = join(work, 'tmp')
 mkdirSync(tmp, { recursive: true })
 const op = (c: string) => 'op_' + c.repeat(32)

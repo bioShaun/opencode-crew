@@ -3,8 +3,9 @@ import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, realpathSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { WORK } from './workdir'
 
-const root=resolve('test/.work/tasks-process-races'), tmp=join(root,'tmp'), script=resolve('test/fixtures/process-race-child.ts')
+const root=resolve(WORK, 'tasks-process-races'), tmp=join(root,'tmp'), script=resolve('test/fixtures/process-race-child.ts')
 mkdirSync(tmp,{recursive:true})
 const env:any=Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.startsWith('GIT_'))); env.TMPDIR=tmp; env.GIT_OPTIONAL_LOCKS='0'
 function run(cmd:string,args:string[]) { const p=spawnSync(cmd,args,{env,encoding:'utf8',timeout:15000}); if(p.error||p.status!==0||p.signal) throw Error(`${cmd} ${p.error||p.signal||p.stderr}`); return p.stdout.trim() }

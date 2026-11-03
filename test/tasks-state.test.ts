@@ -2,9 +2,10 @@ import { test, expect } from 'bun:test'
 import { mkdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { WORK } from './workdir'
 const load = () => { try { return require('../src/tasks-state') } catch (e) { if ((e as any).code === 'MODULE_NOT_FOUND') return {}; throw e } }
 test('normalization, digest, durable reservation and stage CAS', () => {
- const m = load(), root = join(import.meta.dir, '.work/tasks-state', randomUUID()); mkdirSync(root, {recursive:true}); const dir=realpathSync(root)
+ const m = load(), root = join(WORK, 'tasks-state', randomUUID()); mkdirSync(root, {recursive:true}); const dir=realpathSync(root)
  const raw={key:'one',directory:dir,baseline:'a'.repeat(40),scope:['z','a','z'],goal:'g',acceptance:'a',check:'c'}
  const input = m.normalizeTaskInput?.(raw)
  expect(input?.scope).toEqual(['a','z'])
@@ -24,7 +25,7 @@ test('rejects invalid input and scope', () => {
  for (const changes of [{key:'bad key'}, {owner:'x'}, {baseline:'A'.repeat(40)}, {goal:''}, {scope:['../escape']}, {directory:'relative'}]) expect(()=>m.normalizeTaskInput({...input,...changes})).toThrow()
 })
 test('capacity, identity, replay, and stop CAS remain durable', () => {
- const m=load(), root=join(import.meta.dir,'.work/tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root)
+ const m=load(), root=join(WORK,'tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root)
  const dirs=['a','b','c'].map(x=>{const p=join(base,x);mkdirSync(p);return p}), project={primaryDirectory:base,commonDir:base}
  const ledger=new m.Ledger(project), raw=(key:string,i:number,baseline='a'.repeat(40))=>m.normalizeTaskInput({key,directory:dirs[i],baseline,scope:['out'],goal:'g',acceptance:'a',check:'c'})
  const reserve=(input:any)=>ledger.reserve('owner',input,()=>({...project,...input}))
@@ -41,26 +42,26 @@ test('capacity, identity, replay, and stop CAS remain durable', () => {
  const copy=ledger.read(); copy[0].input.goal='changed'; expect(ledger.read()[0].input.goal).toBe('g')
 })
 test('invalid and symlink registries fail closed', () => {
- const {writeFileSync, symlinkSync, unlinkSync}=require('node:fs'), m=load(), root=join(import.meta.dir,'.work/tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root), p={primaryDirectory:base,commonDir:base}, ledger=new m.Ledger(p)
+ const {writeFileSync, symlinkSync, unlinkSync}=require('node:fs'), m=load(), root=join(WORK,'tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root), p={primaryDirectory:base,commonDir:base}, ledger=new m.Ledger(p)
  const directory=join(base,'opencode-crew-stage1'); mkdirSync(directory,{mode:0o700}); const file=join(directory,'registry.json')
  writeFileSync(file,JSON.stringify({schemaVersion:2})); expect(()=>ledger.read()).toThrow('REGISTRY_INVALID')
  unlinkSync(file); symlinkSync(join(base,'missing'),file); expect(()=>ledger.read()).toThrow('REGISTRY_INVALID')
 })
 test('registry rejects impossible session binding', () => {
- const {writeFileSync,readFileSync}=require('node:fs'), m=load(), root=join(import.meta.dir,'.work/tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root), p={primaryDirectory:base,commonDir:base}, ledger=new m.Ledger(p)
+ const {writeFileSync,readFileSync}=require('node:fs'), m=load(), root=join(WORK,'tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root), p={primaryDirectory:base,commonDir:base}, ledger=new m.Ledger(p)
  const input=m.normalizeTaskInput({key:'x',directory:base,baseline:'a'.repeat(40),scope:['x'],goal:'g',acceptance:'a',check:'c'})
  ledger.reserve('owner',input,()=>({...p,...input}))
  const file=join(base,'opencode-crew-stage1','registry.json'), data=JSON.parse(readFileSync(file,'utf8')); data.tasks[0].state='session_bound'; writeFileSync(file,JSON.stringify(data)); expect(()=>ledger.read()).toThrow('REGISTRY_INVALID')
 })
 test('corrupt records, duplicate keys, and identity mismatch fail closed', () => {
- const {writeFileSync,readFileSync}=require('node:fs'), m=load(), root=join(import.meta.dir,'.work/tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root), p={primaryDirectory:base,commonDir:base}, ledger=new m.Ledger(p)
+ const {writeFileSync,readFileSync}=require('node:fs'), m=load(), root=join(WORK,'tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root), p={primaryDirectory:base,commonDir:base}, ledger=new m.Ledger(p)
  const input=m.normalizeTaskInput({key:'x',directory:base,baseline:'a'.repeat(40),scope:['x'],goal:'g',acceptance:'a',check:'c'}); ledger.reserve('owner',input,()=>({...p,...input}))
  const file=join(base,'opencode-crew-stage1','registry.json'), original=JSON.parse(readFileSync(file,'utf8'))
  for (const mutate of [(v:any)=>v.tasks.push(v.tasks[0]),(v:any)=>v.tasks[0].state='unknown',(v:any)=>v.tasks[0].sessionID='',(v:any)=>v.tasks[0].requestDigest='bad',(v:any)=>v.project.primaryDirectory='/wrong']) { const data=structuredClone(original); mutate(data); writeFileSync(file,JSON.stringify(data)); expect(()=>ledger.read()).toThrow('REGISTRY_INVALID') }
 })
 
 test('history and replay survive a renamed or deleted worktree without new launch', () => {
- const {renameSync,rmSync}=require('node:fs'), m=load(), root=join(import.meta.dir,'.work/tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root), dir=join(base,'work'); mkdirSync(dir)
+ const {renameSync,rmSync}=require('node:fs'), m=load(), root=join(WORK,'tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root), dir=join(base,'work'); mkdirSync(dir)
  const project={primaryDirectory:base,commonDir:base}, ledger=new m.Ledger(project), input=m.normalizeTaskInput({key:'one',directory:dir,baseline:'a'.repeat(40),scope:['out'],goal:'g',acceptance:'a',check:'c'})
  let calls=0; ledger.reserve('owner',input,()=>{calls++;return {...project,...input}})
  renameSync(dir,join(base,'moved'))
@@ -73,7 +74,7 @@ test('history and replay survive a renamed or deleted worktree without new launc
 })
 
 test('history ignores later scope symlinks but new work validates filesystem', () => {
- const {symlinkSync}=require('node:fs'), m=load(), root=join(import.meta.dir,'.work/tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root), dir=join(base,'work'); mkdirSync(dir)
+ const {symlinkSync}=require('node:fs'), m=load(), root=join(WORK,'tasks-state',randomUUID()); mkdirSync(root,{recursive:true}); const base=realpathSync(root), dir=join(base,'work'); mkdirSync(dir)
  const project={primaryDirectory:base,commonDir:base}, ledger=new m.Ledger(project), input=m.normalizeTaskInput({key:'one',directory:dir,baseline:'a'.repeat(40),scope:['out/file'],goal:'g',acceptance:'a',check:'c'})
  ledger.reserve('owner',input,()=>({...project,...input})); symlinkSync(base,join(dir,'out'))
  expect(ledger.read()[0].state).toBe('reserved')

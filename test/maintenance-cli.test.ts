@@ -2,9 +2,10 @@ import { test, expect } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { WORK } from './workdir'
 
 const cli = resolve(import.meta.dir, '../src/maintenance-cli.ts')
-const tmp = resolve(import.meta.dir, '.work/tmp')
+const tmp = resolve(WORK, 'tmp')
 mkdirSync(tmp, { recursive: true })
 const runCli = (...args: string[]) => spawnSync('bun', [cli, ...args], { encoding: 'utf8', env: { ...process.env, TMPDIR: tmp }, timeout: 20000 })
 

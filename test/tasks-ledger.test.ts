@@ -2,8 +2,9 @@ import { test, expect } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, statSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { spawn } from "node:child_process"
+import { WORK } from "./workdir"
 
-const work = resolve(import.meta.dir, ".work/tasks-ledger")
+const work = join(WORK, "tasks-ledger")
 mkdirSync(work, { recursive: true })
 const modulePath = resolve(import.meta.dir, "../src/tasks-ledger.ts")
 const mod: any = existsSync(modulePath) ? await import(modulePath) : {}

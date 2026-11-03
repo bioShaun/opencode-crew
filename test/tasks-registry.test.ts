@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
 import { existsSync, mkdirSync, realpathSync, symlinkSync } from "node:fs"
-import { resolve } from "node:path"
+import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
+import { WORK } from "./workdir"
 
 // A callable fallback makes a missing implementation fail on behavior, not import.
 const entry = new URL("../src/tasks-registry.ts", import.meta.url)
@@ -9,12 +10,12 @@ const registry: any = existsSync(entry) ? await import(entry.href) : {
   normalizeScope: (_directory: string, scope: string[]) => scope,
 }
 const root = resolve(import.meta.dir, "..")
-const work = resolve(import.meta.dir, ".work/tasks-registry/scope-fixture")
+const work = join(WORK, "tasks-registry/scope-fixture")
 const primary = resolve(work, "primary")
 const target = resolve(work, "target")
 mkdirSync(work, { recursive: true })
 function git(...args: string[]) {
-  const result = spawnSync("git", args, { cwd: root, encoding: "utf8", env: { ...process.env, TMPDIR: resolve(root, "test/.work/tasks-registry/tmp"), GIT_OPTIONAL_LOCKS: "0" } })
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8", env: { ...process.env, TMPDIR: join(WORK, "tasks-registry/tmp"), GIT_OPTIONAL_LOCKS: "0" } })
   if (result.status !== 0) throw new Error(`fixture git failed: ${result.stderr}`)
   return result.stdout.trim()
 }

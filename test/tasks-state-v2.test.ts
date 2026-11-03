@@ -4,8 +4,9 @@ import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { Ledger, normalizeTaskInput, requestDigest } from '../src/tasks-state'
+import { WORK } from './workdir'
 
-const work = join(import.meta.dir, '.work/tasks-state-v2')
+const work = join(WORK, 'tasks-state-v2')
 mkdirSync(work, { recursive: true })
 mkdirSync(join(work, 'tmp'), { recursive: true })
 const B = 'a'.repeat(40)

@@ -4,8 +4,9 @@ import { mkdirSync, existsSync, statSync, readdirSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { AtomicRegistry } from '../src/tasks-ledger'
+import { WORK } from './workdir'
 
-const root=resolve('test/.work/tasks-atomic-faults'),tmp=join(root,'tmp'),child=resolve('test/fixtures/atomic-fault-child.ts')
+const root=resolve(WORK, 'tasks-atomic-faults'),tmp=join(root,'tmp'),child=resolve('test/fixtures/atomic-fault-child.ts')
 mkdirSync(tmp,{recursive:true})
 const env={...process.env,TMPDIR:tmp}
 const old={version:'old',payload:['complete',7]}, next={version:'new',payload:['full',42]}

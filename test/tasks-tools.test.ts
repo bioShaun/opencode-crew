@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, realpathSync, writeFileSync, renameSync, symlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { WORK } from './workdir'
 
 test('registers exactly the three stage-1 task tools', async () => {
  const tools: any[]=[]
@@ -13,8 +14,8 @@ test('registers exactly the three stage-1 task tools', async () => {
 })
 
 async function fixture(options:any={}) {
- const base=resolve('test/.work/tasks-tools',randomUUID()), primary=resolve(base,'primary'), target=resolve(base,'target'); mkdirSync(base,{recursive:true})
- function git(...args:string[]) { const r=spawnSync('git',args,{encoding:'utf8',env:{...process.env,TMPDIR:resolve('test/.work/tasks-tools/tmp'),GIT_OPTIONAL_LOCKS:'0'}}); if(r.status!==0) throw Error('fixture git failed'); return r.stdout.trim() }
+ const base=resolve(WORK,'tasks-tools',randomUUID()), primary=resolve(base,'primary'), target=resolve(base,'target'); mkdirSync(base,{recursive:true})
+ function git(...args:string[]) { const r=spawnSync('git',args,{encoding:'utf8',env:{...process.env,TMPDIR:resolve(WORK,'tasks-tools/tmp'),GIT_OPTIONAL_LOCKS:'0'}}); if(r.status!==0) throw Error('fixture git failed'); return r.stdout.trim() }
  const oid=git('rev-parse','HEAD'); git('clone','--no-local','--no-checkout',process.cwd(),primary); git('-C',primary,'checkout','--detach',oid); git('-C',primary,'worktree','add','--detach',target,oid)
  const dir=realpathSync(primary), wt=realpathSync(target), tools=new Map<string,any>(), hooks=new Map<string,any>(), sessions=new Map<string,any>(), calls:any[]=[]
  const owner:any={id:'owner',agent:'root',location:{directory:dir},model:{providerID:'owner',id:'model'}}; sessions.set('owner',owner)
@@ -40,7 +41,7 @@ test('one launch and replay, private status, model and metadata',async()=>{
 
 test('prunable unrelated worktree does not break status stop or retry',async()=>{
  const f=await fixture(); const second=resolve(f.dir,'../second')
- const git=spawnSync('git',['-C',f.dir,'worktree','add','--detach',second,f.input.baseline],{encoding:'utf8',env:{...process.env,TMPDIR:resolve('test/.work/tasks-tools/tmp')}}); expect(git.status).toBe(0)
+ const git=spawnSync('git',['-C',f.dir,'worktree','add','--detach',second,f.input.baseline],{encoding:'utf8',env:{...process.env,TMPDIR:resolve(WORK,'tasks-tools/tmp')}}); expect(git.status).toBe(0)
  expect((await f.run('crew_task_start',f.input)).ok).toBe(true)
  expect((await f.run('crew_task_start',{...f.input,key:'two',directory:second})).ok).toBe(true)
  renameSync(f.input.directory,f.input.directory+'-missing')

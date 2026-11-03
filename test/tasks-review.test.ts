@@ -5,7 +5,8 @@ import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { reviewTask } from '../src/tasks-review'
 import { TaskRegistryError } from '../src/tasks-registry'
-const base=resolve('test/.work/tasks-review'), primary=resolve(base,'primary'), directory=resolve(base,'target'), tmp=resolve(base,'tmp')
+import { WORK } from './workdir'
+const base=resolve(WORK, 'tasks-review'), primary=resolve(base,'primary'), directory=resolve(base,'target'), tmp=resolve(base,'tmp')
 mkdirSync(tmp,{recursive:true}); rmSync(primary,{recursive:true,force:true});rmSync(directory,{recursive:true,force:true})
 const env={...process.env,TMPDIR:tmp,GIT_OPTIONAL_LOCKS:'0'}
 function git(...args:string[]) {const r=spawnSync('git',args,{env,encoding:'utf8'});if(r.status!==0)throw Error(`fixture git failed: ${args.join(' ')}`);return r.stdout.trim()}

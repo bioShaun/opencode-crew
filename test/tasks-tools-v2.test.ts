@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { inspectProject } from '../src/tasks-registry'
 import { Ledger } from '../src/tasks-state'
 import { AtomicRegistry } from '../src/tasks-ledger'
+import { WORK } from './workdir'
 
 const OP = 'op_' + '1'.repeat(32)
 const DG = '2'.repeat(64)
@@ -18,9 +19,9 @@ const closeout = {
 }
 
 async function fixture(options: any = {}) {
-  const base = resolve('test/.work/tasks-tools-v2', randomUUID()), primary = resolve(base, 'primary'), target = resolve(base, 'target')
+  const base = resolve(WORK, 'tasks-tools-v2', randomUUID()), primary = resolve(base, 'primary'), target = resolve(base, 'target')
   mkdirSync(base, { recursive: true })
-  function git(...args: string[]) { const r = spawnSync('git', args, { encoding: 'utf8', env: { ...process.env, TMPDIR: resolve('test/.work/tasks-tools-v2/tmp'), GIT_OPTIONAL_LOCKS: '0' } }); if (r.status !== 0) throw Error('fixture git failed'); return r.stdout.trim() }
+  function git(...args: string[]) { const r = spawnSync('git', args, { encoding: 'utf8', env: { ...process.env, TMPDIR: resolve(WORK, 'tasks-tools-v2/tmp'), GIT_OPTIONAL_LOCKS: '0' } }); if (r.status !== 0) throw Error('fixture git failed'); return r.stdout.trim() }
   const oid = git('rev-parse', 'HEAD')
   git('clone', '--no-local', '--no-checkout', process.cwd(), primary)
   git('-C', primary, 'checkout', '--detach', oid)

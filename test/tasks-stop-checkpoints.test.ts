@@ -3,8 +3,9 @@ import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { WORK } from './workdir'
 
-const root=resolve('test/.work/tasks-stop-checkpoints'),tmp=join(root,'tmp'),child=resolve('test/fixtures/stop-checkpoint-child.ts')
+const root=resolve(WORK, 'tasks-stop-checkpoints'),tmp=join(root,'tmp'),child=resolve('test/fixtures/stop-checkpoint-child.ts')
 mkdirSync(tmp,{recursive:true})
 const env={...process.env,TMPDIR:tmp,GIT_OPTIONAL_LOCKS:'0'}
 function run(cmd:string,args:string[]){const p=spawnSync(cmd,args,{env,encoding:'utf8',timeout:15000});if(p.error||p.status!==0||p.signal)throw Error(`${cmd}: ${p.error??p.signal??p.stderr}`);return p.stdout.trim()}

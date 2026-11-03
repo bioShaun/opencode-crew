@@ -4,8 +4,9 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { WORK } from './workdir'
 
-const root = resolve('test/.work/tasks-interface')
+const root = resolve(WORK, 'tasks-interface')
 const env = () => ({ ...process.env, TMPDIR: resolve(root, 'tmp'), GIT_OPTIONAL_LOCKS: '0' })
 function git(cwd: string, ...args: string[]) {
   const result = spawnSync('git', args, { cwd, env: env(), encoding: 'utf8' })

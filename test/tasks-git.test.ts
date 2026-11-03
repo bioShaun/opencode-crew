@@ -3,7 +3,8 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as api from '../src/tasks-registry'
-const base = resolve('test/.work/tasks-git'), primary = resolve(base, 'primary'), target = resolve(base, 'target')
+import { WORK } from './workdir'
+const base = resolve(WORK, 'tasks-git'), primary = resolve(base, 'primary'), target = resolve(base, 'target')
 const env = { ...process.env, TMPDIR: resolve(base, 'tmp'), GIT_OPTIONAL_LOCKS: '0' }
 function git(...args: string[]) { const r = spawnSync('git', args, { cwd: process.cwd(), env, encoding: 'utf8' }); if (r.status !== 0) throw Error('fixture git failed'); return r.stdout.trim() }
 rmSync(primary, { recursive: true, force: true }); rmSync(target, { recursive: true, force: true }); mkdirSync(base, { recursive: true })
