@@ -18,7 +18,7 @@ Root 策略规定同一 cwd 同时只有一个写入者，Root 与 engineer 不�
 
 GPT 与 Claude 提示风格的轻量差异（角色可选附录 + 运行时短 hint，非整段双轨 preset）见 [`docs/model-family-prompts.md`](docs/model-family-prompts.md)。
 Ticket/Session/Assignment 映射与结构化 `Report` 六态（对照 dsh、不引入 Source/Eval/Policy）见 [`docs/dsh-mapping.md`](docs/dsh-mapping.md)。
-会话页只读 Crew 侧栏（Alerts / Delegations / Subagents）见 [`docs/sidebar-ui.md`](docs/sidebar-ui.md)。包导出 `opencode-crew/tui`（`dist/tui.js`）供宿主 TUI 加载；提醒区当前覆盖 crew_task 的权限请求以及 `blocked` / `failed`（`waiting` 仍出现在 Delegations 行，不进提醒区）。
+会话页只读 Crew 侧栏（Alerts / Delegations / Subagents）见 [`docs/sidebar-ui.md`](docs/sidebar-ui.md)。包导出 `opencode-crew/tui`（`dist/tui.js`）供宿主 TUI 加载；提醒区覆盖 crew_task 的权限请求以及 `waiting` / `blocked` / `failed`，按 failed → blocked → 权限 → waiting 排序。
 
 原生委派仍由宿主控制，不自动隔离。另有显式 `crew_task_*` 工具，将手工准备的 worktree 绑定到独立 engineer 会话，并使用受限本地 ledger 与锁；它不是调度器、DAG 或自动 worktree 管理器。私有宿主已运行两个真实 engineer 任务，但未验证执行时间重叠。
 

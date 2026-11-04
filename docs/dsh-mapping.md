@@ -73,5 +73,5 @@ Root **只认 `ready` + 证据**；`waiting`/`progress` 不得冒充完成。
 - 映射与口径：本文
 - 六态工具：`src/report-status.ts`（由 `crew_task_start` 注入提示）
 - 结案 stop 门禁：`src/tasks-maintenance.ts` 的 `verifyClose`
-- 会话侧栏（只读）：`docs/sidebar-ui.md`；提醒区当前为权限 / blocked / failed（`waiting` 见 Delegations）
+- 会话侧栏（只读）：`docs/sidebar-ui.md`；提醒区为权限 / waiting / blocked / failed
 - 角色提示：`agents/root.md`、`engineer.md`、`explorer.md`、`architect.md`、`reviewer.md`
