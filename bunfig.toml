@@ -1,2 +1,4 @@
 [test]
 root = "./test"
+preload = ["@opentui/solid/preload"]
+conditions = ["browser"]
