@@ -455,26 +455,26 @@ export class LiveController {
     this.calibrationDue = 0
     const pulse = this.options.onCalibration
     if (pulse) { try { pulse() } catch { /* a failed side poll must not stop calibration */ } }
-    await this.probe()
+    const probed = await this.probe()
     await this.drain(true)
     if (this.disposed) return
-    if (this.activeKnown) this.lastCalibratedAt = this.clock.now()
+    if (probed) this.lastCalibratedAt = this.clock.now()
     this.emit()
     this.arm()
   }
 
-  private async probe(): Promise<void> {
+  private async probe(): Promise<boolean> {
     let ids: ReadonlySet<string>
     try {
       ids = await this.options.fetch.active()
     } catch {
-      return
+      return false
     }
-    if (this.disposed) return
+    if (this.disposed) return false
     this.activeKnown = true
     const next = new Set<string>()
     for (const id of ids) if (await this.belongs(id)) next.add(id)
-    if (this.disposed) return
+    if (this.disposed) return false
     for (const id of [...this.running]) {
       if (next.has(id)) continue
       this.running.delete(id)
@@ -496,6 +496,7 @@ export class LiveController {
       this.finalPending.delete(id)
       this.ensure(id)
     }
+    return true
   }
 
   private async drain(force: boolean): Promise<void> {

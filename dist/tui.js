@@ -813,11 +813,11 @@ class LiveController {
         pulse();
       } catch {}
     }
-    await this.probe();
+    const probed = await this.probe();
     await this.drain(true);
     if (this.disposed)
       return;
-    if (this.activeKnown)
+    if (probed)
       this.lastCalibratedAt = this.clock.now();
     this.emit();
     this.arm();
@@ -827,17 +827,17 @@ class LiveController {
     try {
       ids = await this.options.fetch.active();
     } catch {
-      return;
+      return false;
     }
     if (this.disposed)
-      return;
+      return false;
     this.activeKnown = true;
     const next = new Set;
     for (const id of ids)
       if (await this.belongs(id))
         next.add(id);
     if (this.disposed)
-      return;
+      return false;
     for (const id of [...this.running]) {
       if (next.has(id))
         continue;
@@ -861,6 +861,7 @@ class LiveController {
       this.finalPending.delete(id);
       this.ensure(id);
     }
+    return true;
   }
   async drain(force) {
     if (this.disposed)

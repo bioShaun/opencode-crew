@@ -294,3 +294,30 @@ test("successful calibration stamps calibratedAt on the snapshot", async () => {
   expect(h.latest().calibrationIntervalMs).toBeDefined()
   h.controller.dispose()
 })
+
+test("a failed active probe keeps the last successful calibration time", async () => {
+  let down = false
+  const h = harness({
+    fetch: {
+      active: async () => {
+        if (down) throw new Error("offline")
+        return new Set(["child"])
+      },
+    },
+  })
+  h.controller.ingest({ type: "session.execution.started", data: { sessionID: "child" } })
+  await tick()
+  await h.clock.advance(15_500)
+  const stamped = h.latest().calibratedAt ?? 0
+  expect(stamped).toBeGreaterThan(0)
+
+  down = true
+  await h.clock.advance(15_500)
+  expect(h.latest().known).toBe(true)
+  expect(h.latest().calibratedAt).toBe(stamped)
+
+  down = false
+  await h.clock.advance(15_500)
+  expect(h.latest().calibratedAt).toBeGreaterThan(stamped)
+  h.controller.dispose()
+})
