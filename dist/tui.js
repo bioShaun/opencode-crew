@@ -192,6 +192,19 @@ function sessionRunning(s, status) {
 }
 var tokenTotal = (t) => t ? (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + (t.cache?.write ?? 0) : 0;
 var compactTokens = (n) => n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : n >= 1000 ? Math.round(n / 1000) + "k" : String(Math.round(n));
+var tightTokens = (n) => n >= 1e9 ? (n / 1e9).toFixed(1).replace(/\.0$/, "") + "B" : n >= 1e6 ? Math.round(n / 1e6) + "M" : n >= 1000 ? Math.round(n / 1000) + "k" : String(Math.round(n));
+var TOKENS_WIDTH = 10;
+function tokenCell(work, cacheRead) {
+  const exact = compactTokens(work);
+  if (!cacheRead)
+    return exact;
+  const options = [
+    `${exact}+${compactTokens(cacheRead)}`,
+    `${exact}+${tightTokens(cacheRead)}`,
+    `${tightTokens(work)}+${tightTokens(cacheRead)}`
+  ];
+  return options.find((text) => cells(text) <= TOKENS_WIDTH) ?? options[options.length - 1];
+}
 var usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 var money = (n) => usd.format(n);
 var overBudget = (steps, limit) => limit > 0 && steps >= limit * WARN_STEP_RATIO;
@@ -272,6 +285,8 @@ function buildSidebar(input) {
     for (const p of t.permissions ?? []) {
       alerts.push(alertRow(t, "permission", `${p.action} ${relative(p.resources[0], t.directory)}`.trim()));
     }
+    if (t.report?.status === "waiting")
+      alerts.push(alertRow(t, "waiting", t.report.reason ?? "\u7B49\u5F85\u5916\u90E8\u8F93\u5165"));
     if (t.report?.status === "blocked")
       alerts.push(alertRow(t, "blocked", t.report.reason ?? ""));
     if (t.report?.status === "failed")
@@ -334,9 +349,7 @@ function buildSidebar(input) {
     const body = used.map((x) => {
       const w = warn.has(x.role);
       const tone = w ? "warning" : "muted";
-      const work = compactTokens(x.tokens);
-      const suffix = x.cacheRead ? `+${compactTokens(x.cacheRead)}` : "";
-      const tokens = cells(work + suffix) <= 10 ? work + suffix : work;
+      const tokens = tokenCell(x.tokens, x.cacheRead ?? 0);
       return [
         span(padEndCells(truncateCells(x.role, 10), 10), w ? "warning" : "base"),
         span(padStartCells(String(x.sessions), 6) + " " + padStartCells(tokens, 10) + padStartCells(money(x.cost), 10), tone)

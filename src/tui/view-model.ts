@@ -197,7 +197,7 @@ export function subagentAnomalies(list: RoleStat[]): Set<string> {
 const span = (text: string, tone: Tone, bold?: boolean): Span => ({ text, tone, ...(bold ? { bold } : {}) })
 const title = (name: string, mutedTail: string): Span[] => [span(name, 'base', true), span(` ${mutedTail}`, 'muted')]
 
-function alertRow(task: CrewTaskView, kind: 'permission' | 'blocked' | 'failed', text: string): AlertRow {
+function alertRow(task: CrewTaskView, kind: 'permission' | 'waiting' | 'blocked' | 'failed', text: string): AlertRow {
   const tone: Tone = kind === 'failed' ? 'error' : 'warning'
   const label = kind === 'permission' ? '权限' : kind
   const detail = truncateCells(text, Math.max(1, WIDTH - 16 - cells(label) - 1))
@@ -283,6 +283,7 @@ export function buildSidebar(input: ViewInput): SidebarView {
     for (const p of t.permissions ?? []) {
       alerts.push(alertRow(t, 'permission', `${p.action} ${relative(p.resources[0], t.directory)}`.trim()))
     }
+    if (t.report?.status === 'waiting') alerts.push(alertRow(t, 'waiting', t.report.reason ?? '等待外部输入'))
     if (t.report?.status === 'blocked') alerts.push(alertRow(t, 'blocked', t.report.reason ?? ''))
     if (t.report?.status === 'failed') alerts.push(alertRow(t, 'failed', t.report.reason ?? ''))
   }

@@ -24,7 +24,7 @@
 | 状态 | 含义 | Root 怎么用 |
 |---|---|---|
 | `progress` | 进行中，尚不可验收 | 继续观察；**不**当完成 |
-| `waiting` | 等待外部输入/依赖 | 继续观察或补上下文；**不**当完成 |
+| `waiting` | 等待外部输入/依赖（人优先） | 侧栏 Alerts 可见；继续观察或补上下文；**不**当完成 |
 | `ready` | 声称可验收 | **唯一**可进入验收的完成态；必须附证据 |
 | `blocked` | 越界、口径冲突、缺权限等 | **走人介入**；工程师须 hand-back，不得自行扩权 |
 | `failed` | 实现/验证失败且无法在本 Assignment 内挽回 | **走人介入** |
@@ -53,7 +53,7 @@ Root **只认 `ready` + 证据**；`waiting`/`progress` 不得冒充完成。
 - 排队或容量紧张时，优先保留 **用户打断** 与 Root 的 `crew_task_status` / `crew_task_stop` 容量，而不是再塞满写任务。
 - 修改 models / steps / engineerInstructions 的配置热更 **不得** 砍正在跑的 engineer；热更作用于**下一次 provider 请求**（已存在会话的下一轮也会按新配置重组，并非只对新建会话 / 新 Assignment 生效）。任务期内要规则稳定，等任务结束再改。
 - stop 仍是「最多一次 interrupt、进程安全未确认」；人唤醒优先不等于自动杀树。
-- **首次离线 close** 要求权威记录已在 `stop_requested` / `stop_unconfirmed`（`verifyClose` 门禁）；`waiting` 是人优先信号（等人/外部输入），不得当完成，也不同于 ledger 结案。
+- **结案：先 stop，再 close。** 首次离线 close（plan/apply）要求权威记录已在 `stop_requested` / `stop_unconfirmed`（`verifyClose` 门禁）；`verifyClose` 拒绝在 `submitted` 等非 stop 态直接结案。stop 不释放预留；只有 close 才释放容量。`waiting` 是人优先信号（等人/外部输入），不得当完成，也不同于 ledger 结案。
 
 ## 5. Root 要薄
 

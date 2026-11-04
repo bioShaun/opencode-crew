@@ -65,7 +65,7 @@ OpenCode v2.2.5 的原生侧栏结构为：
 - 每个子代理当前的活动和卡住提示；
 - 各角色本次的子会话数、`crew_task` 数、tokens 和费用，用来发现异常。
 
-`crew_task` 的工程师会话由 [`src/tasks.ts:158`](../src/tasks.ts#L158) 的 `ctx.session.create` 创建，没有 parentID，不在 Root 会话族里，原生的权限汇总、通知和页签都覆盖不到它，所以它的权限、blocked、failed 进入提醒区。由于 `crew_task` 很少触发，侧栏以普通子代理为主体，`crew_task` 只是 Delegations 里的一种条目。
+`crew_task` 的工程师会话由 [`src/tasks.ts:158`](../src/tasks.ts#L158) 的 `ctx.session.create` 创建，没有 parentID，不在 Root 会话族里，原生的权限汇总、通知和页签都覆盖不到它，所以它的权限、waiting、blocked、failed 进入提醒区。由于 `crew_task` 很少触发，侧栏以普通子代理为主体，`crew_task` 只是 Delegations 里的一种条目。
 
 ## 信息结构
 
@@ -77,15 +77,16 @@ OpenCode v2.2.5 的原生侧栏结构为：
 
 ### 2. 提醒区，条件显示
 
-只放 `crew_task` 会话中需要人处理的事：待处理权限、blocked、failed。例如（`blocked` 状态）：
+只放 `crew_task` 会话中需要人处理的事：待处理权限、`waiting`（等人）、blocked、failed。例如（`blocked` 状态）：
 
 ```text
 ! ct_fixture    blocked 缺少 fixture
 ! ct_migrate    failed bun test 退出…
+! ct_api        waiting 等待外部输入
 ```
 
 - 列宽：`!` 1 列，任务 ID 13 列，其余为说明，列间空 1 列，超长用省略号截断。
-- 颜色：`!` 和 `权限` / `blocked` 用 warning，failed 的 `!` 和 `failed` 用 error；任务 ID 用 text.base，说明用 muted。权限条目写成 `权限 edit src/api.ts`。
+- 颜色：`!` 和 `权限` / `waiting` / `blocked` 用 warning，failed 的 `!` 和 `failed` 用 error；任务 ID 用 text.base，说明用 muted。权限条目写成 `权限 edit src/api.ts`；`waiting` 无 reason 时说明默认为 `等待外部输入`。
 - 整行可点击，悬停时加下划线；点击用 `ui.router.navigate` 跳转到对应任务会话，在那里走宿主已有的权限处理流程。侧栏内不直接授权。
 - 无内容时整块隐藏，不保留空行。
 
@@ -206,7 +207,7 @@ explorer       9       640k     $1.41
 
 `crew_task` 快照应由 Server 按当前 `ownerSessionID` 隔离，并显式白名单输出 `taskID`、任务会话 ID、directory、scope 数量、state、lifecycle、观察到的会话状态、check 和展示用 next action。不要把完整 registry、其他 Root 的任务或内部锁状态传给 TUI；TUI 不读 ledger。
 
-工程师的 Report 六态仍需遵守现有语义：`progress` / `waiting` 不是完成，`ready` 需要证据，`blocked` / `failed` 需要人介入，`dropped` 不进入验收。`ready` 仅表示工程师声明可以验收，不等于测试通过、Root 已验收或可以整合，不使用绿色。
+工程师的 Report 六态仍需遵守现有语义：`progress` 不是完成，`waiting` 不是完成但进入提醒区（人优先），`ready` 需要证据，`blocked` / `failed` 需要人介入并进入提醒区，`dropped` 不进入验收。`ready` 仅表示工程师声明可以验收，不等于测试通过、Root 已验收或可以整合，不使用绿色。
 
 ## 视觉与交互
 

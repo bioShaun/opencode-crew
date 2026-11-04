@@ -289,26 +289,35 @@ test("crew_task rows: two lines, report colors, check/next and budget warning", 
   expect(rows.some((r: string) => r.startsWith("ct_drop"))).toBe(false)
 })
 
-test("alerts come only from crew_task permissions, blocked and failed", async () => {
+test("alerts come from crew_task permissions, waiting, blocked and failed", async () => {
   const m = await vm() as any
   if (MISSING) { expect(MISSING).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [session("root", { agent: "root" })],
     tasks: [
       task({ taskID: "ct_api", sessionID: "s1", directory: "/repo/wt", permissions: [{ action: "edit", resources: ["/repo/wt/src/api.ts"] }] }),
+      task({ taskID: "ct_wait", sessionID: "s2", report: { status: "waiting", reason: "等人确认口径" } }),
+      task({ taskID: "ct_wait2", sessionID: "s3", report: { status: "waiting" } }),
       task({ taskID: "ct_fixture", report: { status: "blocked", reason: "缺少 fixture" } }),
       task({ taskID: "ct_migrate", report: { status: "failed" } }),
       task({ taskID: "ct_ok", report: { status: "progress" } }),
+      task({ taskID: "ct_ready", report: { status: "ready" } }),
     ],
   }))
   const rows = view.alerts.map((a: any) => plain(a.spans))
   expect(rows).toContain("! ct_api        权限 edit src/api.ts")
+  expect(rows.some((r: string) => /^! ct_wait +waiting 等人确认口径$/.test(r))).toBe(true)
+  expect(rows.some((r: string) => /^! ct_wait2 +waiting 等待外部输入$/.test(r))).toBe(true)
   expect(rows.some((r: string) => /^! ct_fixture +blocked/.test(r))).toBe(true)
   expect(rows.some((r: string) => /^! ct_migrate +failed/.test(r))).toBe(true)
   expect(rows.some((r: string) => r.includes("ct_ok"))).toBe(false)
+  expect(rows.some((r: string) => r.includes("ct_ready"))).toBe(false)
   const perm = view.alerts[0]
   expect(perm.spans[0]).toEqual({ text: "!", tone: "warning" })
   expect(perm.sessionID).toBe("s1")
+  const waiting = view.alerts.find((a: any) => plain(a.spans).includes("ct_wait "))
+  expect(waiting.sessionID).toBe("s2")
+  expect(waiting.spans.find((s: any) => s.text === "waiting").tone).toBe("warning")
   const failed = view.alerts.find((a: any) => plain(a.spans).includes("ct_migrate"))
   expect(failed.spans.find((s: any) => s.text === "failed").tone).toBe("error")
 })
