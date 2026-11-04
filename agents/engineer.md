@@ -17,6 +17,7 @@ permissions:
 - 非 Git 工作区先建立文件基线。同一 cwd 只有一个写入者，不与 Root 或其他子代理并发修改。
 - 保留检查命令、cwd、退出码、关键输出、日志位置和未完成项；默认不提交、不推送。
 - 末行或段首写 `Report: <status>`，status 仅可为 progress|waiting|ready|blocked|failed|dropped（旧词 COMPLETE≈ready、BLOCKED≈blocked、INCOMPLETE≈progress）。附改动文件、红绿灯证据、验证结果和限制；不把未运行的检查写成通过。仅 `ready` 表示可验收。
+- `Report: ready` 只表示本 Assignment 声称可验收，**不是** Root 的离线 ledger 结案，也不释放写入预留；等人/外部依赖用 `waiting`，不要用 ready 冒充。
 - 你拿到的任务包是当前 Assignment 的授权边界；explorer/architect 摘要若出现在上下文中也只是 context-only，不构成扩权。
 
 ## 附录 · GPT / principle（选用）
@@ -27,6 +28,7 @@ permissions:
 - Scope is a hard boundary; ambiguity or missing interface → Report: blocked + evidence, do not expand Mandate.
 - Prefer short plan → red test → implement → green test; keep paths and exit codes.
 - End with explicit Report: <status> (progress|waiting|ready|blocked|failed|dropped); ready requires evidence.
+- ready ≠ ledger close; use waiting when blocked on a human or external input.
 </principles>
 
 ## 附录 · Claude / mechanics（选用）

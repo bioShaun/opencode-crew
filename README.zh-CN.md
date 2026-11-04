@@ -18,6 +18,7 @@ Root 策略规定同一 cwd 同时只有一个写入者，Root 与 engineer 不�
 
 GPT 与 Claude 提示风格的轻量差异（角色可选附录 + 运行时短 hint，非整段双轨 preset）见 [`docs/model-family-prompts.md`](docs/model-family-prompts.md)。
 Ticket/Session/Assignment 映射与结构化 `Report` 六态（对照 dsh、不引入 Source/Eval/Policy）见 [`docs/dsh-mapping.md`](docs/dsh-mapping.md)。
+会话页只读 Crew 侧栏（Alerts / Delegations / Subagents）见 [`docs/sidebar-ui.md`](docs/sidebar-ui.md)。包导出 `opencode-crew/tui`（`dist/tui.js`）供宿主 TUI 加载；提醒区当前覆盖 crew_task 的权限请求以及 `blocked` / `failed`（`waiting` 仍出现在 Delegations 行，不进提醒区）。
 
 原生委派仍由宿主控制，不自动隔离。另有显式 `crew_task_*` 工具，将手工准备的 worktree 绑定到独立 engineer 会话，并使用受限本地 ledger 与锁；它不是调度器、DAG 或自动 worktree 管理器。私有宿主已运行两个真实 engineer 任务，但未验证执行时间重叠。
 
@@ -116,7 +117,7 @@ bun src/maintenance-cli.ts plan  operation.json
 bun src/maintenance-cli.ts apply plan.json
 ```
 
-操作只有 `migrate`、`close`、`open-period`。`plan` 只读，并把请求绑定到当前 generation、registry 摘要、预期变更和证据闭包。`apply` 要求冻结的授权与证据包，重新核验计划与证据，写入备份和不可变归档，然后用一次原子替换提交 registry；响应丢失时从已存 operationID 重放，不会二次写入。`close` 只把预留移入历史：不证明进程已停止，不清理、不合并，worktree 字节保持不变。`open-period` 要求 active=0 且新 baseline 合法、主工作区 clean。证据、授权或排空依据缺失时保持 blocked，预留不释放。
+操作只有 `migrate`、`close`、`open-period`。`plan` 只读，并把请求绑定到当前 generation、registry 摘要、预期变更和证据闭包。`apply` 要求冻结的授权与证据包，重新核验计划与证据，写入备份和不可变归档，然后用一次原子替换提交 registry；响应丢失时从已存 operationID 重放，不会二次写入。**首次 `close` 要求权威 active 记录已处于 `stop_requested` 或 `stop_unconfirmed`**（`verifyClose` 对其它状态如 `submitted` 以证据不足拒绝）。须先 `crew_task_stop`，再准备证据包并离线 close；stop 仍最多一次 interrupt，不证明进程树已停，也不释放预留。`close` 只把预留移入历史：不证明进程已停止，不清理、不合并，worktree 字节保持不变。`open-period` 要求 active=0 且新 baseline 合法、主工作区 clean。证据、授权或排空依据缺失时保持 blocked，预留不释放。
 
 CLI 的 stdout 只输出一个机器 JSON 对象，stderr 只输出简短中文摘要；退出码 `0` 成功、`1` 拒绝/blocked、`2` 用法或输入结构非法。有界只读清单（`src/tasks-review.ts`）作为结案证据使用，不注册在线清单工具。只有一次 registry 写入是提交点。备份和归档是审计资料，不是另一份权威；不得删除 registry 或锁来回收容量。
 
@@ -148,7 +149,8 @@ opencode-crew/
 ├── src/tasks-maintenance.ts # registry 离线 plan/apply
 ├── src/maintenance-cli.ts   # 本地维护入口
 ├── dist/index.js            # 分发入口，内含 YAML 解析器
-├── docs/                    # 角色协作图（png + svg）
+├── dist/tui.js              # TUI 侧栏入口（`opencode-crew/tui`）
+├── docs/                    # 角色协作图、dsh 映射、模型族、侧栏 UI
 └── agents/
     ├── root.md
     ├── architect.md
