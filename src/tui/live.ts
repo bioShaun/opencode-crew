@@ -65,6 +65,10 @@ export interface LiveSnapshot {
   readonly running: ReadonlySet<string>
   /** False until the first active-set probe succeeds; callers should use the host status then. */
   readonly known: boolean
+  /** Wall time of the last successful active-set probe; undefined until then. */
+  readonly calibratedAt?: number
+  /** Current calibration cadence (active 15s / idle 60s). */
+  readonly calibrationIntervalMs?: number
 }
 
 export interface LiveStore {
@@ -168,6 +172,7 @@ export class LiveController {
   private readonly lastPullAt = new Map<string, number>()
 
   private activeKnown = false
+  private lastCalibratedAt = 0
   private flushTimer: unknown
   private calibrationTimer: unknown
   private calibrationDue = 0
@@ -198,6 +203,7 @@ export class LiveController {
     this.pulls.clear()
     this.lastPullAt.clear()
     this.activeKnown = false
+    this.lastCalibratedAt = 0
     this.trailing = false
     this.rootID = rootID
     this.emit()
@@ -449,25 +455,26 @@ export class LiveController {
     this.calibrationDue = 0
     const pulse = this.options.onCalibration
     if (pulse) { try { pulse() } catch { /* a failed side poll must not stop calibration */ } }
-    await this.probe()
+    const probed = await this.probe()
     await this.drain(true)
     if (this.disposed) return
+    if (probed) this.lastCalibratedAt = this.clock.now()
     this.emit()
     this.arm()
   }
 
-  private async probe(): Promise<void> {
+  private async probe(): Promise<boolean> {
     let ids: ReadonlySet<string>
     try {
       ids = await this.options.fetch.active()
     } catch {
-      return
+      return false
     }
-    if (this.disposed) return
+    if (this.disposed) return false
     this.activeKnown = true
     const next = new Set<string>()
     for (const id of ids) if (await this.belongs(id)) next.add(id)
-    if (this.disposed) return
+    if (this.disposed) return false
     for (const id of [...this.running]) {
       if (next.has(id)) continue
       this.running.delete(id)
@@ -489,6 +496,7 @@ export class LiveController {
       this.finalPending.delete(id)
       this.ensure(id)
     }
+    return true
   }
 
   private async drain(force: boolean): Promise<void> {
@@ -576,10 +584,13 @@ export class LiveController {
 
   private emit(): void {
     if (this.disposed) return
+    const busy = this.running.size > 0 || this.dirty.size > 0 || this.finalPending.size > 0
     this.options.onChange({
       views: new Map(this.views),
       running: new Set(this.running),
       known: this.activeKnown,
+      calibratedAt: this.lastCalibratedAt || undefined,
+      calibrationIntervalMs: busy ? this.activeMs : this.idleMs,
     })
   }
 }

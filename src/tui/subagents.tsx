@@ -1,5 +1,5 @@
 /* @jsxImportSource @opentui/solid */
-import { For } from "solid-js"
+import { For, Show } from "solid-js"
 import type { SidebarView } from "./view-model"
 import { Row } from "./rows"
 
@@ -10,6 +10,9 @@ export function Subagents(props: { block: NonNullable<SidebarView["subagents"]> 
       <Row spans={props.block.title} />
       <Row spans={props.block.header} />
       <For each={props.block.rows}>{row => <Row spans={row} />}</For>
+      <Show when={props.block.footnote}>
+        <Row spans={props.block.footnote!} />
+      </Show>
     </box>
   )
 }

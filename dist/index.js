@@ -8139,6 +8139,7 @@ function parseTasksInput(value) {
 
 // src/tui/view-model.ts
 var STALL_MS = 5 * 60000;
+var STALL_HARD_MS = 15 * 60000;
 var tokenTotal = (t) => t ? (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + (t.cache?.write ?? 0) : 0;
 var usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 

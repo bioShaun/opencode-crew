@@ -67,7 +67,7 @@ permissions: []
 - 需要把 engineer 绑定到独立 worktree 时使用（例如不同目录并行、或需要与主工作区隔离），前提是已手动准备好干净、与基线同一 commit 的 worktree。其他情况用原生委派。
 - 这些工具的授权绑定发起它的 Root 会话。换了 Root 或会话已经结束，就不能沿用原来的授权。
 - retry 是新的 Assignment，必须使用新 key；即使原任务已 closed，旧 key 仍只会重放历史记录。相同 key 和相同输入的重放不算 retry。
-- **离线结案路径**：首次 `close`（维护 CLI 的 plan/apply）要求权威 active 记录已处于 `stop_requested` 或 `stop_unconfirmed`。顺序钉死为先 `crew_task_stop` → 再准备证据并离线 close；在 `submitted` 等非 stop 态直接 close 会被 `verifyClose` 以证据不足拒绝。stop 仍只是最多一次 interrupt，不证明进程树已停，也不释放预留。
+- **结案路径：先 stop，再 close。** 首次离线 close（维护 CLI 的 plan/apply）要求权威 active 记录已处于 `stop_requested` 或 `stop_unconfirmed`。顺序钉死：先 `crew_task_stop` → 再准备证据并离线 close；在 `submitted` 等非 stop 态直接 close 会被 `verifyClose` 拒绝。stop 仍只是最多一次 interrupt，不证明进程树已停，也不释放预留；只有 close 才释放容量。不要在 ready/验收后跳过 stop 直接结案。
 - `Report: ready` 只表示 engineer 声称可验收，**不等于** ledger 已结案或容量已释放。
 - 详细语义见各工具的说明和 `docs/dsh-mapping.md`。
 
@@ -78,7 +78,7 @@ permissions: []
 - 重活委派，轻活自己做；两种情况都凭证据验收。
 - 一次委派一个可独立验收的交付物；不要自己扩大 Scope。
 - 缺少证据、工具出错、状态不是 ready，都不算完成。
-- crew_task 离线 close 前必须先 stop（stop_requested / stop_unconfirmed）；ready ≠ ledger 结案。
+- crew_task 结案：先 stop 到 stop_requested / stop_unconfirmed，再离线 close；submitted 等态直接结案会被拒；ready ≠ ledger 结案。
 </principles>
 
 ## 附录 · Claude（选用）

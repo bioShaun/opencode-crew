@@ -272,6 +272,7 @@ const STATES = {
     title:'change-closeout',
     alerts:[
       {task:'ct_api', kind:'permission', text:'edit src/api.ts'},
+      {task:'ct_api', kind:'waiting', text:'等待外部输入'},
     ],
     delegations:{
       running:[
@@ -433,12 +434,14 @@ const money = new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'})
 let todoOpen = true;
 let current = 'active';
 
+const ALERT_RANK = {failed:0, blocked:1, permission:2, waiting:3};
 function renderAlerts(alerts) {
   if (!alerts.length) return '';
-  const rows = alerts.map(a => {
-    const tone = a.kind === 'failed' ? 'error' : 'warning';
+  const sorted = [...alerts].sort((a,b) => (ALERT_RANK[a.kind]??9) - (ALERT_RANK[b.kind]??9) || String(a.task).localeCompare(String(b.task)));
+  const rows = sorted.map(a => {
+    const tone = (a.kind === 'failed' || a.kind === 'blocked') ? 'error' : 'warning';
     const label = a.kind === 'permission' ? '权限' : a.kind;
-    return `<a class="alert ln" href="#" data-task="${esc(a.task)}" title="打开任务会话 ${esc(a.task)}">`
+    return `<a class="alert ln" href="#" data-task="${esc(a.task)}" title="打开任务会话 ${esc(a.task)}（只读跳转，不可批准 stop）">`
       + `<span class="${tone}">!</span><span class="base">${esc(a.task)}</span>`
       + `<span><span class="${tone}">${esc(label)}</span> <span class="muted">${esc(a.text)}</span></span></a>`;
   }).join('');
@@ -450,7 +453,11 @@ const overBudget = (steps, limit) => steps >= limit * WARN_STEP_RATIO;
 
 function renderDelegation(d) {
   const limit = limitOf(d);
-  const warn = d.stall || overBudget(d.steps, limit);
+  // Prototype: stall string like "6m"/"16m"; soft <15m keeps info, hard warns.
+  const stallMin = d.stall ? parseInt(String(d.stall), 10) : 0;
+  const hardStall = stallMin >= 15;
+  const softStall = !!d.stall && !hardStall;
+  const warn = hardStall || overBudget(d.steps, limit);
   const act = d.stall ? `无输出 ${d.stall}` : d.activity;
   return `<div class="dl ln${warn ? ' warning' : ''}">`
     + `<span class="${warn ? '' : 'base'}" style="padding-left:${d.depth * 2}ch">${esc(d.role)}</span>`
@@ -504,11 +511,12 @@ function renderSubagents(list) {
   const total = used.reduce((n, x) => n + x.sessions, 0);
   const cost = used.reduce((n, x) => n + x.cost, 0);
   return `<div class="block subagents"><div class="ln"><b class="base">Subagents</b><span class="muted"> (${total} session${total === 1 ? '' : 's'} · ${money.format(cost)})</span></div>`
-    + `<div class="sa ln faint"><span></span><span>sess </span><span>tokens</span><span>cost</span></div>`
+    + `<div class="sa ln faint"><span></span><span>sess </span><span>tok+cache</span><span>cost</span></div>`
     + used.map(x => {
       const w = warn.has(x.role);
       return `<div class="sa ln ${w ? 'warning' : 'muted'}"><span class="${w ? '' : 'base'}">${esc(x.role)}</span><span>${x.sessions} </span><span>${compactTokens(x.tokens)}</span><span>${money.format(x.cost)}</span></div>`;
     }).join('')
+    + `<div class="ln faint">tok 含 cache.read · 见 sidebar-ui</div>`
     + `</div>`;
 }
 
@@ -563,8 +571,11 @@ function render() {
   const title = document.getElementById('side-title');
   title.innerHTML = `<b>${esc(s.title)}</b>`;
   title.title = s.title;
+  const freshness = s.freshness
+    ? `<div class="block freshness"><div class="ln ${s.freshnessTone || 'faint'}">${esc(s.freshness)}</div></div>`
+    : `<div class="block freshness"><div class="ln faint">校准刚刚（原型）</div></div>`;
   document.getElementById('content').innerHTML =
-    renderAlerts(s.alerts) + renderDelegations(s.delegations) + renderSubagents(s.subagents) + renderTodo(s.todos) + renderContext(s.context);
+    renderAlerts(s.alerts) + renderDelegations(s.delegations) + renderSubagents(s.subagents) + freshness + renderTodo(s.todos) + renderContext(s.context);
   const loc = `${s.path}:${s.branch}`;
   document.getElementById('side-foot').innerHTML = `<div class="ln" title="${esc(loc)}">${esc(truncateFilePath(loc, 38))}</div>`;
   document.getElementById('term').dataset.state = current;

@@ -18,7 +18,7 @@ Root's policy allows only one writer in the same cwd at a time; Root and enginee
 
 For lightweight GPT vs Claude prompt-style notes (optional role appendices + short runtime hints, not dual-track presets), see [`docs/model-family-prompts.md`](docs/model-family-prompts.md).
 For Ticket/Session/Assignment mapping and structured `Report` statuses borrowed from dsh (without Source/Eval/Policy), see [`docs/dsh-mapping.md`](docs/dsh-mapping.md).
-For the read-only session-page Crew sidebar (Alerts / Delegations / Subagents), see [`docs/sidebar-ui.md`](docs/sidebar-ui.md). The package exports `opencode-crew/tui` (`dist/tui.js`) for the host TUI; Alerts currently cover crew_task permission requests plus `blocked` / `failed` (a `waiting` report still shows on the Delegations row, not in Alerts).
+For the read-only session-page Crew sidebar (Alerts / Delegations / Subagents), see [`docs/sidebar-ui.md`](docs/sidebar-ui.md). The package exports `opencode-crew/tui` (`dist/tui.js`) for the host TUI; Alerts cover crew_task permission requests plus `waiting` / `blocked` / `failed`, sorted failed → blocked → permission → waiting.
 
 Native delegation remains host-controlled and is not automatically isolated. Separately, the explicit `crew_task_*` tools bind a manually prepared worktree to an independent engineer session with a limited local ledger and lock; they are not a scheduler, DAG, or automatic worktree manager. Two real engineer tasks have run in a private host, but their execution overlap was not verified.
 
