@@ -25,7 +25,7 @@ HTML 可直接在浏览器打开，用 `?state=<name>` 或页面顶部切换栏�
 | `active`（默认） | 日常情况：engineer 运行中，下面嵌套一个 explorer；Subagents 4 个角色；无 `crew_task`，提醒区为空 |
 | `idle` | 无运行中的 delegation，Delegations 隐藏；Subagents 显示本次汇总；Todo 全部完成 |
 | `blocked` | 两个 `crew_task`（blocked、failed）和对应提醒，作为 `crew_task` 两行样式示例；engineer 因一次用满 `~80/80` 在 Subagents 中标黄 |
-| `stall` | 一个普通子代理长时间无输出，活动列为 `无输出 6m`，整行 warning |
+| `stall` | 一个普通子代理无输出：5–15 分钟为软 stall（`无输出 Xm`，活动列 info，非整行 warning）；≥15 分钟硬 stall 才整行 warning |
 | `overflow` | 4 个运行中的子代理（含嵌套）、1 个 waiting 的 `crew_task`、1 条权限提醒、8 条 Todo；内容超高，`sidebar.content` 垂直滚动，标题和 footer 固定 |
 | `long` | 超长会话标题、任务 ID、自定义角色名（三层嵌套）、活动、check 命令、路径和分支名，验证省略号截断 |
 | `anomaly` | explorer 9 个子会话、640k tokens、$1.41，其中一次用满 `~30/30`；Delegations 中的 explorer 行和 Subagents 中的 explorer 行都为 warning |
@@ -77,17 +77,19 @@ OpenCode v2.2.5 的原生侧栏结构为：
 
 ### 2. 提醒区，条件显示
 
-只放 `crew_task` 会话中需要人处理的事：待处理权限、`waiting`（等人）、blocked、failed。例如（`blocked` 状态）：
+只放 `crew_task` 会话中需要人处理的事：待处理权限、`waiting`（等人）、blocked、failed。例如（`blocked` 状态，已按优先级排序）：
 
 ```text
-! ct_fixture    blocked 缺少 fixture
 ! ct_migrate    failed bun test 退出…
+! ct_fixture    blocked 缺少 fixture
 ! ct_api        waiting 等待外部输入
 ```
 
 - 列宽：`!` 1 列，任务 ID 13 列，其余为说明，列间空 1 列，超长用省略号截断。
-- 颜色：`!` 和 `权限` / `waiting` / `blocked` 用 warning，failed 的 `!` 和 `failed` 用 error；任务 ID 用 text.base，说明用 muted。权限条目写成 `权限 edit src/api.ts`；`waiting` 无 reason 时说明默认为 `等待外部输入`。
-- 整行可点击，悬停时加下划线；点击用 `ui.router.navigate` 跳转到对应任务会话，在那里走宿主已有的权限处理流程。侧栏内不直接授权。
+- **优先级（排序）**：`failed` → `blocked` → `权限` → `waiting`。硬失败排前，人优先的 `waiting` 仍进 Alerts，但不比失败更醒目。
+- 颜色：`failed` / `blocked` 的 `!` 与标签用 error；`权限` / `waiting` 用 warning；任务 ID 用 text.base，说明用 muted。权限条目写成 `权限 edit src/api.ts`；`waiting` 无 reason 时说明默认为 `等待外部输入`。
+- 整行可点击，悬停时加下划线；点击用 `ui.router.navigate` 跳转到对应任务会话，在那里走宿主已有的权限处理流程。
+- **只读边界**：侧栏 Alerts **不可**「批准 stop / 授权 / 结案」；只能跳转会话。TUI 不写任务态、不读 ledger。
 - 无内容时整块隐藏，不保留空行。
 
 ### 3. Delegations，条件显示
@@ -105,10 +107,11 @@ engineer   Running command…    ~41/80
 - 活动文案照搬原生 `busyLabel`：思考中为 `Thinking…`；工具运行中为 `Running <noun>…`，工具输入仍在流式生成时为 `Preparing <noun>…`；noun 为工具名，`shell` 写作 `command`，`execute` 写作 `code`（如 `Running read…`、`Running edit…`、`Preparing write…`）。
 - 步数写成 `~已用/上限`，因为已用步数是近似值（见“数据来源与口径”）。
 - 颜色：角色名 text.base，活动 info，步数 faint。
-- 异常时整行 warning：已用步数达到上限的 80% 及以上，或长时间无输出（活动列改为 `无输出 6m`）：
+- **软 / 硬 stall**：运行中且无确认输出 ≥5 分钟时，活动列改为 `无输出 Xm`，但保持 info（短时自愈不与硬失败同等醒目）。≥15 分钟或步数达到上限 80% 时，整行 warning：
 
 ```text
-engineer   无输出 6m           ~41/80
+engineer   无输出 6m           ~41/80   ← 软 stall（info）
+engineer   无输出 16m          ~41/80   ← 硬 stall（整行 warning）
 ```
 
 `crew_task` 每个占两行。第 1 行：任务 ID（text.base）、Report 状态、步数（faint）；第 2 行：progress / waiting 为 `check <命令>`，ready 为 `next Root 验收证据`，blocked / failed 为 `next <原因或下一步>`，键名 faint，值 muted。`blocked` 状态：
@@ -147,13 +150,14 @@ reviewer       1   52k+210k     $0.21
 - 不同角色可以在 `options.models` 配置不同模型；同一角色也可能因缓存命中率不同而出现不同的 `$ / M`。
 - `tok+cache` 用 k / M 缩写（`38k+120k`、`1.2M+5M`）；超过 10 列时只显示工作 token，避免撑破布局。费用保留两位小数（`$0.42`、`$12.30`）。
 - 颜色：角色名 text.base，数字 muted。
-- 异常角色整行 warning。示意规则，满足任一条即可：
+- 异常角色整行 warning。示意规则，满足任一条即可（实现与单测在 `view-model.ts`）：
   1. 有某次调用用满了步数上限；
   2. `sess` ≥ 5，且 ≥ 其他角色最高值的 2 倍；
   3. tokens ≥ 500k，且 ≥ 其他角色最高值的 2 倍；
   4. cost ≥ $1.00，且 ≥ 其他角色最高值的 2 倍。
 
   绝对下限用来避免小会话或 engineer 正常的高用量被误报。阈值是示意值，待实测后调整。
+- **脚注（faint）**：`tok 含 cache.read · 见 sidebar-ui`，固定标明 `tok+cache` 口径含 cache.read，并把异常规则指回本文，减少「数字对不上」争议。
 
 `anomaly` 状态：explorer 一行为 warning，对应的 Delegations 行因 `~26/30` 超过 80% 也为 warning：
 
@@ -168,6 +172,21 @@ architect      1        38k     $0.15
 engineer       1       290k     $0.44
 explorer       9       640k     $1.41
 ```
+
+### 4b. 校准新鲜度（Crew claim 底部）
+
+事件驱动合并（250ms 窗）+ 校准轮询（有活 15s / 空闲 60s）时，侧栏可能短暂落后于宿主。Crew claim 底部增加一行 faint / warning，避免 silent 错状态：
+
+```text
+校准 12s 前
+可能滞后 · 校准 45s 前
+未校准
+```
+
+- 首次 active 探测成功前显示 `未校准`。
+- 距上次成功校准 ≤ 1.5×当前校准间隔：`校准 Xs/m 前`（faint）。
+- 超过 1.5×间隔：`可能滞后 · 校准 …`（warning）。
+- 该行只读，不提供刷新按钮（刷新仍靠事件与校准 tick）。
 
 ### 5. Todo / Context
 
@@ -215,7 +234,7 @@ explorer       9       640k     $1.41
 - 使用宿主 `background.raised.base`、`text.base` / `text.muted` / `text.faint` 和 feedback 的 info / warning / error，不定义第二套主题系统，不用绿色。
 - 无卡片、无渐变、无 chip、无大标题；分区依靠空行和粗体标签，标题括号内的计数用 muted。
 - 超长内容用省略号截断；内容超高时只垂直滚动，不出现横向滚动，标题和 footer 固定。
-- 第一版只读：提醒区只提供跳转，不增加 start / stop / approve / merge 等侧栏操作。
+- 第一版只读：提醒区只提供跳转，不增加 start / stop / approve / merge /「批准 stop」等侧栏操作；TUI 不写任务态、不读 ledger。
 
 ## 工程边界
 
@@ -240,7 +259,22 @@ Server 不依赖 Solid / OpenTUI；TUI 不导入 ledger 实现或直接访问任
 4. 步数显示为 `~N/M` 近似值，上限取自 agent 的 `steps`；80% 与用满时显示 warning。
 5. `crew_task` 的任务数据只来自 Server 按 `ownerSessionID` 隔离的快照，TUI 不直接读取或修改 ledger。
 6. `ready` 不被呈现为测试通过或验收完成，界面不使用绿色。
-7. 侧栏不提供授权、调度、worktree 清理或整合操作。
+7. 侧栏不提供授权、调度、worktree 清理、整合或「批准 stop」操作；TUI 不写任务态。
+8. Alerts 含 `waiting` 且可点 session；按 failed → blocked → 权限 → waiting 排序。
+9. Crew claim 显示校准新鲜度（未校准 / 校准 … 前 / 可能滞后）。
+10. Subagents 脚注标明 `tok 含 cache.read`。
+
+## 生态参考（借鉴了什么 / 我们怎么落）
+
+快速对照 OpenCode 生态其它侧栏 / agent 面板插件：
+
+1. **[@npv12/opencode-context-sidebar](https://www.npmjs.com/package/@npv12/opencode-context-sidebar) / [oh-my-sidebar](https://github.com/edso404/oh-my-sidebar)** — 分区 prepend、token/cost 进度条色阶。我们保留原生 Context，不复制进度条；在 Subagents 用 `tok+cache` + faint 脚注标明 cache.read。
+2. **[opencode-plugin-session-token-summary](https://www.npmjs.com/package/opencode-plugin-session-token-summary)** — 显式拆分 cache read/write、聚合根+子代理。我们已在列头用 `tok+cache` 并在脚注写清口径；异常阈值仍只用工作 token。
+3. **[opencode-agent-intercom-tui](https://www.npmjs.com/package/opencode-agent-intercom-tui)** — 子代理列表可点进 session；事件 + 轮询兜底（其 5s poll）。我们 Alerts/Delegations 可点 session；校准用 15s/60s，并增加「上次校准 / 可能滞后」行（他们未强调 staleness 文案）。
+4. **[opencode-harness-panel](https://www.npmjs.com/package/opencode-harness-panel)** — 明确只读、折叠分区、区分 observed vs available。我们同样只读；不做侧栏 abort/批准（intercom 的 ✕ abort 刻意不抄，避免写任务态）。
+5. **OpenCode 内置 attention**（question / permission / error）— 告警分级思路；我们 Alerts 内用 failed/blocked=error、permission/waiting=warning，并按严重度排序。
+
+大改（可折叠 metrics 弹层、侧栏 abort、webhook）只记建议，本版不实现。
 
 ## 未决事项
 

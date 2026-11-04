@@ -282,3 +282,15 @@ test("root switches drop cached views and in-flight writes", async () => {
   await tick()
   expect(h.latest().views.has("child")).toBe(false)
 })
+
+test("successful calibration stamps calibratedAt on the snapshot", async () => {
+  const h = harness({ fetch: { active: async () => new Set(["child"]) } })
+  expect(h.latest()?.calibratedAt).toBeUndefined()
+  h.controller.ingest({ type: "session.execution.started", data: { sessionID: "child" } })
+  await tick()
+  await h.clock.advance(15_500)
+  expect(h.latest().known).toBe(true)
+  expect(h.latest().calibratedAt).toBeGreaterThan(0)
+  expect(h.latest().calibrationIntervalMs).toBeDefined()
+  h.controller.dispose()
+})

@@ -3,7 +3,7 @@
 import { Plugin } from "@opencode/plugin/tui";
 
 // src/tui/sidebar.tsx
-import { createEffect, createMemo, createSignal as createSignal2, For as For5, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal as createSignal2, For as For5, on, onCleanup, Show as Show2 } from "solid-js";
 import { usePlugin as usePlugin2 } from "@opencode/plugin/tui";
 
 // src/snapshot.ts
@@ -137,7 +137,14 @@ function parseTasksOutput(value) {
 var WIDTH = 37;
 var WARN_STEP_RATIO = 0.8;
 var STALL_MS = 5 * 60000;
+var STALL_HARD_MS = 15 * 60000;
 var ROLE_ORDER = ["architect", "engineer", "explorer", "reviewer"];
+var ALERT_RANK = {
+  failed: 0,
+  blocked: 1,
+  permission: 2,
+  waiting: 3
+};
 var REPORT_TONE = {
   progress: "info",
   waiting: "warning",
@@ -212,13 +219,24 @@ function subagentAnomalies(list) {
   const second = (key, role) => Math.max(0, ...list.filter((x) => x.role !== role).map((x) => x[key]));
   return new Set(list.filter((x) => x.fullSteps > 0 || x.sessions >= 5 && x.sessions >= 2 * second("sessions", x.role) || x.tokens >= 500000 && x.tokens >= 2 * second("tokens", x.role) || x.cost >= 1 && x.cost >= 2 * second("cost", x.role)).map((x) => x.role));
 }
+function freshnessSpans(input) {
+  if (!input.known || !input.calibratedAt)
+    return [span("\u672A\u6821\u51C6", "faint")];
+  const age = Math.max(0, input.now - input.calibratedAt);
+  const interval = input.calibrationIntervalMs ?? 15000;
+  const stale = age > interval * 1.5;
+  const label = age < 1500 ? "\u521A\u521A" : age < 60000 ? `${Math.max(1, Math.round(age / 1000))}s \u524D` : `${Math.max(1, Math.floor(age / 60000))}m \u524D`;
+  const text = stale ? `\u53EF\u80FD\u6EDE\u540E \xB7 \u6821\u51C6 ${label}` : `\u6821\u51C6 ${label}`;
+  return [span(truncateCells(text, WIDTH), stale ? "warning" : "faint")];
+}
 var span = (text, tone, bold) => ({ text, tone, ...bold ? { bold } : {} });
 var title = (name, mutedTail) => [span(name, "base", true), span(` ${mutedTail}`, "muted")];
 function alertRow(task, kind, text) {
-  const tone = kind === "failed" ? "error" : "warning";
+  const tone = kind === "failed" || kind === "blocked" ? "error" : "warning";
   const label = kind === "permission" ? "\u6743\u9650" : kind;
   const detail = truncateCells(text, Math.max(1, WIDTH - 16 - cells(label) - 1));
   return {
+    kind,
     sessionID: task.sessionID,
     spans: [
       span("!", tone),
@@ -235,20 +253,25 @@ function delegationRow(s, depth, input) {
   const messages = input.messages(s.id);
   const steps = countSteps(messages);
   const seen = Math.max(s.updated, lastActivityOf(messages), input.lastActivity?.(s.id) ?? 0);
-  const stalled = input.now - seen >= STALL_MS;
-  const warn = stalled || overBudget(steps, limit);
-  const activity = stalled ? `\u65E0\u8F93\u51FA ${Math.max(1, Math.floor((input.now - seen) / 60000))}m` : sessionActivity(messages);
+  const idleFor = input.now - seen;
+  const softStall = idleFor >= STALL_MS;
+  const hardStall = idleFor >= STALL_HARD_MS;
+  const budget = overBudget(steps, limit);
+  const warn = hardStall || budget;
+  const activity = softStall ? `\u65E0\u8F93\u51FA ${Math.max(1, Math.floor(idleFor / 60000))}m` : sessionActivity(messages);
   const role = "  ".repeat(Math.min(depth, 4)) + (s.agent ?? "?");
-  const tone = warn ? "warning" : "base";
+  const roleTone = warn ? "warning" : "base";
+  const activityTone = warn ? "warning" : "info";
+  const stepTone = warn ? "warning" : "faint";
   const step = `~${steps}/${limit || "\u2014"}`;
   const stepWidth = Math.min(12, Math.max(6, cells(step)));
   const activityWidth = WIDTH - 10 - 1 - 1 - stepWidth;
   return [
-    span(padEndCells(truncateCells(role, 10), 10), tone),
-    span(" ", tone),
-    span(padEndCells(truncateCells(activity, activityWidth), activityWidth), warn ? "warning" : "info"),
-    span(" ", tone),
-    span(padStartCells(truncateCells(step, stepWidth), stepWidth), warn ? "warning" : "faint")
+    span(padEndCells(truncateCells(role, 10), 10), roleTone),
+    span(" ", roleTone),
+    span(padEndCells(truncateCells(activity, activityWidth), activityWidth), activityTone),
+    span(" ", roleTone),
+    span(padStartCells(truncateCells(step, stepWidth), stepWidth), stepTone)
   ];
 }
 function taskRows(t, limit) {
@@ -292,6 +315,15 @@ function buildSidebar(input) {
     if (t.report?.status === "failed")
       alerts.push(alertRow(t, "failed", t.report.reason ?? ""));
   }
+  alerts.sort((a, b) => {
+    const ra = ALERT_RANK[a.kind ?? "waiting"];
+    const rb = ALERT_RANK[b.kind ?? "waiting"];
+    if (ra !== rb)
+      return ra - rb;
+    const ida = a.spans[1]?.text ?? "";
+    const idb = b.spans[1]?.text ?? "";
+    return ida.localeCompare(idb);
+  });
   const rows = [];
   let runningCount = 0;
   const isRunning = input.running ?? ((s) => sessionRunning(s, input.status));
@@ -355,9 +387,23 @@ function buildSidebar(input) {
         span(padStartCells(String(x.sessions), 6) + " " + padStartCells(tokens, 10) + padStartCells(money(x.cost), 10), tone)
       ];
     });
-    return { title: title("Subagents", `(${total} session${total === 1 ? "" : "s"} \xB7 ${money(cost)})`), header: head, rows: body };
+    const footnote = [
+      span(truncateCells("tok \u542B cache.read \xB7 \u89C1 sidebar-ui", WIDTH), "faint")
+    ];
+    return {
+      title: title("Subagents", `(${total} session${total === 1 ? "" : "s"} \xB7 ${money(cost)})`),
+      header: head,
+      rows: body,
+      footnote
+    };
   })() : undefined;
-  return { alerts, delegations, subagents };
+  const freshness = freshnessSpans({
+    now: input.now,
+    known: input.known,
+    calibratedAt: input.calibratedAt,
+    calibrationIntervalMs: input.calibrationIntervalMs
+  });
+  return { alerts, freshness, delegations, subagents };
 }
 
 // src/tui/live.ts
@@ -453,6 +499,7 @@ class LiveController {
   pulls = new Map;
   lastPullAt = new Map;
   activeKnown = false;
+  lastCalibratedAt = 0;
   flushTimer;
   calibrationTimer;
   calibrationDue = 0;
@@ -481,6 +528,7 @@ class LiveController {
     this.pulls.clear();
     this.lastPullAt.clear();
     this.activeKnown = false;
+    this.lastCalibratedAt = 0;
     this.trailing = false;
     this.rootID = rootID;
     this.emit();
@@ -769,6 +817,8 @@ class LiveController {
     await this.drain(true);
     if (this.disposed)
       return;
+    if (this.activeKnown)
+      this.lastCalibratedAt = this.clock.now();
     this.emit();
     this.arm();
   }
@@ -914,10 +964,13 @@ class LiveController {
   emit() {
     if (this.disposed)
       return;
+    const busy = this.running.size > 0 || this.dirty.size > 0 || this.finalPending.size > 0;
     this.options.onChange({
       views: new Map(this.views),
       running: new Set(this.running),
-      known: this.activeKnown
+      known: this.activeKnown,
+      calibratedAt: this.lastCalibratedAt || undefined,
+      calibrationIntervalMs: busy ? this.activeMs : this.idleMs
     });
   }
 }
@@ -1020,7 +1073,7 @@ function Delegations(props) {
 }
 
 // src/tui/subagents.tsx
-import { For as For4 } from "solid-js";
+import { For as For4, Show } from "solid-js";
 import { jsxDEV as jsxDEV4 } from "@opentui/solid/jsx-dev-runtime";
 function Subagents(props) {
   return /* @__PURE__ */ jsxDEV4("box", {
@@ -1036,6 +1089,12 @@ function Subagents(props) {
         each: props.block.rows,
         children: (row) => /* @__PURE__ */ jsxDEV4(Row, {
           spans: row
+        }, undefined, false, undefined, this)
+      }, undefined, false, undefined, this),
+      /* @__PURE__ */ jsxDEV4(Show, {
+        when: props.block.footnote,
+        children: /* @__PURE__ */ jsxDEV4(Row, {
+          spans: props.block.footnote
         }, undefined, false, undefined, this)
       }, undefined, false, undefined, this)
     ]
@@ -1056,6 +1115,7 @@ function Sidebar(props) {
   const context = usePlugin2();
   const [tasks, setTasks] = createSignal2([]);
   const [live, setLive] = createSignal2({ views: new Map, running: new Set, known: false });
+  const [now, setNow] = createSignal2(Date.now());
   const location = () => context.location ?? attempt(() => context.data.location.default(), undefined);
   const rootOf = (id) => attempt(() => context.data.session.root(id), "") || id;
   const syncSession = context.data.session.sync;
@@ -1120,7 +1180,10 @@ function Sidebar(props) {
         return;
       })
     },
-    onChange: (snapshot) => setLive(snapshot),
+    onChange: (snapshot) => {
+      setLive(snapshot);
+      setNow(Date.now());
+    },
     onCalibration: () => {
       refresh();
     }
@@ -1168,13 +1231,16 @@ function Sidebar(props) {
       rootID,
       sessions,
       tasks: tasks(),
-      now: Date.now(),
+      now: now(),
       status: statusOf,
       running: snapshot.known ? (s) => snapshot.running.has(s.id) : (s) => sessionRunning(s, statusOf),
       messages: (id) => snapshot.views.get(id)?.messages ?? storeMessages(id),
       cost: (id) => snapshot.views.get(id)?.session.cost ?? attempt(() => context.data.session.cost(id), 0),
       lastActivity: (id) => snapshot.views.get(id)?.lastActivity ?? 0,
-      limit: stepsOf
+      limit: stepsOf,
+      known: snapshot.known,
+      calibratedAt: snapshot.calibratedAt,
+      calibrationIntervalMs: snapshot.calibrationIntervalMs
     });
   });
   const blocks = createMemo(() => {
@@ -1208,7 +1274,7 @@ function Sidebar(props) {
         each: blocks(),
         children: (block, index) => /* @__PURE__ */ jsxDEV5(Fragment, {
           children: [
-            /* @__PURE__ */ jsxDEV5(Show, {
+            /* @__PURE__ */ jsxDEV5(Show2, {
               when: index() > 0,
               children: /* @__PURE__ */ jsxDEV5("box", {
                 height: 1
@@ -1218,8 +1284,22 @@ function Sidebar(props) {
           ]
         }, undefined, true, undefined, this)
       }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV5(Show, {
-        when: blocks().length > 0,
+      /* @__PURE__ */ jsxDEV5(Show2, {
+        when: view().freshness,
+        children: [
+          /* @__PURE__ */ jsxDEV5(Show2, {
+            when: blocks().length > 0,
+            children: /* @__PURE__ */ jsxDEV5("box", {
+              height: 1
+            }, undefined, false, undefined, this)
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ jsxDEV5(Row, {
+            spans: view().freshness
+          }, undefined, false, undefined, this)
+        ]
+      }, undefined, true, undefined, this),
+      /* @__PURE__ */ jsxDEV5(Show2, {
+        when: blocks().length > 0 || view().freshness,
         children: /* @__PURE__ */ jsxDEV5("box", {
           height: 1
         }, undefined, false, undefined, this)

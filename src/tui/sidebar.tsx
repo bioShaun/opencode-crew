@@ -14,6 +14,7 @@ import { LIVE_MESSAGES, LiveController, type LiveEvent, type LiveSnapshot } from
 import { Alerts } from "./alerts"
 import { Delegations } from "./delegations"
 import { Subagents } from "./subagents"
+import { Row } from "./rows"
 
 type Block =
   | { kind: "alerts"; rows: SidebarView["alerts"] }
@@ -35,6 +36,7 @@ export function Sidebar(props: { sessionID: string }) {
   const context = usePlugin()
   const [tasks, setTasks] = createSignal<CrewTaskView[]>([])
   const [live, setLive] = createSignal<LiveSnapshot>({ views: new Map(), running: new Set(), known: false })
+  const [now, setNow] = createSignal(Date.now())
 
   const location = () => context.location ?? attempt(() => context.data.location.default(), undefined)
   const rootOf = (id: string) => attempt(() => context.data.session.root(id), "") || id
@@ -116,7 +118,7 @@ export function Sidebar(props: { sessionID: string }) {
         .then(page => [...page.data].reverse() as unknown as MessageView[])
         .catch(() => undefined),
     },
-    onChange: snapshot => setLive(snapshot),
+    onChange: snapshot => { setLive(snapshot); setNow(Date.now()) },
     // The crew_task snapshot shares the calibration cadence instead of adding
     // a second timer.
     onCalibration: () => { void refresh() },
@@ -170,7 +172,7 @@ export function Sidebar(props: { sessionID: string }) {
       rootID,
       sessions,
       tasks: tasks(),
-      now: Date.now(),
+      now: now(),
       status: statusOf,
       // The server snapshot is authoritative once a probe succeeded; before
       // that, fall back to the host's busy/idle watermarks.
@@ -179,6 +181,9 @@ export function Sidebar(props: { sessionID: string }) {
       cost: id => snapshot.views.get(id)?.session.cost ?? attempt(() => context.data.session.cost(id), 0),
       lastActivity: id => snapshot.views.get(id)?.lastActivity ?? 0,
       limit: stepsOf,
+      known: snapshot.known,
+      calibratedAt: snapshot.calibratedAt,
+      calibrationIntervalMs: snapshot.calibrationIntervalMs,
     })
   })
 
@@ -209,7 +214,13 @@ export function Sidebar(props: { sessionID: string }) {
           </>
         )}
       </For>
-      <Show when={blocks().length > 0}>
+      <Show when={view().freshness}>
+        <Show when={blocks().length > 0}>
+          <box height={1} />
+        </Show>
+        <Row spans={view().freshness!} />
+      </Show>
+      <Show when={blocks().length > 0 || view().freshness}>
         <box height={1} />
       </Show>
     </box>

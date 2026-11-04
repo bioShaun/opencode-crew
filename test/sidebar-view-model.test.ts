@@ -200,22 +200,37 @@ test("Subagents keeps the cache suffix when the token pair outgrows the column",
   expect(m.cells(plain(huge.subagents!.header))).toBe(37)
 })
 
-test("stalled running session shows 无输出 and the whole row is warning", async () => {
+test("soft stall shows 无输出 in info; hard stall escalates the whole row to warning", async () => {
   const m = await vm() as any
   if (MISSING) { expect(MISSING).toBe(false); return }
-  const now = 10 * 60_000
-  const view = m.buildSidebar(input({
-    now,
+  const softNow = 10 * 60_000
+  const soft = m.buildSidebar(input({
+    now: softNow,
     sessions: [
       session("root", { agent: "root" }),
-      session("eng", { created: 2000, updated: now - 6 * 60_000 }),
+      session("eng", { created: 2000, updated: softNow - 6 * 60_000 }),
     ],
     statuses: { eng: "running" },
     messages: { eng: [assistant([tool("shell", "running")])] },
   }))
-  const row = view.delegations.rows[0]
-  expect(plain(row)).toContain("无输出 6m")
-  expect(row.every((s: any) => s.tone === "warning")).toBe(true)
+  const softRow = soft.delegations.rows[0]
+  expect(plain(softRow)).toContain("无输出 6m")
+  expect(softRow.find((s: any) => String(s.text).includes("无输出")).tone).toBe("info")
+  expect(softRow.every((s: any) => s.tone === "warning")).toBe(false)
+
+  const hardNow = 20 * 60_000
+  const hard = m.buildSidebar(input({
+    now: hardNow,
+    sessions: [
+      session("root", { agent: "root" }),
+      session("eng", { created: 2000, updated: hardNow - 16 * 60_000 }),
+    ],
+    statuses: { eng: "running" },
+    messages: { eng: [assistant([tool("shell", "running")])] },
+  }))
+  const hardRow = hard.delegations.rows[0]
+  expect(plain(hardRow)).toContain("无输出 16m")
+  expect(hardRow.every((s: any) => s.tone === "warning")).toBe(true)
 })
 
 test("stale host updated with recent message activity is not 无输出", async () => {
@@ -312,14 +327,20 @@ test("alerts come from crew_task permissions, waiting, blocked and failed", asyn
   expect(rows.some((r: string) => /^! ct_migrate +failed/.test(r))).toBe(true)
   expect(rows.some((r: string) => r.includes("ct_ok"))).toBe(false)
   expect(rows.some((r: string) => r.includes("ct_ready"))).toBe(false)
-  const perm = view.alerts[0]
+  // hard failures first, then permission, then waiting (human-priority but not louder than fail)
+  expect(view.alerts.map((a: any) => a.kind)).toEqual([
+    "failed", "blocked", "permission", "waiting", "waiting",
+  ])
+  const failed = view.alerts[0]
+  expect(failed.spans.find((s: any) => s.text === "failed").tone).toBe("error")
+  const blocked = view.alerts.find((a: any) => a.kind === "blocked")
+  expect(blocked.spans.find((s: any) => s.text === "blocked").tone).toBe("error")
+  const perm = view.alerts.find((a: any) => a.kind === "permission")
   expect(perm.spans[0]).toEqual({ text: "!", tone: "warning" })
   expect(perm.sessionID).toBe("s1")
   const waiting = view.alerts.find((a: any) => plain(a.spans).includes("ct_wait "))
   expect(waiting.sessionID).toBe("s2")
   expect(waiting.spans.find((s: any) => s.text === "waiting").tone).toBe("warning")
-  const failed = view.alerts.find((a: any) => plain(a.spans).includes("ct_migrate"))
-  expect(failed.spans.find((s: any) => s.text === "failed").tone).toBe("error")
 })
 
 test("anomaly state: warning rows in both Delegations and Subagents", async () => {
@@ -495,4 +516,47 @@ test("truncation keeps rows at or under 37 cells", async () => {
     messages: { eng: [assistant([tool("sidebar_permission_bridge_inspect", "running")])] },
   }))
   for (const row of view.delegations.rows) expect(m.cells(plain(row))).toBeLessThanOrEqual(37)
+})
+
+test("freshness line: 未校准, recent calibrate, and 可能滞后", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING).toBe(false); return }
+  const none = m.buildSidebar(input({ sessions: [session("root", { agent: "root" })] }))
+  expect(plain(none.freshness)).toBe("未校准")
+
+  const fresh = m.buildSidebar(input({
+    sessions: [session("root", { agent: "root" })],
+    now: 60_000,
+    known: true,
+    calibratedAt: 57_000,
+    calibrationIntervalMs: 15_000,
+  }))
+  expect(plain(fresh.freshness)).toBe("校准 3s 前")
+  expect(fresh.freshness[0].tone).toBe("faint")
+
+  const lag = m.buildSidebar(input({
+    sessions: [session("root", { agent: "root" })],
+    now: 60_000,
+    known: true,
+    calibratedAt: 20_000,
+    calibrationIntervalMs: 15_000,
+  }))
+  expect(plain(lag.freshness)).toContain("可能滞后")
+  expect(lag.freshness[0].tone).toBe("warning")
+})
+
+test("Subagents footnote documents tok+cache and points at sidebar-ui", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING).toBe(false); return }
+  const view = m.buildSidebar(input({
+    sessions: [
+      session("root", { agent: "root" }),
+      session("eng", { created: 2000, tokens: tok(10, 10, 0, 0, 100) }),
+    ],
+    costs: { eng: 0.01 },
+  }))
+  expect(view.subagents).toBeTruthy()
+  expect(plain(view.subagents.footnote)).toContain("cache.read")
+  expect(plain(view.subagents.footnote)).toContain("sidebar-ui")
+  expect(view.subagents.footnote[0].tone).toBe("faint")
 })

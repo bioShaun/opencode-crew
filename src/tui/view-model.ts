@@ -6,8 +6,14 @@ export interface Span { text: string; tone: Tone; bold?: boolean }
 
 export const WIDTH = 37
 const WARN_STEP_RATIO = 0.8
-const STALL_MS = 5 * 60_000
+/** Soft stall: show "无输出" but keep info tone so brief gaps do not look like hard failures. */
+export const STALL_MS = 5 * 60_000
+/** Hard stall: escalate the whole Delegations row to warning. */
+export const STALL_HARD_MS = 15 * 60_000
 const ROLE_ORDER = ['architect', 'engineer', 'explorer', 'reviewer']
+const ALERT_RANK: Record<'failed' | 'blocked' | 'permission' | 'waiting', number> = {
+  failed: 0, blocked: 1, permission: 2, waiting: 3,
+}
 
 export type ReportStatus = 'progress' | 'waiting' | 'ready' | 'blocked' | 'failed' | 'dropped'
 const REPORT_TONE: Record<Exclude<ReportStatus, 'dropped'>, Tone> = {
@@ -70,12 +76,25 @@ export interface ViewInput {
   /** Last confirmed output from events, when the caller tracks it separately. */
   lastActivity?: (id: string) => number
   limit: (agent: string | undefined) => number
+  /** Last successful live calibration; when set, buildSidebar emits a freshness line. */
+  calibratedAt?: number
+  /** False until the first active-set probe; freshness says 未校准. */
+  known?: boolean
+  /** Current calibration cadence used for the "可能滞后" threshold. */
+  calibrationIntervalMs?: number
 }
-export interface AlertRow { spans: Span[]; sessionID?: string }
+export interface AlertRow {
+  spans: Span[]
+  sessionID?: string
+  /** Severity for sort/grading; hard failures rank above human-waiting. */
+  kind?: 'failed' | 'blocked' | 'permission' | 'waiting'
+}
 export interface SidebarView {
   alerts: AlertRow[]
+  /** Faint/warning line: last calibration age, or 可能滞后 / 未校准. */
+  freshness?: Span[]
   delegations?: { title: Span[]; rows: Span[][]; runningCount: number }
-  subagents?: { title: Span[]; header: Span[]; rows: Span[][] }
+  subagents?: { title: Span[]; header: Span[]; rows: Span[][]; footnote?: Span[] }
 }
 
 // --- cell width (grapheme-aware, CJK = 2) ---
@@ -192,16 +211,36 @@ export function subagentAnomalies(list: RoleStat[]): Set<string> {
   ).map(x => x.role))
 }
 
+
+/** Age line for the live calibration cadence (events + 15s/60s repair poll). */
+export function freshnessSpans(input: {
+  now: number
+  known?: boolean
+  calibratedAt?: number
+  calibrationIntervalMs?: number
+}): Span[] {
+  if (!input.known || !input.calibratedAt) return [span('未校准', 'faint')]
+  const age = Math.max(0, input.now - input.calibratedAt)
+  const interval = input.calibrationIntervalMs ?? 15_000
+  const stale = age > interval * 1.5
+  const label = age < 1_500 ? '刚刚'
+    : age < 60_000 ? `${Math.max(1, Math.round(age / 1000))}s 前`
+    : `${Math.max(1, Math.floor(age / 60_000))}m 前`
+  const text = stale ? `可能滞后 · 校准 ${label}` : `校准 ${label}`
+  return [span(truncateCells(text, WIDTH), stale ? 'warning' : 'faint')]
+}
+
 // --- rows ---
 
 const span = (text: string, tone: Tone, bold?: boolean): Span => ({ text, tone, ...(bold ? { bold } : {}) })
 const title = (name: string, mutedTail: string): Span[] => [span(name, 'base', true), span(` ${mutedTail}`, 'muted')]
 
 function alertRow(task: CrewTaskView, kind: 'permission' | 'waiting' | 'blocked' | 'failed', text: string): AlertRow {
-  const tone: Tone = kind === 'failed' ? 'error' : 'warning'
+  const tone: Tone = kind === 'failed' || kind === 'blocked' ? 'error' : 'warning'
   const label = kind === 'permission' ? '权限' : kind
   const detail = truncateCells(text, Math.max(1, WIDTH - 16 - cells(label) - 1))
   return {
+    kind,
     sessionID: task.sessionID,
     spans: [
       span('!', tone),
@@ -225,20 +264,25 @@ function delegationRow(s: SessionView, depth: number, input: ViewInput): Span[] 
   const messages = input.messages(s.id)
   const steps = countSteps(messages)
   const seen = Math.max(s.updated, lastActivityOf(messages), input.lastActivity?.(s.id) ?? 0)
-  const stalled = input.now - seen >= STALL_MS
-  const warn = stalled || overBudget(steps, limit)
-  const activity = stalled ? `无输出 ${Math.max(1, Math.floor((input.now - seen) / 60000))}m` : sessionActivity(messages)
+  const idleFor = input.now - seen
+  const softStall = idleFor >= STALL_MS
+  const hardStall = idleFor >= STALL_HARD_MS
+  const budget = overBudget(steps, limit)
+  const warn = hardStall || budget
+  const activity = softStall ? `无输出 ${Math.max(1, Math.floor(idleFor / 60000))}m` : sessionActivity(messages)
   const role = '  '.repeat(Math.min(depth, 4)) + (s.agent ?? '?')
-  const tone: Tone = warn ? 'warning' : 'base'
+  const roleTone: Tone = warn ? 'warning' : 'base'
+  const activityTone: Tone = warn ? 'warning' : 'info'
+  const stepTone: Tone = warn ? 'warning' : 'faint'
   const step = `~${steps}/${limit || '—'}`
   const stepWidth = Math.min(12, Math.max(6, cells(step)))
   const activityWidth = WIDTH - 10 - 1 - 1 - stepWidth
   return [
-    span(padEndCells(truncateCells(role, 10), 10), tone),
-    span(' ', tone),
-    span(padEndCells(truncateCells(activity, activityWidth), activityWidth), warn ? 'warning' : 'info'),
-    span(' ', tone),
-    span(padStartCells(truncateCells(step, stepWidth), stepWidth), warn ? 'warning' : 'faint'),
+    span(padEndCells(truncateCells(role, 10), 10), roleTone),
+    span(' ', roleTone),
+    span(padEndCells(truncateCells(activity, activityWidth), activityWidth), activityTone),
+    span(' ', roleTone),
+    span(padStartCells(truncateCells(step, stepWidth), stepWidth), stepTone),
   ]
 }
 
@@ -287,6 +331,14 @@ export function buildSidebar(input: ViewInput): SidebarView {
     if (t.report?.status === 'blocked') alerts.push(alertRow(t, 'blocked', t.report.reason ?? ''))
     if (t.report?.status === 'failed') alerts.push(alertRow(t, 'failed', t.report.reason ?? ''))
   }
+  alerts.sort((a, b) => {
+    const ra = ALERT_RANK[a.kind ?? 'waiting']
+    const rb = ALERT_RANK[b.kind ?? 'waiting']
+    if (ra !== rb) return ra - rb
+    const ida = a.spans[1]?.text ?? ''
+    const idb = b.spans[1]?.text ?? ''
+    return ida.localeCompare(idb)
+  })
 
   const rows: Span[][] = []
   let runningCount = 0
@@ -367,8 +419,23 @@ export function buildSidebar(input: ViewInput): SidebarView {
         ),
       ]
     })
-    return { title: title('Subagents', `(${total} session${total === 1 ? '' : 's'} · ${money(cost)})`), header: head, rows: body }
+    const footnote = [
+      span(truncateCells('tok 含 cache.read · 见 sidebar-ui', WIDTH), 'faint'),
+    ]
+    return {
+      title: title('Subagents', `(${total} session${total === 1 ? '' : 's'} · ${money(cost)})`),
+      header: head,
+      rows: body,
+      footnote,
+    }
   })() : undefined
 
-  return { alerts, delegations, subagents }
+  const freshness = freshnessSpans({
+    now: input.now,
+    known: input.known,
+    calibratedAt: input.calibratedAt,
+    calibrationIntervalMs: input.calibrationIntervalMs,
+  })
+
+  return { alerts, freshness, delegations, subagents }
 }
