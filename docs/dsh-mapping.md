@@ -51,8 +51,9 @@ Root **只认 `ready` + 证据**；`waiting`/`progress` 不得冒充完成。
 文档与 Root 提示约定（**不**假装实现新调度器）：
 
 - 排队或容量紧张时，优先保留 **用户打断** 与 Root 的 `crew_task_status` / `crew_task_stop` 容量，而不是再塞满写任务。
-- 修改 models / steps / engineerInstructions 的配置热更 **不得** 砍正在跑的 engineer；热更作用于后续会话/新 Assignment。
+- 修改 models / steps / engineerInstructions 的配置热更 **不得** 砍正在跑的 engineer；热更作用于**下一次 provider 请求**（已存在会话的下一轮也会按新配置重组，并非只对新建会话 / 新 Assignment 生效）。任务期内要规则稳定，等任务结束再改。
 - stop 仍是「最多一次 interrupt、进程安全未确认」；人唤醒优先不等于自动杀树。
+- **首次离线 close** 要求权威记录已在 `stop_requested` / `stop_unconfirmed`（`verifyClose` 门禁）；`waiting` 是人优先信号（等人/外部输入），不得当完成，也不同于 ledger 结案。
 
 ## 5. Root 要薄
 
@@ -71,4 +72,6 @@ Root **只认 `ready` + 证据**；`waiting`/`progress` 不得冒充完成。
 
 - 映射与口径：本文
 - 六态工具：`src/report-status.ts`（由 `crew_task_start` 注入提示）
+- 结案 stop 门禁：`src/tasks-maintenance.ts` 的 `verifyClose`
+- 会话侧栏（只读）：`docs/sidebar-ui.md`；提醒区当前为权限 / blocked / failed（`waiting` 见 Delegations）
 - 角色提示：`agents/root.md`、`engineer.md`、`explorer.md`、`architect.md`、`reviewer.md`

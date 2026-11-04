@@ -18,6 +18,7 @@ Root's policy allows only one writer in the same cwd at a time; Root and enginee
 
 For lightweight GPT vs Claude prompt-style notes (optional role appendices + short runtime hints, not dual-track presets), see [`docs/model-family-prompts.md`](docs/model-family-prompts.md).
 For Ticket/Session/Assignment mapping and structured `Report` statuses borrowed from dsh (without Source/Eval/Policy), see [`docs/dsh-mapping.md`](docs/dsh-mapping.md).
+For the read-only session-page Crew sidebar (Alerts / Delegations / Subagents), see [`docs/sidebar-ui.md`](docs/sidebar-ui.md). The package exports `opencode-crew/tui` (`dist/tui.js`) for the host TUI; Alerts currently cover crew_task permission requests plus `blocked` / `failed` (a `waiting` report still shows on the Delegations row, not in Alerts).
 
 Native delegation remains host-controlled and is not automatically isolated. Separately, the explicit `crew_task_*` tools bind a manually prepared worktree to an independent engineer session with a limited local ledger and lock; they are not a scheduler, DAG, or automatic worktree manager. Two real engineer tasks have run in a private host, but their execution overlap was not verified.
 
@@ -116,7 +117,7 @@ bun src/maintenance-cli.ts plan  operation.json
 bun src/maintenance-cli.ts apply plan.json
 ```
 
-The operations are `migrate`, `close` and `open-period`. `plan` is read-only and binds the request to the current generation, registry digest, expected changes and evidence closure. `apply` requires the frozen authorization and evidence bundle, re-checks the plan and evidence, writes a backup and immutable archive, and then changes the registry in one atomic commit; a lost response is replayed from the stored operation ID without a second write. `close` only moves a reservation into history: it does not prove the process stopped, does not clean up or merge, and leaves the worktree bytes untouched. `open-period` requires zero active tasks and a valid, clean new baseline. Missing evidence, authorization or drain proof stays blocked and keeps the reservation.
+The operations are `migrate`, `close` and `open-period`. `plan` is read-only and binds the request to the current generation, registry digest, expected changes and evidence closure. `apply` requires the frozen authorization and evidence bundle, re-checks the plan and evidence, writes a backup and immutable archive, and then changes the registry in one atomic commit; a lost response is replayed from the stored operation ID without a second write. **First-time `close` requires the authoritative active record to already be in `stop_requested` or `stop_unconfirmed`** (`verifyClose` rejects other states such as `submitted` with insufficient evidence). Call `crew_task_stop` first, then prepare the evidence bundle and run offline close; stop still sends at most one interrupt and does not prove the process tree stopped or free the reservation. `close` only moves a reservation into history: it does not prove the process stopped, does not clean up or merge, and leaves the worktree bytes untouched. `open-period` requires zero active tasks and a valid, clean new baseline. Missing evidence, authorization or drain proof stays blocked and keeps the reservation.
 
 The CLI writes exactly one machine JSON object to stdout and a short Chinese summary to stderr. Exit codes are `0` success, `1` refusal/blocked and `2` usage or malformed input. The bounded read-only review listing (`src/tasks-review.ts`) is consumed as close evidence; no online review tool is registered. Only one registry write is the commit point. Backups and archives are audit data, not alternate authorities; never delete the registry or its lock to regain capacity.
 
@@ -148,7 +149,8 @@ opencode-crew/
 ├── src/tasks-maintenance.ts # offline plan/apply for the registry
 ├── src/maintenance-cli.ts   # local maintenance entry
 ├── dist/index.js            # distribution entry, includes YAML parser
-├── docs/                    # role-collaboration diagram (png + svg)
+├── dist/tui.js              # TUI sidebar entry (`opencode-crew/tui`)
+├── docs/                    # role diagram, dsh mapping, model-family, sidebar UI
 └── agents/
     ├── root.md
     ├── architect.md
