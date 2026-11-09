@@ -6,6 +6,7 @@ node_modules/
 *.log
 coverage/
 test/.work/
+.scratch/
 plans/evidence/worktree-stage0/
 plans/evidence/worktree-stage1/
 plans/evidence/crew-followup/
