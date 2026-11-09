@@ -156,3 +156,13 @@ test('successful void interrupt is recorded as unknown, not confirmed',async()=>
  await f.run('crew_task_start',f.input); const s:any=await f.run('crew_task_stop',{taskID:'ct_one'})
  expect(s.task.interruptResult).toEqual({interrupted:'unknown',result:'request_completed'})
 })
+
+test('a lazy model source is read exactly once per crew_task_start',async()=>{
+ const f=await fixture(); const { registerTasks }=await import('../src/tasks')
+ let reads=0
+ await registerTasks(f.ctx,()=>{reads++;return {providerID:'lazy',id:'eng'}})
+ expect((await f.run('crew_task_start',f.input)).ok).toBe(true)
+ const create=f.calls.find(x=>x[0]==='create')[1]
+ expect(create.model).toEqual({providerID:'lazy',id:'eng'})
+ expect(reads).toBe(1)
+})

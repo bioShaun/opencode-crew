@@ -1309,17 +1309,440 @@ function Sidebar(props) {
   }, undefined, true, undefined, this);
 }
 
-// src/tui/index.tsx
+// src/tui/profile-footer.tsx
+import { Show as Show3, createMemo as createMemo2, onCleanup as onCleanup2, onMount } from "solid-js";
+import { usePlugin as usePlugin3 } from "@opencode/plugin/tui";
+
+// src/tui/profile-menu.ts
+var OFF_TITLE = "\u5173\u95ED\u6863\u4F4D\uFF08\u56DE\u5230 opencode.json\uFF09";
+var summary = (profile) => `${profile.rootModel ? `root: ${profile.rootModel}` : "root: inherit"} \xB7 ${profile.models} \u6A21\u578B / ${profile.steps} \u6B65\u6570 / ${profile.instructions} \u8865\u5145\u89C4\u5219`;
+function profileOptions(view) {
+  const options = view.profiles.map((profile) => ({
+    title: `${view.active === profile.name ? "\u25CF " : "  "}${profile.name}`,
+    description: summary(profile),
+    value: { kind: "profile", name: profile.name },
+    ...profile.source === "package" ? { footer: "\u5185\u7F6E" } : {}
+  }));
+  options.push({ title: OFF_TITLE, value: { kind: "off" } });
+  const current = view.active && view.profiles.some((profile) => profile.name === view.active) ? { kind: "profile", name: view.active } : { kind: "off" };
+  return { options, current };
+}
+function profileListText(view) {
+  const lines = [];
+  if (view.dirs.length) {
+    for (const root of view.dirs) {
+      lines.push(`\u76EE\u5F55\uFF1A${root.dir}\uFF08${root.source === "package" ? "\u5185\u7F6E" : "\u7528\u6237"}\uFF0C${root.exists ? "\u5B58\u5728" : "\u4E0D\u5B58\u5728"}\uFF09`);
+    }
+  } else {
+    lines.push("\u76EE\u5F55\uFF1A\u672A\u914D\u7F6E\uFF08OPENCODE_CREW_PROFILES_DIR \u4E3A\u7A7A\uFF09");
+  }
+  lines.push(view.active ? `\u5F53\u524D\u6863\uFF1A${view.active}` : "\u5F53\u524D\u6863\uFF1Aoff\uFF08\u6309 opencode.json \u8FD0\u884C\uFF09");
+  if (view.requested && view.requested !== view.active)
+    lines.push(`\u6307\u9488\u5185\u5BB9\uFF1A${view.requested}`);
+  if (view.error)
+    lines.push(`\u56DE\u9000\u539F\u56E0\uFF1A${view.error}`);
+  if (!view.profiles.length) {
+    lines.push("\u53EF\u7528\u6863\uFF1A\u65E0");
+  } else {
+    lines.push("\u53EF\u7528\u6863\uFF1A");
+    for (const profile of view.profiles) {
+      lines.push(`${view.active === profile.name ? "\u25CF " : "  "}${profile.name}  ${summary(profile)}`);
+    }
+  }
+  if (view.errors.length) {
+    lines.push("\u9519\u8BEF\uFF1A");
+    for (const error of view.errors)
+      lines.push(`  ${error.name || "(\u76EE\u5F55)"}: ${error.message}`);
+  }
+  return lines.join(`
+`);
+}
+function profileFooterLabel(view) {
+  if (!view)
+    return;
+  const active = view.active ? view.active : undefined;
+  const warning = view.error ? " \u26A0" : "";
+  if (active)
+    return `profile: ${active}${warning}`;
+  if (view.error)
+    return `profile: off${warning}`;
+  return;
+}
+
+// src/config.ts
+var IDS = ["root", "architect", "engineer", "explorer", "reviewer"];
+var PROFILE_NAME_PATTERN = /^(?!\.)(?=.*[a-z0-9])[a-z0-9._-]{1,64}$/;
+function isProfileName(name) {
+  return typeof name === "string" && PROFILE_NAME_PATTERN.test(name);
+}
+
+// src/profile-rpc.ts
+var str2 = { type: "string" };
+var bool = { type: "boolean" };
+var count = { type: "integer" };
+var profileViewSchema = {
+  type: "object",
+  properties: {
+    name: str2,
+    source: { type: "string", enum: ["user", "package"] },
+    models: count,
+    steps: count,
+    instructions: count,
+    rootModel: str2,
+    roles: { type: "array", items: { type: "string", enum: [...IDS] } }
+  },
+  required: ["name", "source", "models", "steps", "instructions", "roles"],
+  additionalProperties: false
+};
+var profilesViewSchema = {
+  type: "object",
+  properties: {
+    active: str2,
+    requested: str2,
+    error: str2,
+    dirs: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { dir: str2, source: { type: "string", enum: ["user", "package"] }, exists: bool },
+        required: ["dir", "source", "exists"],
+        additionalProperties: false
+      }
+    },
+    profiles: { type: "array", items: profileViewSchema },
+    errors: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { name: str2, message: str2 },
+        required: ["name", "message"],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ["dirs", "profiles", "errors"],
+  additionalProperties: false
+};
+var switchViewSchema = {
+  type: "object",
+  properties: {
+    ok: bool,
+    active: str2,
+    changed: bool,
+    code: str2,
+    message: str2,
+    warnings: { type: "array", items: str2 },
+    profiles: profilesViewSchema
+  },
+  required: ["ok", "changed", "warnings", "profiles"],
+  additionalProperties: false
+};
+var emptyInput = { type: "object", properties: {}, additionalProperties: false };
+var crewProfiles = {
+  id: "opencode-crew-profiles",
+  methods: {
+    list: { input: emptyInput, output: profilesViewSchema },
+    switch: {
+      input: {
+        type: "object",
+        properties: { name: { type: "string", minLength: 1, maxLength: 64 } },
+        required: ["name"],
+        additionalProperties: false
+      },
+      output: switchViewSchema
+    },
+    off: { input: emptyInput, output: switchViewSchema }
+  },
+  events: {}
+};
+var object2 = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+var isStr = (value) => typeof value === "string";
+var isCount = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+var emptyProfilesView = () => ({ dirs: [], profiles: [], errors: [] });
+function parseProfilesView(value) {
+  const view = emptyProfilesView();
+  if (!object2(value))
+    return view;
+  if (isProfileName(value.active))
+    view.active = value.active;
+  if (isStr(value.requested) && value.requested)
+    view.requested = value.requested;
+  if (isStr(value.error) && value.error)
+    view.error = value.error;
+  if (Array.isArray(value.dirs)) {
+    for (const root of value.dirs) {
+      if (!object2(root) || !isStr(root.dir) || root.source !== "user" && root.source !== "package")
+        continue;
+      view.dirs.push({ dir: root.dir, source: root.source, exists: root.exists === true });
+    }
+  }
+  if (Array.isArray(value.profiles)) {
+    for (const profile of value.profiles) {
+      if (!object2(profile) || !isProfileName(profile.name) || profile.source !== "user" && profile.source !== "package")
+        continue;
+      const roles = Array.isArray(profile.roles) ? profile.roles.filter((role) => isStr(role) && IDS.includes(role)) : [];
+      view.profiles.push({
+        name: profile.name,
+        source: profile.source,
+        models: isCount(profile.models) ? Math.floor(profile.models) : 0,
+        steps: isCount(profile.steps) ? Math.floor(profile.steps) : 0,
+        instructions: isCount(profile.instructions) ? Math.floor(profile.instructions) : 0,
+        ...isStr(profile.rootModel) && profile.rootModel ? { rootModel: profile.rootModel } : {},
+        roles
+      });
+    }
+  }
+  if (Array.isArray(value.errors)) {
+    for (const error of value.errors) {
+      if (!object2(error) || !isStr(error.name) || !isStr(error.message))
+        continue;
+      view.errors.push({ name: error.name, message: error.message });
+    }
+  }
+  return view;
+}
+function parseSwitchView(value) {
+  if (!object2(value) || typeof value.ok !== "boolean")
+    return;
+  const view = {
+    ok: value.ok,
+    changed: value.changed === true,
+    warnings: Array.isArray(value.warnings) ? value.warnings.filter(isStr) : [],
+    profiles: parseProfilesView(value.profiles)
+  };
+  if (isProfileName(value.active))
+    view.active = value.active;
+  if (isStr(value.code) && value.code)
+    view.code = value.code;
+  if (isStr(value.message) && value.message)
+    view.message = value.message;
+  return view;
+}
+
+// src/tui/profile-command.ts
+var PROFILE_USAGE = [
+  "\u7528\u6CD5\uFF1A",
+  "/crew-profile            \u9009\u62E9\u6863\u4F4D\uFF08Enter \u5207\u6362\uFF0CEsc \u53D6\u6D88\uFF09",
+  "/crew-profile <name>     \u76F4\u63A5\u5207\u6362\u5230\u6307\u5B9A\u6863",
+  "/crew-profile list       \u5217\u51FA\u6863\u76EE\u5F55\u3001\u53EF\u7528\u6863\u4E0E\u9519\u8BEF",
+  "/crew-profile off        \u5173\u95ED\u6863\u4F4D\uFF0C\u56DE\u5230 opencode.json \u914D\u7F6E",
+  "/crew-profile help       \u663E\u793A\u672C\u5E2E\u52A9",
+  "",
+  "\u6863\u4F4D\u662F\u7528\u6237\u7EA7\u5168\u5C40\u8BBE\u7F6E\uFF0C\u6587\u4EF6\u4F4D\u4E8E OPENCODE_CREW_PROFILES_DIR \u6216 ${XDG_CONFIG_HOME:-~/.config}/opencode/crew-profiles\u3002"
+].join(`
+`);
+function parseProfileCommand(raw) {
+  const text = (raw ?? "").trim().replace(/^\/(?:crew-profile|crewprofile)(?:\s+|$)/i, "").trim();
+  if (!text)
+    return { kind: "menu" };
+  const parts = text.split(/\s+/);
+  if (parts.length > 1)
+    return { kind: "invalid", message: `\u53EA\u63A5\u53D7\u5355\u4E2A\u6863\u540D\uFF0C\u6536\u5230 "${text}"\u3002` };
+  const token = parts[0];
+  switch (token) {
+    case "list":
+    case "ls":
+      return { kind: "list" };
+    case "off":
+    case "none":
+      return { kind: "off" };
+    case "help":
+    case "-h":
+    case "--help":
+      return { kind: "help" };
+  }
+  if (isProfileName(token))
+    return { kind: "switch", name: token };
+  return { kind: "invalid", message: `\u6863\u540D "${token}" \u4E0D\u5408\u6CD5\uFF08\u53EA\u5141\u8BB8\u5C0F\u5199\u5B57\u6BCD a-z\u3001\u6570\u5B57 0-9 \u4E0E . _ -\uFF09\u3002` };
+}
+
+// src/tui/profile-actions.ts
+var PROFILE_MEMORY_KEY = "opencode-crew-profile";
+var TITLE = "Crew \u914D\u7F6E\u6863";
+var UNAVAILABLE = "\u5BBF\u4E3B\u4E0D\u652F\u6301 RPC\uFF0C\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u6216\u5207\u6362\u6863\u4F4D\u3002";
+function profileRpc(context) {
+  return context.client.rpc(crewProfiles);
+}
+var callOptions = (context) => context.location ? { location: context.location } : undefined;
+async function refreshProfile(context) {
+  try {
+    return parseProfilesView(await profileRpc(context).list({}, callOptions(context)));
+  } catch {
+    return;
+  }
+}
+function rememberProfile(context, view) {
+  if (!view)
+    return;
+  try {
+    const [, mutate] = context.storage.memory(PROFILE_MEMORY_KEY, { initial: { active: "", error: "", at: 0 } });
+    mutate((draft) => {
+      draft.active = view.active ?? "";
+      draft.error = view.error ?? "";
+      draft.at = Date.now();
+    });
+  } catch {}
+}
+async function alert(context, title, message) {
+  try {
+    await context.ui.dialog.alert({ title, message });
+  } catch {}
+}
+async function switchTo(context, name) {
+  try {
+    const view = parseSwitchView(await profileRpc(context).switch({ name }, callOptions(context)));
+    if (!view) {
+      await alert(context, "\u5207\u6362\u5931\u8D25", "\u5BBF\u4E3B\u8FD4\u56DE\u4E86\u65E0\u6CD5\u8BC6\u522B\u7684\u7ED3\u679C\uFF1B\u6863\u4F4D\u72B6\u6001\u672A\u786E\u8BA4\u3002");
+      return;
+    }
+    rememberProfile(context, view.profiles);
+    if (!view.ok) {
+      await alert(context, "\u5207\u6362\u5931\u8D25", view.message ?? view.code ?? "\u672A\u77E5\u539F\u56E0\uFF1B\u6863\u4F4D\u72B6\u6001\u672A\u6539\u53D8\u3002");
+      return;
+    }
+    context.ui.toast.show({ variant: "success", message: `\u5DF2\u5207\u6362\u5230\u6863 "${name}"\uFF08\u65B0\u4F1A\u8BDD/\u4E0B\u4E00\u6B21\u8BF7\u6C42\u751F\u6548\uFF09` });
+    for (const warning of view.warnings)
+      context.ui.toast.show({ variant: "warning", message: warning });
+  } catch {
+    await alert(context, "\u5207\u6362\u5931\u8D25", "\u5BBF\u4E3B\u8C03\u7528\u5931\u8D25\uFF1B\u6863\u4F4D\u72B6\u6001\u672A\u786E\u8BA4\u3002");
+  }
+}
+async function switchOff(context) {
+  try {
+    const view = parseSwitchView(await profileRpc(context).off({}, callOptions(context)));
+    if (!view) {
+      await alert(context, "\u5173\u95ED\u5931\u8D25", "\u5BBF\u4E3B\u8FD4\u56DE\u4E86\u65E0\u6CD5\u8BC6\u522B\u7684\u7ED3\u679C\uFF1B\u6863\u4F4D\u72B6\u6001\u672A\u786E\u8BA4\u3002");
+      return;
+    }
+    rememberProfile(context, view.profiles);
+    if (!view.ok) {
+      await alert(context, "\u5173\u95ED\u5931\u8D25", view.message ?? view.code ?? "\u672A\u77E5\u539F\u56E0\uFF1B\u6863\u4F4D\u72B6\u6001\u672A\u6539\u53D8\u3002");
+      return;
+    }
+    context.ui.toast.show({
+      variant: "success",
+      message: view.changed ? "\u5DF2\u5173\u95ED\u6863\u4F4D\uFF0C\u56DE\u5230 opencode.json \u914D\u7F6E\uFF08\u65B0\u4F1A\u8BDD/\u4E0B\u4E00\u6B21\u8BF7\u6C42\u751F\u6548\uFF09" : "\u6863\u4F4D\u5DF2\u662F\u5173\u95ED\u72B6\u6001"
+    });
+    for (const warning of view.warnings)
+      context.ui.toast.show({ variant: "warning", message: warning });
+  } catch {
+    await alert(context, "\u5173\u95ED\u5931\u8D25", "\u5BBF\u4E3B\u8C03\u7528\u5931\u8D25\uFF1B\u6863\u4F4D\u72B6\u6001\u672A\u786E\u8BA4\u3002");
+  }
+}
+async function openMenu(context) {
+  const view = await refreshProfile(context);
+  if (!view) {
+    await alert(context, TITLE, UNAVAILABLE);
+    return;
+  }
+  rememberProfile(context, view);
+  const { options, current } = profileOptions(view);
+  let picked;
+  try {
+    picked = await context.ui.dialog.select({ title: TITLE, options, current });
+  } catch {
+    return;
+  }
+  if (!picked)
+    return;
+  if (picked.kind === "off")
+    await switchOff(context);
+  else
+    await switchTo(context, picked.name);
+}
+async function runProfileCommand(context, raw) {
+  const command = parseProfileCommand(raw);
+  switch (command.kind) {
+    case "help":
+      await alert(context, TITLE, PROFILE_USAGE);
+      return;
+    case "invalid":
+      await alert(context, "\u7528\u6CD5", `${command.message}
+
+${PROFILE_USAGE}`);
+      return;
+    case "list": {
+      const view = await refreshProfile(context);
+      if (!view) {
+        await alert(context, TITLE, UNAVAILABLE);
+        return;
+      }
+      rememberProfile(context, view);
+      await alert(context, TITLE, profileListText(view));
+      return;
+    }
+    case "menu":
+      await openMenu(context);
+      return;
+    case "switch":
+      await switchTo(context, command.name);
+      return;
+    case "off":
+      await switchOff(context);
+      return;
+  }
+}
+
+// src/tui/profile-footer.tsx
 import { jsxDEV as jsxDEV6 } from "@opentui/solid/jsx-dev-runtime";
+function ProfileFooter() {
+  const context = usePlugin3();
+  const [state, setState] = context.storage.memory(PROFILE_MEMORY_KEY, { initial: { active: "", error: "", at: 0 } });
+  const refresh = async () => {
+    const view = await refreshProfile(context);
+    if (!view)
+      return;
+    setState((draft) => {
+      draft.active = view.active ?? "";
+      draft.error = view.error ?? "";
+      draft.at = Date.now();
+    });
+  };
+  onMount(() => {
+    refresh();
+  });
+  const timer = setInterval(() => {
+    refresh();
+  }, 60000);
+  onCleanup2(() => clearInterval(timer));
+  const label = createMemo2(() => profileFooterLabel({ active: state.active, error: state.error }));
+  return /* @__PURE__ */ jsxDEV6(Show3, {
+    when: label(),
+    children: (text) => /* @__PURE__ */ jsxDEV6(Row, {
+      spans: [{ text: text(), tone: state.active ? "muted" : "warning" }]
+    }, undefined, false, undefined, this)
+  }, undefined, false, undefined, this);
+}
+
+// src/tui/index.tsx
+import { jsxDEV as jsxDEV7 } from "@opentui/solid/jsx-dev-runtime";
 var tui_default = Plugin.define({
   id: "opencode-crew",
   setup(context) {
-    return context.ui.slot({
+    const sidebar = context.ui.slot({
       prepend: "sidebar.content",
-      render: ({ sessionID }) => /* @__PURE__ */ jsxDEV6(Sidebar, {
+      render: ({ sessionID }) => /* @__PURE__ */ jsxDEV7(Sidebar, {
         sessionID
       }, undefined, false, undefined, this)
     });
+    const footer = context.ui.slot({
+      append: "sidebar.footer",
+      render: () => /* @__PURE__ */ jsxDEV7(ProfileFooter, {}, undefined, false, undefined, this)
+    });
+    context.keymap.layer(() => ({
+      commands: [{
+        id: "opencode-crew.profile",
+        title: "Crew \u914D\u7F6E\u6863",
+        group: "Crew",
+        palette: true,
+        slash: { name: "crew-profile", aliases: ["crewprofile"], arguments: true },
+        run: (input) => runProfileCommand(context, input ?? "")
+      }]
+    }));
+    return () => {
+      sidebar();
+      footer();
+    };
   }
 });
 export {

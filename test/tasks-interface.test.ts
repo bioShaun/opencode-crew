@@ -297,3 +297,30 @@ test('error output never includes host exception bodies', async () => {
   expect(status.output.tasks[0].observed.errorCode).toBe('HOST_ERROR')
   expect(JSON.stringify(status)).not.toContain('secret host body')
 })
+
+test('registerTasks without a second argument keeps the MODEL_NOT_CONFIGURED path', async () => {
+  const { registerTasks } = await import('../src/tasks')
+  const f = await fixture()
+  await registerTasks(f.ctx)
+  delete f.owner.model
+  const result = await f.run('crew_task_start', f.input)
+  expect(result.ok).toBe(false)
+  expect(result.error.code).toBe('MODEL_NOT_CONFIGURED')
+  expect(result.error.nextAction).toContain('models.engineer')
+  expect(count(f, 'create')).toBe(0)
+})
+
+test('registerTasks accepts a lazy model source and re-reads it on the next launch', async () => {
+  const { registerTasks } = await import('../src/tasks')
+  const f = await fixture()
+  let model: any = { providerID: 'one', id: 'alpha' }
+  await registerTasks(f.ctx, () => model)
+  const second = f.worktree('second')
+  expect((await f.run('crew_task_start', f.input)).ok).toBe(true)
+  model = { providerID: 'two', id: 'beta' }
+  expect((await f.run('crew_task_start', { ...f.input, key: 'two', directory: second })).ok).toBe(true)
+  expect(f.calls.filter(x => x[0] === 'create').map(x => x[1].model)).toEqual([
+    { providerID: 'one', id: 'alpha' },
+    { providerID: 'two', id: 'beta' },
+  ])
+})

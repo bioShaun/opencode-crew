@@ -87,6 +87,45 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 - `default_agent: root` 用于未选角色的新会话，不强行改变已有会话；已有会话使用 `/crew`。
 - 模型/步数/engineerInstructions 在插件 options 修改，按 OpenCode 配置热加载机制生效，无需重启服务。热更新作用于下一次 provider 请求：会话 system 并非创建时快照，运行中 engineer 的下一轮同样按新配置重组；若要求规则在任务期内稳定，等任务结束再改。
 
+### Crew 配置档（profiles）
+
+配置档是一个小 JSON 文件，整体替换五个角色的 `models`、`steps` 和 `engineerInstructions`，因此无需改写 `opencode.json(c)` 就能切换模型组合。配置档完全可选：没有档目录、没有 `active` 指针时，插件行为与 options 配置逐字一致。
+
+- 目录：设置了 `$OPENCODE_CREW_PROFILES_DIR` 时只用它（设为空字符串表示彻底关闭）；未设置时用 `${XDG_CONFIG_HOME:-~/.config}/opencode/crew-profiles`。
+- 档文件：`<name>.json`，文件名主干即档名（`fast.json` → `/crew-profile fast`）。档名只允许小写 `a-z`、数字、`.`、`_`、`-`，不含路径分隔符。
+- active 指针：同目录下的 `active` 文件，内容为一行的档名。可以手改或删除；插件从不改写档文件。
+
+```json
+{
+  "models": {
+    "root": "provider/model#high",
+    "architect": "provider/model",
+    "engineer": "provider/model#medium",
+    "explorer": "provider/model",
+    "reviewer": "provider/model#high"
+  },
+  "steps": { "engineer": 40 },
+  "engineerInstructions": [
+    "临时文件与中间产物留在项目内，禁止使用 /tmp，包括子进程。"
+  ]
+}
+```
+
+三个字段都可选，`{}` 是合法档。示例只用占位符：包内不提供任何档文件，也不含真实 provider 或模型默认值。校验规则与插件 options 完全相同；单个档损坏只按档名报错，不影响其他档，也不阻止插件加载。
+
+命令（仅 TUI 侧注册；server 命令没有 UI 输出通道，无法回报成功或损坏原因）：
+
+- `/crew-profile`：打开选择面板（`Enter` 切换，`Esc` 取消），末项为关闭档位。
+- `/crew-profile <name>`：直接切换。
+- `/crew-profile list`：列出档目录、可用档、当前档与逐档错误。
+- `/crew-profile off`：回到 options 配置。
+
+替换语义是**整档替换**，不是合并：档里没有的字段即被清空，不会从 `opencode.json` 继承。特别是档生效时，插件 options 里的 `engineerInstructions` **不会**叠加。缺 `models.<role>` 表示原生继承（子代理跟随父会话模型，Root 保留会话已选模型）；缺 `steps.<role>` 回落到角色 Markdown frontmatter。除这三个字段外一律不动：provider、权限、description、角色正文、其他 agent 与其他插件都保持原样。
+
+生效时机：`/crew` 和 `crew_task_start` 每次调用都重新读指针，下一条命令立刻用上新档；角色 system、steps 与 model 跟随切换后的 `agent.reload()`，若宿主重载失败则切换仍成功但给出 warning，定义在宿主下次重载后对齐。手改档文件本身不会触发 `agent.reload()`；需要立即更新五个角色的 system/steps 时，请执行宿主 `/reload`，或切换到另一个档再切回。已在运行的 engineer 会话保持原模型。档生效时侧栏 footer 显示 `profile: <name>`，回退时显示 `profile: off ⚠` 与原因；无档且无错误时 footer 不渲染任何内容。
+
+失败不影响加载：档缺失、不可读、内容损坏、指针非法或目录不可读，一律回退到 options 配置，并在 `list` 与 footer 给出可读原因，保证 `/crew-profile off` 始终可用。文件格式细节、错误码以及与 `opencode.json` 的边界见 `docs/crew-profiles.md`。
+
 ### 显式 worktree 任务
 
 从**主工作区根目录**的 Root 会话调用 `crew_task_start`，参数为 `{key, directory, baseline, scope, goal, acceptance, check}`；`scope` 是精确相对文件路径或以 `/` 结尾的目录前缀数组，不是 glob。`crew_task_status` 接受 `{taskID?}`，`crew_task_stop` 接受 `{taskID}`。这是插件管理的独立会话，不是原生子代理隔离，也不会自动隔离所有委派。
@@ -145,12 +184,16 @@ Engineer 则按原顺序保留宿主提供的权限规则，并在末尾追加�
 opencode-crew/
 ├── package.json
 ├── src/index.ts             # 解析配置、加载角色、注册 /crew
+├── src/config.ts            # options 与档的校验和错误标签
+├── src/profiles.ts          # 档目录、档文件、active 指针
+├── src/profile-state.ts     # 生效配置合成与切换编排
+├── src/profile-rpc.ts       # 与 TUI 共享的配置档 RPC 契约
 ├── src/tasks-review.ts      # 有界只读成果清单
 ├── src/tasks-maintenance.ts # registry 离线 plan/apply
 ├── src/maintenance-cli.ts   # 本地维护入口
 ├── dist/index.js            # 分发入口，内含 YAML 解析器
 ├── dist/tui.js              # TUI 侧栏入口（`opencode-crew/tui`）
-├── docs/                    # 角色协作图、dsh 映射、模型族、侧栏 UI
+├── docs/                    # 角色协作图、dsh 映射、模型族、侧栏 UI、配置档
 └── agents/
     ├── root.md
     ├── architect.md
@@ -165,7 +208,7 @@ opencode-crew/
 
 ## 验证与限制
 
-`bun install` 后运行 `bun test`，默认发现范围限定为 `test/`。测试覆盖角色配置、受限任务工具、v1/v2 兼容、closed 历史行为、只读清单，以及离线维护 plan/apply 的重放、证据限额和失败原子性。本地测试不等于完整宿主验收矩阵通过。
+`bun install` 后运行 `bun test`，默认发现范围限定为 `test/`。测试覆盖角色配置、受限任务工具、v1/v2 兼容、closed 历史行为、只读清单、离线维护 plan/apply 的重放、证据限额和失败原子性，以及配置档（加载、切换、RPC 与 TUI 投影）。整套测试通过 `test/setup.ts` 与 `bunfig.toml` 的 `[test] preload` 与开发者本机真实档目录隔离。本地测试不等于完整宿主验收矩阵通过。
 
 私有宿主已实际调用阶段 1 的 Root 工具并运行两个独立 engineer marker 任务，覆盖重放、容量和 stop 状态。阶段 2 的 S1–S3 有本地红绿与回归证据；S4 已在私有 2.2.5 夹具完成 v1→v2 迁移、三次带证据结案、closed 零写入重放、异 owner 冲突、新周期与新任务；S5 已在私有夹具从同一基线运行两个真实行为任务（engineer 子会话），由 Root 串行整合并逐步与全量回归，完成 integrated 结案、新周期周转、closed 重放与异 owner 冲突，其两个行为改动已移植回源码工作区。以上均未触碰真实 ledger。阶段 1 结果不证明执行重叠、真实权限拒绝审批或进程树停止。runner 与核验限制见源码工作区的 `plans/worktree-stage1-results.md`。结果仍受 provider、全局/会话权限及项目指令影响。路径权限不是操作系统沙盒，对不可信项目仍需额外隔离。
 
