@@ -15,4 +15,5 @@ plans/evidence/closeout-stop-gate-fix/
 plans/evidence/closeout-exception-evidence-feasibility/
 plans/evidence/tool-summary/
 plans/evidence/tool-summary-compact/
+plans/*-host-verification.md
 .DS_Store
