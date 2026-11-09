@@ -1,6 +1,6 @@
 # 角色权限评审意见
 
-2026-11-09 评审，**仅为意见**。依据：当前工作区 `agents/*.md` frontmatter、`src/index.ts` 的权限合并逻辑，以及 OpenCode V2 官方权限文档。评审后第 1 条已按「删除规则」方案实施，其余建议尚未落地。
+2026-11-09 评审，**仅为意见**。依据：当前工作区 `agents/*.md` frontmatter、`src/index.ts` 的权限合并逻辑，以及 OpenCode V2 官方权限文档。评审后第 1、3、4 条已实施，第 2 条（webfetch 白名单）尚未落地。
 
 ## 1. 权限来源与合并语义
 
@@ -61,7 +61,12 @@
 ### 值得补：不改权限，补验证和口径
 
 3. **把第 3 条的语义纳入真机回归清单**：读角色「能 read、不能 shell、architect 只能写 plans/」三条断言加进现有 host-verify 流程，防宿主升级后语义变化。
+
+   **已实施**：见 `docs/role-permissions-host-checks.md`（A1/A2/A3 三条断言 + 执行方式 + headless/TUI 限制）。
+
 4. **明确 architect 的 ready 口径**：ready = 方案可实施且验证步骤已指派给 engineer；只有未决事实影响选型才标 blocked。否则 architect 会被自己无权执行的验证永远卡住。XLSX 数值对账这类设计期验证需求走「Root 先派 engineer 跑、结果喂回 architect」，不给 architect 开 shell；真要开也只该开 narrowly-scoped 只读命令白名单，代价是权限模型多一个需维护的例外。
+
+   **已实施**：`agents/architect.md` 正文与 GPT 附录已写明「无 shell 权限不构成 blocked」「ready 不以亲自执行验证为前提」，`test/crew.test.ts` 有对应口径断言。
 
 ### 不改
 

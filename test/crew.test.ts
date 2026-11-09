@@ -212,6 +212,12 @@ test('strict write and fixed shell rules enforce whole-value wildcard boundaries
   for (const command of ['git status', 'git push', 'git reset --hard', 'sh -c id']) expect(wildcardEffect(reviewer, 'shell', command)).toBe('deny')
 })
 
+test("architect ready means an implementable plan with verification assigned to engineer, not personal execution", () => {
+  const base = splitRoleBody(roleBody("architect")).base
+  expect(base).toContain("验证步骤已交给 engineer")
+  expect(base).toContain("无 shell 权限不构成 blocked")
+})
+
 // --- Crew profiles (MVP) -----------------------------------------------------
 // These cases point this process at a temporary profile directory for their
 // duration; the preloaded test/setup.ts keeps every other case isolated.
