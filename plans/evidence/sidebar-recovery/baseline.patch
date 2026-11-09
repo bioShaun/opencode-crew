@@ -1,0 +1,292 @@
+diff --git a/dist/tui.js b/dist/tui.js
+index cc48231..6e98773 100644
+--- a/dist/tui.js
++++ b/dist/tui.js
+@@ -1043,6 +1043,7 @@ function Sidebar(props) {
+   const context = usePlugin2();
+   const [tasks, setTasks] = createSignal2([]);
+   const [live, setLive] = createSignal2({ views: new Map, running: new Set, known: false });
++  const [family, setFamily] = createSignal2([]);
+   const location = () => context.location ?? attempt(() => context.data.location.default(), undefined);
+   const rootOf = (id) => attempt(() => context.data.session.root(id), "") || id;
+   const syncSession = context.data.session.sync;
+@@ -1085,6 +1086,33 @@ function Sidebar(props) {
+     cost: info.cost
+   });
+   const storeMessages = (id) => attempt(() => context.data.session.message.list(id), []);
++  let familyGen = 0;
++  let familyRetry;
++  let familyAttempts = 0;
++  const loadFamily = () => {
++    const gen = ++familyGen;
++    const rootID = rootOf(props.sessionID);
++    const retry = () => {
++      if (gen !== familyGen || familyRetry !== undefined || familyAttempts >= 4)
++        return;
++      const delay = 500 * 2 ** familyAttempts++;
++      familyRetry = setTimeout(() => {
++        familyRetry = undefined;
++        loadFamily();
++      }, delay);
++    };
++    context.client.session.list({ parentID: rootID, order: "desc", limit: 200 }).then((page) => {
++      if (gen !== familyGen)
++        return;
++      familyAttempts = 0;
++      const children = page.data.filter((s) => s.id !== rootID);
++      setFamily(children.map(toView));
++      for (const s of children) {
++        quiet(syncSession(s.id));
++        quiet(context.data.session.message.sync(s.id));
++      }
++    }).catch(retry);
++  };
+   const refresh = async () => {
+     const client = context.client.rpc(crewTasks);
+     try {
+@@ -1120,7 +1148,10 @@ function Sidebar(props) {
+     }, DEBOUNCE_MS);
+   };
+   const unlisten = context.data.listen(({ details }) => {
+-    controller.ingest(details);
++    const event = details;
++    if (event.type === "server.connected")
++      loadFamily();
++    controller.ingest(event);
+     schedule();
+   });
+   onCleanup(() => {
+@@ -1128,41 +1159,51 @@ function Sidebar(props) {
+     unlisten();
+     if (pending !== undefined)
+       clearTimeout(pending);
++    if (familyRetry !== undefined)
++      clearTimeout(familyRetry);
+   });
+   createEffect(on(() => props.sessionID, () => {
+     setTasks([]);
++    setFamily([]);
+     refresh();
+     controller.setRoot(props.sessionID);
++    loadFamily();
+   }));
+   createEffect(() => hydrate());
+   const statusOf = (id) => attempt(() => context.data.session.status(id), "idle");
+   const view = createMemo(() => {
+-    const rootID = rootOf(props.sessionID);
+-    const snapshot = live();
+-    const ids = [...new Set([
+-      rootID,
+-      ...attempt(() => context.data.session.family(rootID), []),
+-      ...snapshot.views.keys(),
+-      ...snapshot.running
+-    ])];
+-    const sessions = ids.flatMap((id) => {
+-      const session = snapshot.views.get(id)?.session ?? storeView(id);
+-      return session ? [session] : [];
+-    });
+-    const agents = context.data.location.agent.list(location()) ?? [];
+-    const stepsOf = (agent) => agents.find((a) => a.id === agent)?.steps ?? agents.find((a) => a.id === "engineer")?.steps ?? 80;
+-    return buildSidebar({
+-      rootID,
+-      sessions,
+-      tasks: tasks(),
+-      now: Date.now(),
+-      status: statusOf,
+-      running: snapshot.known ? (s) => snapshot.running.has(s.id) : (s) => sessionRunning(s, statusOf),
+-      messages: (id) => snapshot.views.get(id)?.messages ?? storeMessages(id),
+-      cost: (id) => snapshot.views.get(id)?.session.cost ?? attempt(() => context.data.session.cost(id), 0),
+-      lastActivity: (id) => snapshot.views.get(id)?.lastActivity ?? 0,
+-      limit: stepsOf
+-    });
++    try {
++      const rootID = rootOf(props.sessionID);
++      const snapshot = live();
++      const local = new Map(family().map((s) => [s.id, s]));
++      const ids = [...new Set([
++        rootID,
++        ...attempt(() => context.data.session.family(rootID), []),
++        ...snapshot.views.keys(),
++        ...snapshot.running,
++        ...local.keys()
++      ])];
++      const sessions = ids.flatMap((id) => {
++        const session = snapshot.views.get(id)?.session ?? storeView(id) ?? local.get(id);
++        return session ? [session] : [];
++      });
++      const agents = attempt(() => context.data.location.agent.list(location()) ?? [], []);
++      const stepsOf = (agent) => agents.find((a) => a.id === agent)?.steps ?? agents.find((a) => a.id === "engineer")?.steps ?? 80;
++      return buildSidebar({
++        rootID,
++        sessions,
++        tasks: tasks(),
++        now: Date.now(),
++        status: statusOf,
++        running: snapshot.known ? (s) => snapshot.running.has(s.id) : (s) => sessionRunning(s, statusOf),
++        messages: (id) => snapshot.views.get(id)?.messages ?? storeMessages(id),
++        cost: (id) => snapshot.views.get(id)?.session.cost ?? attempt(() => context.data.session.cost(id), 0),
++        lastActivity: (id) => snapshot.views.get(id)?.lastActivity ?? 0,
++        limit: stepsOf
++      });
++    } catch {
++      return { alerts: [] };
++    }
+   });
+   const blocks = createMemo(() => {
+     const v = view();
+diff --git a/src/tui/sidebar.tsx b/src/tui/sidebar.tsx
+index ef1a1b2..b0e3889 100644
+--- a/src/tui/sidebar.tsx
++++ b/src/tui/sidebar.tsx
+@@ -35,6 +35,10 @@ export function Sidebar(props: { sessionID: string }) {
+   const context = usePlugin()
+   const [tasks, setTasks] = createSignal<CrewTaskView[]>([])
+   const [live, setLive] = createSignal<LiveSnapshot>({ views: new Map(), running: new Set(), known: false })
++  // Direct children fetched from the server. The host family cache can be
++  // empty after a cold start (missed session.created events or a failed
++  // hydration), which would hide every Subagents row until a remount.
++  const [family, setFamily] = createSignal<SessionView[]>([])
+ 
+   const location = () => context.location ?? attempt(() => context.data.location.default(), undefined)
+   const rootOf = (id: string) => attempt(() => context.data.session.root(id), "") || id
+@@ -91,6 +95,38 @@ export function Sidebar(props: { sessionID: string }) {
+   const storeMessages = (id: string): MessageView[] =>
+     attempt(() => context.data.session.message.list(id) as unknown as MessageView[], [])
+ 
++  // Ask the server for the root's direct children instead of trusting only the
++  // host's event-maintained family cache. Retries a transient cold-start
++  // failure a few times and refreshes on reconnect.
++  let familyGen = 0
++  let familyRetry: ReturnType<typeof setTimeout> | undefined
++  let familyAttempts = 0
++  const loadFamily = () => {
++    const gen = ++familyGen
++    const rootID = rootOf(props.sessionID)
++    const retry = () => {
++      if (gen !== familyGen || familyRetry !== undefined || familyAttempts >= 4) return
++      const delay = 500 * 2 ** familyAttempts++
++      familyRetry = setTimeout(() => {
++        familyRetry = undefined
++        loadFamily()
++      }, delay)
++    }
++    context.client.session
++      .list({ parentID: rootID, order: "desc", limit: 200 })
++      .then(page => {
++        if (gen !== familyGen) return
++        familyAttempts = 0
++        const children = page.data.filter(s => s.id !== rootID)
++        setFamily(children.map(toView))
++        for (const s of children) {
++          quiet(syncSession(s.id))
++          quiet(context.data.session.message.sync(s.id))
++        }
++      })
++      .catch(retry)
++  }
++
+   const refresh = async () => {
+     const client = context.client.rpc(crewTasks)
+     try {
+@@ -130,18 +166,23 @@ export function Sidebar(props: { sessionID: string }) {
+     }, DEBOUNCE_MS)
+   }
+   const unlisten = context.data.listen(({ details }) => {
+-    controller.ingest(details as LiveEvent)
++    const event = details as LiveEvent
++    if (event.type === "server.connected") loadFamily()
++    controller.ingest(event)
+     schedule()
+   })
+   onCleanup(() => {
+     controller.dispose()
+     unlisten()
+     if (pending !== undefined) clearTimeout(pending)
++    if (familyRetry !== undefined) clearTimeout(familyRetry)
+   })
+   createEffect(on(() => props.sessionID, () => {
+     setTasks([])
++    setFamily([])
+     refresh()
+     controller.setRoot(props.sessionID)
++    loadFamily()
+   }))
+ 
+   // Keep the reactive session/family caches hydrated for this session.
+@@ -149,37 +190,45 @@ export function Sidebar(props: { sessionID: string }) {
+ 
+   const statusOf = (id: string) => attempt(() => context.data.session.status(id), "idle" as const)
+   const view = createMemo<SidebarView>(() => {
+-    const rootID = rootOf(props.sessionID)
+-    const snapshot = live()
+-    const ids = [...new Set([
+-      rootID,
+-      ...attempt(() => context.data.session.family(rootID), [] as string[]),
+-      ...snapshot.views.keys(),
+-      ...snapshot.running,
+-    ])]
+-    const sessions: SessionView[] = ids.flatMap(id => {
+-      const session = snapshot.views.get(id)?.session ?? storeView(id)
+-      return session ? [session] : []
+-    })
+-    const agents = context.data.location.agent.list(location()) ?? []
+-    const stepsOf = (agent: string | undefined) =>
+-      agents.find(a => a.id === agent)?.steps
+-      ?? agents.find(a => a.id === "engineer")?.steps
+-      ?? 80
+-    return buildSidebar({
+-      rootID,
+-      sessions,
+-      tasks: tasks(),
+-      now: Date.now(),
+-      status: statusOf,
+-      // The server snapshot is authoritative once a probe succeeded; before
+-      // that, fall back to the host's busy/idle watermarks.
+-      running: snapshot.known ? s => snapshot.running.has(s.id) : s => sessionRunning(s, statusOf),
+-      messages: id => snapshot.views.get(id)?.messages ?? storeMessages(id),
+-      cost: id => snapshot.views.get(id)?.session.cost ?? attempt(() => context.data.session.cost(id), 0),
+-      lastActivity: id => snapshot.views.get(id)?.lastActivity ?? 0,
+-      limit: stepsOf,
+-    })
++    try {
++      const rootID = rootOf(props.sessionID)
++      const snapshot = live()
++      const local = new Map(family().map(s => [s.id, s]))
++      const ids = [...new Set([
++        rootID,
++        ...attempt(() => context.data.session.family(rootID), [] as string[]),
++        ...snapshot.views.keys(),
++        ...snapshot.running,
++        ...local.keys(),
++      ])]
++      const sessions: SessionView[] = ids.flatMap(id => {
++        const session = snapshot.views.get(id)?.session ?? storeView(id) ?? local.get(id)
++        return session ? [session] : []
++      })
++      const agents = attempt(() => context.data.location.agent.list(location()) ?? [], [])
++      const stepsOf = (agent: string | undefined) =>
++        agents.find(a => a.id === agent)?.steps
++        ?? agents.find(a => a.id === "engineer")?.steps
++        ?? 80
++      return buildSidebar({
++        rootID,
++        sessions,
++        tasks: tasks(),
++        now: Date.now(),
++        status: statusOf,
++        // The server snapshot is authoritative once a probe succeeded; before
++        // that, fall back to the host's busy/idle watermarks.
++        running: snapshot.known ? s => snapshot.running.has(s.id) : s => sessionRunning(s, statusOf),
++        messages: id => snapshot.views.get(id)?.messages ?? storeMessages(id),
++        cost: id => snapshot.views.get(id)?.session.cost ?? attempt(() => context.data.session.cost(id), 0),
++        lastActivity: id => snapshot.views.get(id)?.lastActivity ?? 0,
++        limit: stepsOf,
++      })
++    } catch {
++      // A partially hydrated host snapshot must not kill the whole claim:
++      // the next event or calibration tick re-runs this memo.
++      return { alerts: [] }
++    }
+   })
+ 
+   const blocks = createMemo<Block[]>(() => {
