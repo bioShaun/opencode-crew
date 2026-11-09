@@ -1,8 +1,24 @@
 // @bun
 // src/tui/index.tsx
+import { createComponent as _$createComponent8 } from "@opentui/solid";
 import { Plugin } from "@opencode/plugin/tui";
 
+// src/tui/sidebar-recovery.tsx
+import { insert as _$insert6 } from "@opentui/solid";
+import { createTextNode as _$createTextNode } from "@opentui/solid";
+import { insertNode as _$insertNode2 } from "@opentui/solid";
+import { setProp as _$setProp6 } from "@opentui/solid";
+import { createElement as _$createElement6 } from "@opentui/solid";
+import { memo as _$memo2 } from "@opentui/solid";
+import { createComponent as _$createComponent6 } from "@opentui/solid";
+import { createSignal as createSignal3, ErrorBoundary, onCleanup as onCleanup2, onMount, Show as Show3 } from "solid-js";
+
 // src/tui/sidebar.tsx
+import { insert as _$insert5 } from "@opentui/solid";
+import { memo as _$memo } from "@opentui/solid";
+import { setProp as _$setProp5 } from "@opentui/solid";
+import { createElement as _$createElement5 } from "@opentui/solid";
+import { createComponent as _$createComponent5 } from "@opentui/solid";
 import { createEffect, createMemo, createSignal as createSignal2, For as For5, on, onCleanup, Show as Show2 } from "solid-js";
 import { usePlugin as usePlugin2 } from "@opencode/plugin/tui";
 
@@ -977,12 +993,21 @@ class LiveController {
 }
 
 // src/tui/alerts.tsx
+import { insert as _$insert2 } from "@opentui/solid";
+import { createComponent as _$createComponent2 } from "@opentui/solid";
+import { setProp as _$setProp2 } from "@opentui/solid";
+import { createElement as _$createElement2 } from "@opentui/solid";
 import { For as For2 } from "solid-js";
 
 // src/tui/rows.tsx
+import { insertNode as _$insertNode } from "@opentui/solid";
+import { setProp as _$setProp } from "@opentui/solid";
+import { effect as _$effect } from "@opentui/solid";
+import { insert as _$insert } from "@opentui/solid";
+import { createComponent as _$createComponent } from "@opentui/solid";
+import { createElement as _$createElement } from "@opentui/solid";
 import { createSignal, For } from "solid-js";
 import { usePlugin } from "@opencode/plugin/tui";
-import { jsxDEV } from "@opentui/solid/jsx-dev-runtime";
 var useTone = () => {
   const theme = usePlugin().theme;
   return (tone) => {
@@ -1004,15 +1029,24 @@ var useTone = () => {
 };
 function Row(props) {
   const fg = useTone();
-  return /* @__PURE__ */ jsxDEV("text", {
-    children: /* @__PURE__ */ jsxDEV(For, {
-      each: props.spans,
-      children: (s) => /* @__PURE__ */ jsxDEV("span", {
-        style: { fg: fg(s.tone), bold: s.bold },
-        children: s.text
-      }, undefined, false, undefined, this)
-    }, undefined, false, undefined, this)
-  }, undefined, false, undefined, this);
+  return (() => {
+    var _el$ = _$createElement("text");
+    _$insert(_el$, _$createComponent(For, {
+      get each() {
+        return props.spans;
+      },
+      children: (s) => (() => {
+        var _el$2 = _$createElement("span");
+        _$insert(_el$2, () => s.text);
+        _$effect((_$p) => _$setProp(_el$2, "style", {
+          fg: fg(s.tone),
+          bold: s.bold
+        }, _$p));
+        return _el$2;
+      })()
+    }));
+    return _el$;
+  })();
 }
 function AlertRow(props) {
   const context = usePlugin();
@@ -1020,90 +1054,126 @@ function AlertRow(props) {
   const [hover, setHover] = createSignal(false);
   const navigate = () => {
     if (props.alert.sessionID) {
-      context.ui.router.navigate({ type: "session", sessionID: props.alert.sessionID });
+      context.ui.router.navigate({
+        type: "session",
+        sessionID: props.alert.sessionID
+      });
     }
   };
-  return /* @__PURE__ */ jsxDEV("box", {
-    onMouseDown: navigate,
-    onMouseOver: () => setHover(true),
-    onMouseOut: () => setHover(false),
-    children: /* @__PURE__ */ jsxDEV("text", {
-      children: /* @__PURE__ */ jsxDEV(For, {
-        each: props.alert.spans,
-        children: (s) => /* @__PURE__ */ jsxDEV("span", {
-          style: { fg: fg(s.tone), bold: s.bold, underline: hover() },
-          children: s.text
-        }, undefined, false, undefined, this)
-      }, undefined, false, undefined, this)
-    }, undefined, false, undefined, this)
-  }, undefined, false, undefined, this);
+  return (() => {
+    var _el$3 = _$createElement("box"), _el$4 = _$createElement("text");
+    _$insertNode(_el$3, _el$4);
+    _$setProp(_el$3, "onMouseDown", navigate);
+    _$setProp(_el$3, "onMouseOver", () => setHover(true));
+    _$setProp(_el$3, "onMouseOut", () => setHover(false));
+    _$insert(_el$4, _$createComponent(For, {
+      get each() {
+        return props.alert.spans;
+      },
+      children: (s) => (() => {
+        var _el$5 = _$createElement("span");
+        _$insert(_el$5, () => s.text);
+        _$effect((_$p) => _$setProp(_el$5, "style", {
+          fg: fg(s.tone),
+          bold: s.bold,
+          underline: hover()
+        }, _$p));
+        return _el$5;
+      })()
+    }));
+    return _el$3;
+  })();
 }
 
 // src/tui/alerts.tsx
-import { jsxDEV as jsxDEV2 } from "@opentui/solid/jsx-dev-runtime";
 function Alerts(props) {
-  return /* @__PURE__ */ jsxDEV2("box", {
-    flexDirection: "column",
-    children: /* @__PURE__ */ jsxDEV2(For2, {
-      each: props.rows,
-      children: (alert) => /* @__PURE__ */ jsxDEV2(AlertRow, {
+  return (() => {
+    var _el$ = _$createElement2("box");
+    _$setProp2(_el$, "flexDirection", "column");
+    _$insert2(_el$, _$createComponent2(For2, {
+      get each() {
+        return props.rows;
+      },
+      children: (alert) => _$createComponent2(AlertRow, {
         alert
-      }, undefined, false, undefined, this)
-    }, undefined, false, undefined, this)
-  }, undefined, false, undefined, this);
+      })
+    }));
+    return _el$;
+  })();
 }
 
 // src/tui/delegations.tsx
+import { insert as _$insert3 } from "@opentui/solid";
+import { createComponent as _$createComponent3 } from "@opentui/solid";
+import { setProp as _$setProp3 } from "@opentui/solid";
+import { createElement as _$createElement3 } from "@opentui/solid";
 import { For as For3 } from "solid-js";
-import { jsxDEV as jsxDEV3 } from "@opentui/solid/jsx-dev-runtime";
 function Delegations(props) {
-  return /* @__PURE__ */ jsxDEV3("box", {
-    flexDirection: "column",
-    children: [
-      /* @__PURE__ */ jsxDEV3(Row, {
-        spans: props.block.title
-      }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV3(For3, {
-        each: props.block.rows,
-        children: (row) => /* @__PURE__ */ jsxDEV3(Row, {
-          spans: row
-        }, undefined, false, undefined, this)
-      }, undefined, false, undefined, this)
-    ]
-  }, undefined, true, undefined, this);
+  return (() => {
+    var _el$ = _$createElement3("box");
+    _$setProp3(_el$, "flexDirection", "column");
+    _$insert3(_el$, _$createComponent3(Row, {
+      get spans() {
+        return props.block.title;
+      }
+    }), null);
+    _$insert3(_el$, _$createComponent3(For3, {
+      get each() {
+        return props.block.rows;
+      },
+      children: (row) => _$createComponent3(Row, {
+        spans: row
+      })
+    }), null);
+    return _el$;
+  })();
 }
 
 // src/tui/subagents.tsx
+import { insert as _$insert4 } from "@opentui/solid";
+import { createComponent as _$createComponent4 } from "@opentui/solid";
+import { setProp as _$setProp4 } from "@opentui/solid";
+import { createElement as _$createElement4 } from "@opentui/solid";
 import { For as For4, Show } from "solid-js";
-import { jsxDEV as jsxDEV4 } from "@opentui/solid/jsx-dev-runtime";
 function Subagents(props) {
-  return /* @__PURE__ */ jsxDEV4("box", {
-    flexDirection: "column",
-    children: [
-      /* @__PURE__ */ jsxDEV4(Row, {
-        spans: props.block.title
-      }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV4(Row, {
-        spans: props.block.header
-      }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV4(For4, {
-        each: props.block.rows,
-        children: (row) => /* @__PURE__ */ jsxDEV4(Row, {
-          spans: row
-        }, undefined, false, undefined, this)
-      }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV4(Show, {
-        when: props.block.footnote,
-        children: /* @__PURE__ */ jsxDEV4(Row, {
-          spans: props.block.footnote
-        }, undefined, false, undefined, this)
-      }, undefined, false, undefined, this)
-    ]
-  }, undefined, true, undefined, this);
+  return (() => {
+    var _el$ = _$createElement4("box");
+    _$setProp4(_el$, "flexDirection", "column");
+    _$insert4(_el$, _$createComponent4(Row, {
+      get spans() {
+        return props.block.title;
+      }
+    }), null);
+    _$insert4(_el$, _$createComponent4(Row, {
+      get spans() {
+        return props.block.header;
+      }
+    }), null);
+    _$insert4(_el$, _$createComponent4(For4, {
+      get each() {
+        return props.block.rows;
+      },
+      children: (row) => _$createComponent4(Row, {
+        spans: row
+      })
+    }), null);
+    _$insert4(_el$, _$createComponent4(Show, {
+      get when() {
+        return props.block.footnote;
+      },
+      get children() {
+        return _$createComponent4(Row, {
+          get spans() {
+            return props.block.footnote;
+          }
+        });
+      }
+    }), null);
+    return _el$;
+  })();
 }
 
 // src/tui/sidebar.tsx
-import { jsxDEV as jsxDEV5, Fragment } from "@opentui/solid/jsx-dev-runtime";
 var DEBOUNCE_MS = 800;
 var attempt = (run, fallback) => {
   try {
@@ -1115,7 +1185,12 @@ var attempt = (run, fallback) => {
 function Sidebar(props) {
   const context = usePlugin2();
   const [tasks, setTasks] = createSignal2([]);
-  const [live, setLive] = createSignal2({ views: new Map, running: new Set, known: false });
+  const [live, setLive] = createSignal2({
+    views: new Map,
+    running: new Set,
+    known: false
+  });
+  const [family, setFamily] = createSignal2([]);
   const [now, setNow] = createSignal2(Date.now());
   const location = () => context.location ?? attempt(() => context.data.location.default(), undefined);
   const rootOf = (id) => attempt(() => context.data.session.root(id), "") || id;
@@ -1126,7 +1201,9 @@ function Sidebar(props) {
     const rootID = rootOf(id);
     quiet(syncSession(id));
     quiet(context.data.session.message.sync(id));
-    quiet(syncSession(rootID, { children: true }));
+    quiet(syncSession(rootID, {
+      children: true
+    }));
     for (const sid of attempt(() => context.data.session.family(rootID), [])) {
       quiet(syncSession(sid));
       quiet(context.data.session.message.sync(sid));
@@ -1159,25 +1236,86 @@ function Sidebar(props) {
     cost: info.cost
   });
   const storeMessages = (id) => attempt(() => context.data.session.message.list(id), []);
+  let familyGen = 0;
+  let familyRetry;
+  let familyAttempts = 0;
+  const loadFamily = () => {
+    const gen = ++familyGen;
+    const rootID = rootOf(props.sessionID);
+    const retry = () => {
+      if (gen !== familyGen || familyRetry !== undefined || familyAttempts >= 4)
+        return;
+      const delay = 500 * 2 ** familyAttempts++;
+      familyRetry = setTimeout(() => {
+        familyRetry = undefined;
+        loadFamily();
+      }, delay);
+    };
+    context.client.session.list({
+      parentID: rootID,
+      order: "desc",
+      limit: 200
+    }).then((page) => {
+      if (gen !== familyGen)
+        return;
+      familyAttempts = 0;
+      const children = page.data.filter((s) => s.id !== rootID);
+      setFamily(children.map(toView));
+      for (const s of children) {
+        quiet(syncSession(s.id));
+        quiet(context.data.session.message.sync(s.id));
+      }
+    }).catch(retry);
+  };
   const refresh = async () => {
     const client = context.client.rpc(crewTasks);
     try {
-      const options = context.location ? { location: context.location } : undefined;
-      setTasks(parseTasksOutput(await client.tasks({ sessionID: props.sessionID }, options)));
+      const options = context.location ? {
+        location: context.location
+      } : undefined;
+      setTasks(parseTasksOutput(await client.tasks({
+        sessionID: props.sessionID
+      }, options)));
     } catch {
       setTasks([]);
     }
   };
-  const controller = new LiveController({
+  let controller;
+  let unlisten;
+  let pending;
+  onCleanup(() => {
+    try {
+      controller?.dispose();
+    } catch {}
+    try {
+      unlisten?.();
+    } catch {}
+    if (pending !== undefined)
+      clearTimeout(pending);
+    if (familyRetry !== undefined)
+      clearTimeout(familyRetry);
+    familyGen++;
+  });
+  controller = new LiveController({
     rootID: props.sessionID,
     family: () => attempt(() => context.data.session.family(rootOf(props.sessionID)), []),
-    store: { session: storeView, messages: storeMessages },
+    store: {
+      session: storeView,
+      messages: storeMessages
+    },
     fetch: {
       active: async () => new Set(Object.keys(await context.client.session.active())),
-      session: (id) => context.client.session.get({ sessionID: id }).then(toView).catch(() => {
+      session: (id) => context.client.session.get({
+        sessionID: id
+      }).then(toView).catch(() => {
         return;
       }),
-      messages: (id) => context.client.message.list({ sessionID: id, limit: LIVE_MESSAGES, order: "desc", type: "assistant" }).then((page) => [...page.data].reverse()).catch(() => {
+      messages: (id) => context.client.message.list({
+        sessionID: id,
+        limit: LIVE_MESSAGES,
+        order: "desc",
+        type: "assistant"
+      }).then((page) => [...page.data].reverse()).catch(() => {
         return;
       })
     },
@@ -1189,44 +1327,40 @@ function Sidebar(props) {
       refresh();
     }
   });
-  let pending;
   const schedule = () => {
     pending ??= setTimeout(() => {
       pending = undefined;
       refresh();
     }, DEBOUNCE_MS);
   };
-  const unlisten = context.data.listen(({ details }) => {
-    controller.ingest(details);
+  unlisten = context.data.listen(({
+    details
+  }) => {
+    const event = details;
+    if (event.type === "server.connected")
+      loadFamily();
+    controller?.ingest(event);
     schedule();
-  });
-  onCleanup(() => {
-    controller.dispose();
-    unlisten();
-    if (pending !== undefined)
-      clearTimeout(pending);
   });
   createEffect(on(() => props.sessionID, () => {
     setTasks([]);
+    setFamily([]);
     refresh();
-    controller.setRoot(props.sessionID);
+    controller?.setRoot(props.sessionID);
+    loadFamily();
   }));
   createEffect(() => hydrate());
   const statusOf = (id) => attempt(() => context.data.session.status(id), "idle");
   const view = createMemo(() => {
     const rootID = rootOf(props.sessionID);
     const snapshot = live();
-    const ids = [...new Set([
-      rootID,
-      ...attempt(() => context.data.session.family(rootID), []),
-      ...snapshot.views.keys(),
-      ...snapshot.running
-    ])];
+    const local = new Map(family().map((s) => [s.id, s]));
+    const ids = [...new Set([rootID, ...attempt(() => context.data.session.family(rootID), []), ...snapshot.views.keys(), ...snapshot.running, ...local.keys()])];
     const sessions = ids.flatMap((id) => {
-      const session = snapshot.views.get(id)?.session ?? storeView(id);
+      const session = snapshot.views.get(id)?.session ?? storeView(id) ?? local.get(id);
       return session ? [session] : [];
     });
-    const agents = context.data.location.agent.list(location()) ?? [];
+    const agents = attempt(() => context.data.location.agent.list(location()) ?? [], []);
     const stepsOf = (agent) => agents.find((a) => a.id === agent)?.steps ?? agents.find((a) => a.id === "engineer")?.steps ?? 80;
     return buildSidebar({
       rootID,
@@ -1248,69 +1382,230 @@ function Sidebar(props) {
     const v = view();
     const out = [];
     if (v.alerts.length)
-      out.push({ kind: "alerts", rows: v.alerts });
+      out.push({
+        kind: "alerts",
+        rows: v.alerts
+      });
     if (v.delegations)
-      out.push({ kind: "delegations", block: v.delegations });
+      out.push({
+        kind: "delegations",
+        block: v.delegations
+      });
     if (v.subagents)
-      out.push({ kind: "subagents", block: v.subagents });
+      out.push({
+        kind: "subagents",
+        block: v.subagents
+      });
     return out;
   });
   const render = (block) => {
     if (block.kind === "alerts")
-      return /* @__PURE__ */ jsxDEV5(Alerts, {
-        rows: block.rows
-      }, undefined, false, undefined, this);
+      return _$createComponent5(Alerts, {
+        get rows() {
+          return block.rows;
+        }
+      });
     if (block.kind === "delegations")
-      return /* @__PURE__ */ jsxDEV5(Delegations, {
-        block: block.block
-      }, undefined, false, undefined, this);
-    return /* @__PURE__ */ jsxDEV5(Subagents, {
-      block: block.block
-    }, undefined, false, undefined, this);
+      return _$createComponent5(Delegations, {
+        get block() {
+          return block.block;
+        }
+      });
+    return _$createComponent5(Subagents, {
+      get block() {
+        return block.block;
+      }
+    });
   };
-  return /* @__PURE__ */ jsxDEV5("box", {
-    flexDirection: "column",
-    children: [
-      /* @__PURE__ */ jsxDEV5(For5, {
-        each: blocks(),
-        children: (block, index) => /* @__PURE__ */ jsxDEV5(Fragment, {
-          children: [
-            /* @__PURE__ */ jsxDEV5(Show2, {
-              when: index() > 0,
-              children: /* @__PURE__ */ jsxDEV5("box", {
-                height: 1
-              }, undefined, false, undefined, this)
-            }, undefined, false, undefined, this),
-            render(block)
-          ]
-        }, undefined, true, undefined, this)
-      }, undefined, false, undefined, this),
-      /* @__PURE__ */ jsxDEV5(Show2, {
-        when: view().freshness,
-        children: [
-          /* @__PURE__ */ jsxDEV5(Show2, {
-            when: blocks().length > 0,
-            children: /* @__PURE__ */ jsxDEV5("box", {
-              height: 1
-            }, undefined, false, undefined, this)
-          }, undefined, false, undefined, this),
-          /* @__PURE__ */ jsxDEV5(Row, {
-            spans: view().freshness
-          }, undefined, false, undefined, this)
-        ]
-      }, undefined, true, undefined, this),
-      /* @__PURE__ */ jsxDEV5(Show2, {
-        when: blocks().length > 0 || view().freshness,
-        children: /* @__PURE__ */ jsxDEV5("box", {
-          height: 1
-        }, undefined, false, undefined, this)
-      }, undefined, false, undefined, this)
-    ]
-  }, undefined, true, undefined, this);
+  return (() => {
+    var _el$ = _$createElement5("box");
+    _$setProp5(_el$, "flexDirection", "column");
+    _$insert5(_el$, _$createComponent5(For5, {
+      get each() {
+        return blocks();
+      },
+      children: (block, index) => [_$createComponent5(Show2, {
+        get when() {
+          return index() > 0;
+        },
+        get children() {
+          var _el$4 = _$createElement5("box");
+          _$setProp5(_el$4, "height", 1);
+          return _el$4;
+        }
+      }), _$memo(() => render(block))]
+    }), null);
+    _$insert5(_el$, _$createComponent5(Show2, {
+      get when() {
+        return view().freshness;
+      },
+      get children() {
+        return [_$createComponent5(Show2, {
+          get when() {
+            return blocks().length > 0;
+          },
+          get children() {
+            var _el$2 = _$createElement5("box");
+            _$setProp5(_el$2, "height", 1);
+            return _el$2;
+          }
+        }), _$createComponent5(Row, {
+          get spans() {
+            return view().freshness;
+          }
+        })];
+      }
+    }), null);
+    _$insert5(_el$, _$createComponent5(Show2, {
+      get when() {
+        return blocks().length > 0 || view().freshness;
+      },
+      get children() {
+        var _el$3 = _$createElement5("box");
+        _$setProp5(_el$3, "height", 1);
+        return _el$3;
+      }
+    }), null);
+    return _el$;
+  })();
+}
+
+// src/tui/sidebar-recovery.tsx
+var clock = {
+  now: () => Date.now(),
+  schedule: (fn, delay) => setTimeout(fn, delay),
+  cancel: (handle) => clearTimeout(handle)
+};
+var recoveryEvents = [];
+var delays = [1000, 3000, 1e4];
+function SidebarRecovery(props) {
+  return _$createComponent6(Show3, {
+    get when() {
+      return props.sessionID;
+    },
+    keyed: true,
+    children: (sessionID) => _$createComponent6(SessionRecovery, {
+      get context() {
+        return props.context;
+      },
+      sessionID,
+      get clock() {
+        return props.clock ?? clock;
+      }
+    })
+  });
+}
+function SessionRecovery(props) {
+  let attempts = 0;
+  let lastManual = Number.NEGATIVE_INFINITY;
+  let retry;
+  let disposed = false;
+  const [failed, setFailed] = createSignal3(false);
+  onCleanup2(() => {
+    disposed = true;
+    retry = undefined;
+  });
+  try {
+    props.context.keymap?.layer(() => ({
+      commands: [{
+        id: "crew.sidebar.retry",
+        title: "Retry Crew sidebar",
+        palette: true,
+        bind: false,
+        enabled: failed,
+        run: () => {
+          retry?.();
+        }
+      }]
+    }));
+  } catch {}
+  function Healthy() {
+    onMount(() => {
+      setFailed(false);
+      const timer = props.clock.schedule(() => {
+        if (!disposed)
+          attempts = 0;
+      }, 60000);
+      onCleanup2(() => props.clock.cancel(timer));
+    });
+    return _$createComponent6(Sidebar, {
+      get sessionID() {
+        return props.sessionID;
+      }
+    });
+  }
+  function Fallback(p) {
+    const id = Math.random().toString(36).slice(2, 10).padEnd(8, "0");
+    recoveryEvents.push({
+      id,
+      phase: "component",
+      category: p.error === null ? "null" : typeof p.error
+    });
+    if (recoveryEvents.length > 50)
+      recoveryEvents.shift();
+    setFailed(true);
+    let timer;
+    let active = true;
+    const reset = () => {
+      if (!active || disposed)
+        return;
+      active = false;
+      if (timer !== undefined)
+        props.clock.cancel(timer);
+      retry = undefined;
+      p.reset();
+    };
+    retry = () => {
+      const now = props.clock.now();
+      if (now - lastManual < 1000)
+        return;
+      lastManual = now;
+      reset();
+    };
+    const delay = delays[attempts];
+    if (delay !== undefined) {
+      timer = props.clock.schedule(() => {
+        attempts++;
+        reset();
+      }, delay);
+    }
+    onCleanup2(() => {
+      active = false;
+      if (timer !== undefined)
+        props.clock.cancel(timer);
+      retry = undefined;
+    });
+    return (() => {
+      var _el$ = _$createElement6("box"), _el$2 = _$createElement6("text"), _el$4 = _$createElement6("text"), _el$5 = _$createTextNode(`\u8BCA\u65AD `), _el$6 = _$createTextNode(`\uFF08\u4EC5\u5185\u5B58\uFF09`), _el$7 = _$createElement6("text"), _el$8 = _$createElement6("text");
+      _$insertNode2(_el$, _el$2);
+      _$insertNode2(_el$, _el$4);
+      _$insertNode2(_el$, _el$7);
+      _$insertNode2(_el$, _el$8);
+      _$setProp6(_el$, "flexDirection", "column");
+      _$insertNode2(_el$2, _$createTextNode(`Crew \u6682\u65F6\u4E0D\u53EF\u7528`));
+      _$insertNode2(_el$4, _el$5);
+      _$insertNode2(_el$4, _el$6);
+      _$insert6(_el$4, id, _el$6);
+      _$insert6(_el$7, delay === undefined ? "\u81EA\u52A8\u91CD\u8BD5\u5DF2\u7528\u5C3D" : `\u81EA\u52A8\u91CD\u8BD5 ${attempts + 1}/3`);
+      _$insertNode2(_el$8, _$createTextNode(`\u70B9\u51FB\u91CD\u8BD5`));
+      _$setProp6(_el$8, "onMouseDown", () => retry?.());
+      return _el$;
+    })();
+  }
+  return _$createComponent6(ErrorBoundary, {
+    fallback: (error, reset) => _$createComponent6(Fallback, {
+      error,
+      reset
+    }),
+    get children() {
+      return _$createComponent6(Healthy, {});
+    }
+  });
 }
 
 // src/tui/profile-footer.tsx
-import { Show as Show3, createMemo as createMemo2, onCleanup as onCleanup2, onMount } from "solid-js";
+import { createComponent as _$createComponent7 } from "@opentui/solid";
+import { Show as Show4, createMemo as createMemo2, onCleanup as onCleanup3, onMount as onMount2 } from "solid-js";
 import { usePlugin as usePlugin3 } from "@opencode/plugin/tui";
 
 // src/tui/profile-menu.ts
@@ -1684,10 +1979,15 @@ ${PROFILE_USAGE}`);
 }
 
 // src/tui/profile-footer.tsx
-import { jsxDEV as jsxDEV6 } from "@opentui/solid/jsx-dev-runtime";
 function ProfileFooter() {
   const context = usePlugin3();
-  const [state, setState] = context.storage.memory(PROFILE_MEMORY_KEY, { initial: { active: "", error: "", at: 0 } });
+  const [state, setState] = context.storage.memory(PROFILE_MEMORY_KEY, {
+    initial: {
+      active: "",
+      error: "",
+      at: 0
+    }
+  });
   const refresh = async () => {
     const view = await refreshProfile(context);
     if (!view)
@@ -1698,44 +1998,60 @@ function ProfileFooter() {
       draft.at = Date.now();
     });
   };
-  onMount(() => {
+  onMount2(() => {
     refresh();
   });
   const timer = setInterval(() => {
     refresh();
   }, 60000);
-  onCleanup2(() => clearInterval(timer));
-  const label = createMemo2(() => profileFooterLabel({ active: state.active, error: state.error }));
-  return /* @__PURE__ */ jsxDEV6(Show3, {
-    when: label(),
-    children: (text) => /* @__PURE__ */ jsxDEV6(Row, {
-      spans: [{ text: text(), tone: state.active ? "muted" : "warning" }]
-    }, undefined, false, undefined, this)
-  }, undefined, false, undefined, this);
+  onCleanup3(() => clearInterval(timer));
+  const label = createMemo2(() => profileFooterLabel({
+    active: state.active,
+    error: state.error
+  }));
+  return _$createComponent7(Show4, {
+    get when() {
+      return label();
+    },
+    children: (text) => _$createComponent7(Row, {
+      get spans() {
+        return [{
+          text: text(),
+          tone: state.active ? "muted" : "warning"
+        }];
+      }
+    })
+  });
 }
 
 // src/tui/index.tsx
-import { jsxDEV as jsxDEV7 } from "@opentui/solid/jsx-dev-runtime";
 var tui_default = Plugin.define({
   id: "opencode-crew",
   setup(context) {
     const sidebar = context.ui.slot({
       prepend: "sidebar.content",
-      render: ({ sessionID }) => /* @__PURE__ */ jsxDEV7(Sidebar, {
-        sessionID
-      }, undefined, false, undefined, this)
+      render: (props) => _$createComponent8(SidebarRecovery, {
+        context,
+        get sessionID() {
+          return props.sessionID;
+        }
+      })
     });
     const footer = context.ui.slot({
       append: "sidebar.footer",
-      render: () => /* @__PURE__ */ jsxDEV7(ProfileFooter, {}, undefined, false, undefined, this)
+      render: () => _$createComponent8(ProfileFooter, {})
     });
     context.keymap.layer(() => ({
+      mode: "global",
       commands: [{
         id: "opencode-crew.profile",
         title: "Crew \u914D\u7F6E\u6863",
         group: "Crew",
         palette: true,
-        slash: { name: "crew-profile", aliases: ["crewprofile"], arguments: true },
+        slash: {
+          name: "crew-profile",
+          arguments: true
+        },
         run: (input) => runProfileCommand(context, input ?? "")
       }]
     }));

@@ -36,6 +36,10 @@ export function Sidebar(props: { sessionID: string }) {
   const context = usePlugin()
   const [tasks, setTasks] = createSignal<CrewTaskView[]>([])
   const [live, setLive] = createSignal<LiveSnapshot>({ views: new Map(), running: new Set(), known: false })
+  // Direct children fetched from the server. The host family cache can be
+  // empty after a cold start (missed session.created events or a failed
+  // hydration), which would hide every Subagents row until a remount.
+  const [family, setFamily] = createSignal<SessionView[]>([])
   const [now, setNow] = createSignal(Date.now())
 
   const location = () => context.location ?? attempt(() => context.data.location.default(), undefined)
@@ -93,6 +97,38 @@ export function Sidebar(props: { sessionID: string }) {
   const storeMessages = (id: string): MessageView[] =>
     attempt(() => context.data.session.message.list(id) as unknown as MessageView[], [])
 
+  // Ask the server for the root's direct children instead of trusting only the
+  // host's event-maintained family cache. Retries a transient cold-start
+  // failure a few times and refreshes on reconnect.
+  let familyGen = 0
+  let familyRetry: ReturnType<typeof setTimeout> | undefined
+  let familyAttempts = 0
+  const loadFamily = () => {
+    const gen = ++familyGen
+    const rootID = rootOf(props.sessionID)
+    const retry = () => {
+      if (gen !== familyGen || familyRetry !== undefined || familyAttempts >= 4) return
+      const delay = 500 * 2 ** familyAttempts++
+      familyRetry = setTimeout(() => {
+        familyRetry = undefined
+        loadFamily()
+      }, delay)
+    }
+    context.client.session
+      .list({ parentID: rootID, order: "desc", limit: 200 })
+      .then(page => {
+        if (gen !== familyGen) return
+        familyAttempts = 0
+        const children = page.data.filter(s => s.id !== rootID)
+        setFamily(children.map(toView))
+        for (const s of children) {
+          quiet(syncSession(s.id))
+          quiet(context.data.session.message.sync(s.id))
+        }
+      })
+      .catch(retry)
+  }
+
   const refresh = async () => {
     const client = context.client.rpc(crewTasks)
     try {
@@ -105,7 +141,19 @@ export function Sidebar(props: { sessionID: string }) {
 
   // Events drive the live snapshot; the controller polls only to repair misses
   // (15s while the family has running work, 60s with an active-set probe only).
-  const controller = new LiveController({
+  // Register cleanup before creating any resource so a fault during setup (or a
+  // recovery remount) cannot leak listeners, timers or the controller.
+  let controller: LiveController | undefined
+  let unlisten: (() => void) | undefined
+  let pending: ReturnType<typeof setTimeout> | undefined
+  onCleanup(() => {
+    try { controller?.dispose() } catch {}
+    try { unlisten?.() } catch {}
+    if (pending !== undefined) clearTimeout(pending)
+    if (familyRetry !== undefined) clearTimeout(familyRetry)
+    familyGen++
+  })
+  controller = new LiveController({
     rootID: props.sessionID,
     family: () => attempt(() => context.data.session.family(rootOf(props.sessionID)), [] as string[]),
     store: { session: storeView, messages: storeMessages },
@@ -124,26 +172,24 @@ export function Sidebar(props: { sessionID: string }) {
     onCalibration: () => { void refresh() },
   })
 
-  let pending: ReturnType<typeof setTimeout> | undefined
   const schedule = () => {
     pending ??= setTimeout(() => {
       pending = undefined
       refresh()
     }, DEBOUNCE_MS)
   }
-  const unlisten = context.data.listen(({ details }) => {
-    controller.ingest(details as LiveEvent)
+  unlisten = context.data.listen(({ details }) => {
+    const event = details as LiveEvent
+    if (event.type === "server.connected") loadFamily()
+    controller?.ingest(event)
     schedule()
-  })
-  onCleanup(() => {
-    controller.dispose()
-    unlisten()
-    if (pending !== undefined) clearTimeout(pending)
   })
   createEffect(on(() => props.sessionID, () => {
     setTasks([])
+    setFamily([])
     refresh()
-    controller.setRoot(props.sessionID)
+    controller?.setRoot(props.sessionID)
+    loadFamily()
   }))
 
   // Keep the reactive session/family caches hydrated for this session.
@@ -153,17 +199,19 @@ export function Sidebar(props: { sessionID: string }) {
   const view = createMemo<SidebarView>(() => {
     const rootID = rootOf(props.sessionID)
     const snapshot = live()
+    const local = new Map(family().map(s => [s.id, s]))
     const ids = [...new Set([
       rootID,
       ...attempt(() => context.data.session.family(rootID), [] as string[]),
       ...snapshot.views.keys(),
       ...snapshot.running,
+      ...local.keys(),
     ])]
     const sessions: SessionView[] = ids.flatMap(id => {
-      const session = snapshot.views.get(id)?.session ?? storeView(id)
+      const session = snapshot.views.get(id)?.session ?? storeView(id) ?? local.get(id)
       return session ? [session] : []
     })
-    const agents = context.data.location.agent.list(location()) ?? []
+    const agents = attempt(() => context.data.location.agent.list(location()) ?? [], [])
     const stepsOf = (agent: string | undefined) =>
       agents.find(a => a.id === agent)?.steps
       ?? agents.find(a => a.id === "engineer")?.steps

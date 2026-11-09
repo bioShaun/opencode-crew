@@ -15,10 +15,10 @@
     ".": "./dist/index.js",
     "./tui": "./dist/tui.js"
   },
-  "files": ["dist", "src", "agents", "README.md", "README.zh-CN.md", "THIRD_PARTY_NOTICES.md"],
+  "files": ["dist", "src", "scripts", "agents", "README.md", "README.zh-CN.md", "THIRD_PARTY_NOTICES.md"],
   "scripts": {
     "test": "bun test",
-    "build": "bun build src/index.ts --target bun --external @opencode/plugin --outfile dist/index.js && bun build src/tui/index.tsx --target bun --external @opencode/plugin --external solid-js --external @opentui/core --external @opentui/solid --external @opencode/theme --outfile dist/tui.js",
+    "build": "bun run scripts/build.ts",
     "prepack": "bun run build >&2"
   },
   "dependencies": {

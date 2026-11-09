@@ -83,7 +83,7 @@
 
 ## 6. 命令
 
-只在 TUI 侧注册 `/crew-profile`（别名 `/crewprofile`）。不在 server 侧注册同名命令的原因：`CommandDefinition.execute` 只有 `{sessionID, prompt, delivery}`，没有任何 UI 输出通道，切换成功、档损坏、档名拼错都会静默；而 TUI slash 与 server command 同名时的宿主合并规则无法在本仓库门禁中验证。非 TUI 场景（如 `opencode run`）直接用文件就是 API：`echo fast > "$OPENCODE_CREW_PROFILES_DIR/active"`。
+只在 TUI 侧注册 `/crew-profile`。不在 server 侧注册同名命令的原因：`CommandDefinition.execute` 只有 `{sessionID, prompt, delivery}`，没有任何 UI 输出通道，切换成功、档损坏、档名拼错都会静默；而 TUI slash 与 server command 同名时的宿主合并规则无法在本仓库门禁中验证。非 TUI 场景（如 `opencode run`）直接用文件就是 API：`echo fast > "$OPENCODE_CREW_PROFILES_DIR/active"`。
 
 | 命令 | 行为 |
 |---|---|
