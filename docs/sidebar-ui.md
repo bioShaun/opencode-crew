@@ -4,7 +4,7 @@
 
 OpenCode 会话页右侧在没有 Todo、MCP 或其他扩展内容时较空。Crew 的实际工作大多走原生 subagent，派给 architect、engineer、explorer、reviewer；`crew_task` 很少触发。原生主区域已经显示权限、完成/失败通知和模型，但看不到“现在谁在跑、跑到哪一步、哪个角色用量异常”。侧栏补的就是这些，不替换成独立的 Crew 控制台。
 
-设计结论：**Crew 通过一个 `prepend: "sidebar.content"` claim 插入提醒区（条件显示）、Delegations 和 Subagents 三块，保留原生会话标题、Todo、Context 和 footer。** 不 `replace` 整个 `sidebar.content`，也不接管 `sidebar.footer`。侧栏不展示 Crew 角色列表，也不显示模型名。
+设计结论：**Crew 通过一个 `prepend: "sidebar.content"` claim 插入提醒区（条件显示）、Delegations 和 Subagents 三块，保留原生会话标题、Todo、Context 和 footer。** 不 `replace` 整个 `sidebar.content`；有配置档激活（或指针失败需提示）时以 `append: "sidebar.footer"` 追加（不替换）`ProfileFooter`（一行 `profile: <name>` 或 `profile: off ⚠`），无档且无错误时不占 footer。侧栏不展示 Crew 角色列表，也不显示模型名。
 
 基线：
 
