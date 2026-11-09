@@ -48,12 +48,12 @@ export default Plugin.define({
       const config = profiles.config()
       for (const id of IDS) editor.update(id, agent => {
         const role = roles[id]
-        agent.name = id
+        agent.name = id as typeof agent.name
         agent.description = role.description
         agent.mode = role.mode
         agent.system = composeRoleSystem(role.system, role.appendices, config.models[id], id === "engineer" ? config.engineerInstructions : undefined)
         agent.steps = config.steps[id] ?? role.steps
-        agent.model = config.models[id]
+        agent.model = config.models[id] as typeof agent.model
         // An empty Root policy adds no rules; retain the host's existing permissions.
         // agent.reload() re-runs this transform, so appended rules must be idempotent.
         if (id === "engineer") {

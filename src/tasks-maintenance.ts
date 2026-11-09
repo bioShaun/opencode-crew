@@ -15,11 +15,11 @@ const MAX_EVIDENCE_FILES = 32
 const MAX_EVIDENCE_FILE_BYTES = 2 * 1024 * 1024
 const MAX_EVIDENCE_TOTAL_BYTES = 16 * 1024 * 1024
 const EVIDENCE_TIMEOUT_MS = 10000
-const evidence = (): never => { throw new TaskRegistryError('MAINTENANCE_EVIDENCE_INSUFFICIENT') }
-const tooLarge = (): never => { throw new TaskRegistryError('MAINTENANCE_EVIDENCE_TOO_LARGE') }
-const stale = (): never => { throw new TaskRegistryError('MAINTENANCE_PLAN_STALE') }
-const conflict = (): never => { throw new TaskRegistryError('OPERATION_CONFLICT') }
-const invalid = (): never => { throw new TaskRegistryError('INVALID_INPUT') }
+const evidence: () => never = () => { throw new TaskRegistryError('MAINTENANCE_EVIDENCE_INSUFFICIENT') }
+const tooLarge: () => never = () => { throw new TaskRegistryError('MAINTENANCE_EVIDENCE_TOO_LARGE') }
+const stale: () => never = () => { throw new TaskRegistryError('MAINTENANCE_PLAN_STALE') }
+const conflict: () => never = () => { throw new TaskRegistryError('OPERATION_CONFLICT') }
+const invalid: () => never = () => { throw new TaskRegistryError('INVALID_INPUT') }
 const object = (x: unknown): x is Record<string, any> => !!x && typeof x === 'object' && !Array.isArray(x) && (Object.getPrototypeOf(x) === Object.prototype || Object.getPrototypeOf(x) === null)
 const exact = (x: Record<string, unknown>, required: string[], optional: string[] = []) => required.every(k => Object.hasOwn(x, k)) && Object.keys(x).every(k => required.includes(k) || optional.includes(k))
 const id = (x: unknown): x is string => typeof x === 'string' && x.length > 0 && x.length <= 512 && !/[\x00-\x1f\x7f]/.test(x)

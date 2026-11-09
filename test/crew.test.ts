@@ -55,8 +55,9 @@ test("model family selects exactly one appendix per role: gpt gets gpt, claude g
   const family: Record<string, "gpt" | "claude" | "unknown"> = { root: "gpt", engineer: "gpt", explorer: "claude", architect: "unknown", reviewer: "unknown" }
   for (const [id, a] of f.agents) {
     const parts = splitRoleBody(roleBody(id))
-    expect(a.system).toBe([parts.base, parts[family[id]]].filter(Boolean).join("\n\n"))
-    const other = family[id] === "claude" ? parts.gpt : parts.claude
+    const familyName = family[id]
+    expect(a.system).toBe([parts.base, familyName === "unknown" ? "" : parts[familyName]].filter(Boolean).join("\n\n"))
+    const other = familyName === "claude" ? parts.gpt : parts.claude
     if (other) expect(a.system).not.toContain(other)
   }
 })

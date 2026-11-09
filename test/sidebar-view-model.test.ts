@@ -33,7 +33,7 @@ function input(over: any = {}) {
 
 test("cells counts CJK as two columns and truncates with ellipsis", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   expect(m.cells("abc")).toBe(3)
   expect(m.cells("无输出")).toBe(6)
   expect(m.truncateCells("abcdefghij", 6)).toBe("abcde…")
@@ -45,7 +45,7 @@ test("cells counts CJK as two columns and truncates with ellipsis", async () => 
 
 test("busyLabel mirrors the host: reasoning, running and streaming tools", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   expect(m.busyLabel(reasoning(undefined))).toBe("Thinking…")
   expect(m.busyLabel(tool("shell", "running"))).toBe("Running command…")
   expect(m.busyLabel(tool("bash", "running"))).toBe("Running command…")
@@ -57,7 +57,7 @@ test("busyLabel mirrors the host: reasoning, running and streaming tools", async
 
 test("sessionActivity picks the active part of the latest assistant message", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const msgs = [
     assistant([reasoning()], { time: { created: 1, completed: 2 } }),
     assistant([tool("grep", "running")]),
@@ -70,7 +70,7 @@ test("sessionActivity picks the active part of the latest assistant message", as
 
 test("countSteps and tokenTotal follow the documented approximation", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   expect(m.countSteps([assistant([]), { type: "user" }, assistant([])])).toBe(2)
   expect(m.tokenTotal(tok(1, 2, 4, 8, 16))).toBe(15)
   expect(m.tokenTotal(undefined)).toBe(0)
@@ -78,7 +78,7 @@ test("countSteps and tokenTotal follow the documented approximation", async () =
 
 test("compactTokens and money format the Subagents columns", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   expect(m.compactTokens(999)).toBe("999")
   expect(m.compactTokens(38000)).toBe("38k")
   expect(m.compactTokens(1240000)).toBe("1.2M")
@@ -89,7 +89,7 @@ test("compactTokens and money format the Subagents columns", async () => {
 
 test("subagentAnomalies implements all four warning rules with floors", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const stat = (role: string, extra: any = {}) => ({ role, sessions: 1, tokens: 1000, cost: 0.05, fullSteps: 0, ...extra })
   const quiet = [stat("engineer", { sessions: 3, tokens: 300000, cost: 0.6 }), stat("explorer", { sessions: 2 })]
   expect(m.subagentAnomalies(quiet).size).toBe(0)
@@ -112,7 +112,7 @@ test("subagentAnomalies implements all four warning rules with floors", async ()
 
 test("active state: nested running rows and running count", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
@@ -136,7 +136,7 @@ test("active state: nested running rows and running count", async () => {
 
 test("idle state: delegations hidden, subagents still listed", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
@@ -155,7 +155,7 @@ test("idle state: delegations hidden, subagents still listed", async () => {
 
 test("Subagents counts native sessions and folds crew_task usage into engineer", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
@@ -176,7 +176,7 @@ test("Subagents counts native sessions and folds crew_task usage into engineer",
 
 test("Subagents keeps the cache suffix when the token pair outgrows the column", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const wide = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
@@ -202,7 +202,7 @@ test("Subagents keeps the cache suffix when the token pair outgrows the column",
 
 test("soft stall shows 无输出 in info; hard stall escalates the whole row to warning", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const softNow = 10 * 60_000
   const soft = m.buildSidebar(input({
     now: softNow,
@@ -235,7 +235,7 @@ test("soft stall shows 无输出 in info; hard stall escalates the whole row to 
 
 test("stale host updated with recent message activity is not 无输出", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const now = 10 * 60_000
   const base = {
     now,
@@ -262,7 +262,7 @@ test("stale host updated with recent message activity is not 无输出", async (
 
 test("a delegation row warns at 80% of the step limit", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const steps = Array.from({ length: 26 }, () => assistant([reasoning()]))
   const view = m.buildSidebar(input({
     sessions: [session("root", { agent: "root" }), session("exp", { agent: "explorer", created: 2000 })],
@@ -276,7 +276,7 @@ test("a delegation row warns at 80% of the step limit", async () => {
 
 test("crew_task rows: two lines, report colors, check/next and budget warning", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [session("root", { agent: "root" })],
     tasks: [
@@ -306,7 +306,7 @@ test("crew_task rows: two lines, report colors, check/next and budget warning", 
 
 test("alerts come from crew_task permissions, waiting, blocked and failed", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [session("root", { agent: "root" })],
     tasks: [
@@ -345,7 +345,7 @@ test("alerts come from crew_task permissions, waiting, blocked and failed", asyn
 
 test("anomaly state: warning rows in both Delegations and Subagents", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const expSteps = Array.from({ length: 26 }, () => assistant([reasoning()]))
   const view = m.buildSidebar(input({
     sessions: [
@@ -375,7 +375,7 @@ test("anomaly state: warning rows in both Delegations and Subagents", async () =
 
 test("Subagents shows work tokens plus cache.read", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
@@ -391,7 +391,7 @@ test("Subagents shows work tokens plus cache.read", async () => {
 
 test("crew_task usage adds to engineer without a session count", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [session("root", { agent: "root" })],
     tasks: [
@@ -408,7 +408,7 @@ test("crew_task usage adds to engineer without a session count", async () => {
 
 test("a stale running status is vetoed by the record's idle watermark", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
@@ -428,7 +428,7 @@ test("a stale running status is vetoed by the record's idle watermark", async ()
 
 test("an idle-only record is hidden even with a stale running status", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
@@ -442,7 +442,7 @@ test("an idle-only record is hidden even with a stale running status", async () 
 
 test("status() still decides when the record has no execution watermarks", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [session("root", { agent: "root" }), session("eng", { created: 2000 })],
     statuses: { eng: "running" },
@@ -454,7 +454,7 @@ test("status() still decides when the record has no execution watermarks", async
 
 test("an authoritative running set overrides the watermarks in both directions", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
@@ -475,7 +475,7 @@ test("an authoritative running set overrides the watermarks in both directions",
 
 test("overflowing step counts keep delegation rows at 37 cells", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
@@ -491,7 +491,7 @@ test("overflowing step counts keep delegation rows at 37 cells", async () => {
 
 test("long identifiers are truncated inside their columns", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [session("root", { agent: "root" })],
     tasks: [
@@ -506,7 +506,7 @@ test("long identifiers are truncated inside their columns", async () => {
 
 test("truncation keeps rows at or under 37 cells", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),
@@ -520,7 +520,7 @@ test("truncation keeps rows at or under 37 cells", async () => {
 
 test("freshness line: 未校准, recent calibrate, and 可能滞后", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const none = m.buildSidebar(input({ sessions: [session("root", { agent: "root" })] }))
   expect(plain(none.freshness)).toBe("未校准")
 
@@ -547,7 +547,7 @@ test("freshness line: 未校准, recent calibrate, and 可能滞后", async () =
 
 test("Subagents footnote documents tok+cache and points at sidebar-ui", async () => {
   const m = await vm() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildSidebar(input({
     sessions: [
       session("root", { agent: "root" }),

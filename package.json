@@ -18,6 +18,7 @@
   "files": ["dist", "src", "scripts", "agents", "README.md", "README.zh-CN.md", "THIRD_PARTY_NOTICES.md"],
   "scripts": {
     "test": "bun test",
+    "typecheck": "tsc --noEmit",
     "build": "bun run scripts/build.ts",
     "prepack": "bun run build >&2"
   },
@@ -31,15 +32,24 @@
     "solid-js": ">=1.9.0"
   },
   "peerDependenciesMeta": {
-    "@opencode/theme": { "optional": true },
-    "@opentui/core": { "optional": true },
-    "@opentui/solid": { "optional": true },
-    "solid-js": { "optional": true }
+    "@opencode/theme": {
+      "optional": true
+    },
+    "@opentui/core": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@opencode/theme": "2.2.3",
     "@opentui/core": "0.8.0",
     "@opentui/solid": "0.8.0",
+    "@types/bun": "^1.4.4",
     "solid-js": "1.9.17",
     "yaml": "^2.8.1"
   }

@@ -16,9 +16,9 @@ function fixture() {
  require('node:fs').writeFileSync(join(base,'config.json'),JSON.stringify({primary:realpathSync(primary),inputs}))
  return {base,primary}
 }
-type Harness = {all:ReturnType<typeof start>[], deadline:number}
+type Harness = {all:any[], deadline:number}
 function harness(ms=10000):Harness { return {all:[],deadline:Date.now()+ms} }
-function start(base:string,name:string,key:string,mode:string,h:Harness, command='bun', args=[script,base,name,key,mode]) {
+function start(base:string,name:string,key:string,mode:string,h:Harness, command="bun", args=[script,base,name,key,mode]):any {
  const p=spawn(command,args,{env,stdio:['pipe','pipe','pipe']}); let stdout='',stderr='',error:Error|undefined,expired=false
  p.stdout.on('data',x=>stdout+=x);p.stderr.on('data',x=>stderr+=x);p.on('error',e=>error=e)
  const timer=setTimeout(()=>{expired=true;p.kill('SIGKILL')},Math.max(0,h.deadline-Date.now()))
@@ -30,7 +30,7 @@ function start(base:string,name:string,key:string,mode:string,h:Harness, command
 const result=(events:any[])=>events.find(x=>x.type==='result').result
 const effects=(events:any[])=>events.filter(x=>['create','prompt','interrupt','resume'].includes(x.type))
 const tasks=(primary:string)=>JSON.parse(readFileSync(join(primary,'.git/opencode-crew-stage1/registry.json'),'utf8')).tasks
-async function cleanup(h:Harness) {for(const child of h.all) if(child.p.exitCode===null && child.p.signalCode===null) child.p.kill('SIGKILL');await Promise.all(h.all.map(child=>child.closed))}
+async function cleanup(h:Harness) {for(const child of h.all) if((child as any).p.exitCode===null && (child as any).p.signalCode===null) (child as any).p.kill('SIGKILL');await Promise.all(h.all.map(child=>child.closed))}
 
 test('harness deadline rejects and reaps a child stalled before barrier',async()=>{
  const h=harness(150), base=root; const child=start(base,'stalled','one','lock',h,'bun',['-e','setInterval(()=>{},1000)'])

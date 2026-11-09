@@ -11,9 +11,22 @@
         "@opencode/theme": "2.2.3",
         "@opentui/core": "0.8.0",
         "@opentui/solid": "0.8.0",
+        "@types/bun": "^1.4.4",
         "solid-js": "1.9.17",
         "yaml": "^2.8.1",
       },
+      "peerDependencies": {
+        "@opencode/theme": "2.2.3",
+        "@opentui/core": ">=0.8.0",
+        "@opentui/solid": ">=0.8.0",
+        "solid-js": ">=1.9.0",
+      },
+      "optionalPeers": [
+        "@opencode/theme",
+        "@opentui/core",
+        "@opentui/solid",
+        "solid-js",
+      ],
     },
   },
   "packages": {
@@ -289,6 +302,8 @@
 
     "@tufjs/models": ["@tufjs/models@4.1.0", "https://registry.npmmirror.com/@tufjs/models/-/models-4.1.0.tgz", { "dependencies": { "@tufjs/canonical-json": "2.0.0", "minimatch": "^10.1.1" } }, "sha512-Y8cK9aggNRsqJVaKUlEYs4s7CvQ1b1ta2DVPyAimb0I2qhzjNk+A+mxvll/klL0RlfuIUei8BF7YWiua4kQqww=="],
 
+    "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
+
     "@types/node": ["@types/node@26.6.6", "https://registry.npmmirror.com/@types/node/-/node-26.6.6.tgz", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],
 
     "@types/ws": ["@types/ws@8.18.2", "https://registry.npmmirror.com/@types/ws/-/ws-8.18.2.tgz", { "dependencies": { "@types/node": "*" } }, "sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w=="],
@@ -328,6 +343,8 @@
     "buffer-equal-constant-time": ["buffer-equal-constant-time@1.0.1", "https://registry.npmmirror.com/buffer-equal-constant-time/-/buffer-equal-constant-time-1.0.1.tgz", {}, "sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA=="],
 
     "bun-ffi-structs": ["bun-ffi-structs@0.3.1", "https://registry.npmmirror.com/bun-ffi-structs/-/bun-ffi-structs-0.3.1.tgz", { "peerDependencies": { "typescript": "^5" } }, "sha512-3gM7PpVWLyrwxWjcilSiGuhWanhZivvo6l0u573NziPH6f/gwk6McbaYgn7oJWov6pKGRTDbrg94W5DcJsKTtQ=="],
+
+    "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
 
     "bundle-name": ["bundle-name@4.1.1", "https://registry.npmmirror.com/bundle-name/-/bundle-name-4.1.1.tgz", { "dependencies": { "run-applescript": "^7.0.0" } }, "sha512-DdH81/zPLVS11EUgWq3tEu/xn+EzljlMYooDNdzWEnFha3R3NBMpMV1UqYIpjYHV/SgpFKMIX1Oh7o06SjM/oA=="],
 

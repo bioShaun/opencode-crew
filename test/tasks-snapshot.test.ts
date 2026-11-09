@@ -19,7 +19,7 @@ const assistant = (texts: string[]) => ({ type: "assistant", content: texts.map(
 
 test("buildTaskSnapshot emits only whitelisted fields", async () => {
   const m = await build() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildTaskSnapshot(entry(), {
     observed: { outcome: "failed" },
     report: { status: "failed", reason: "bun test 退出 1" },
@@ -42,7 +42,7 @@ test("buildTaskSnapshot emits only whitelisted fields", async () => {
 
 test("buildTaskSnapshot tolerates missing session data", async () => {
   const m = await build() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const view = m.buildTaskSnapshot(entry({ record: record({ sessionID: undefined }) }), {})
   expect(view.taskID).toBe("ct_demo")
   expect(view.sessionID).toBeUndefined()
@@ -53,7 +53,7 @@ test("buildTaskSnapshot tolerates missing session data", async () => {
 
 test("extractReport reads the latest Report line and its reason", async () => {
   const m = await build() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   const messages = [
     assistant(["Report: progress\n在做第一部分"]),
     assistant(["收尾\nReport: blocked 缺少 ledger fixture\n详见 log"]),
@@ -68,7 +68,7 @@ test("extractReport reads the latest Report line and its reason", async () => {
 
 test("parseTasksOutput validates and whitelists the RPC payload", async () => {
   const m = await snap() as any
-  if (MISSING) { expect(MISSING).toBe(false); return }
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
   expect(m.parseTasksOutput(undefined)).toEqual([])
   expect(m.parseTasksOutput({})).toEqual([])
   expect(m.parseTasksOutput({ tasks: "x" })).toEqual([])
