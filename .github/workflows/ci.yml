@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # setup-bun caches the bun install cache keyed on bun.lock by default.
       - uses: oven-sh/setup-bun@v2
         with:
