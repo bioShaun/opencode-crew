@@ -182,11 +182,13 @@ function wildcardEffect(agent: any, action: string, resource: string) {
   const match = (pattern: string, value: string) => new RegExp('^' + pattern.split('').map(c => c === '*' ? '.*' : c === '?' ? '.' : c.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')).join('') + '$').test(value)
   return agent.permissions.filter((r: any) => match(r.action, action) && match(r.resource, resource)).at(-1)?.effect ?? 'ask'
 }
-test('strict roles allow routine external reads and skill discovery without relaxing sensitive reads or execution', async () => {
+test('strict roles inherit the host external_directory policy instead of overriding it', async () => {
   const f = fixture(); await (await plugin()).setup(f.ctx)
   for (const id of ['architect', 'explorer', 'reviewer']) {
     const a = f.agents.get(id)
-    expect(wildcardEffect(a, 'external_directory', '/home/user/.config/agents/*')).toBe('allow')
+    // Agent rules are appended after global rules and the last match wins, so an
+    // explicit allow here would silently override a user's external_directory ask/deny.
+    expect(a.permissions.some((r: any) => r.action === 'external_directory')).toBe(false)
     expect(wildcardEffect(a, 'skill', 'opencode')).toBe('allow')
     for (const path of ['.env', 'nested/.env.production', '/outside/.env', '/outside/.env.local']) expect(wildcardEffect(a, 'read', path)).toBe('ask')
     for (const path of ['src/index.ts', '/outside/AGENTS.md', '/outside/.env.example']) expect(wildcardEffect(a, 'read', path)).toBe('allow')

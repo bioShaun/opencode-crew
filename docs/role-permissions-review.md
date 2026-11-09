@@ -1,6 +1,6 @@
 # 角色权限评审意见
 
-2026-11-09 评审，**仅为意见，未实施任何改动**。依据：当前工作区 `agents/*.md` frontmatter、`src/index.ts` 的权限合并逻辑，以及 OpenCode V2 官方权限文档。
+2026-11-09 评审，**仅为意见**。依据：当前工作区 `agents/*.md` frontmatter、`src/index.ts` 的权限合并逻辑，以及 OpenCode V2 官方权限文档。评审后第 1 条已按「删除规则」方案实施，其余建议尚未落地。
 
 ## 1. 权限来源与合并语义
 
@@ -50,7 +50,11 @@
    | 改成 `ask` | 每次都问 | 尊重 | 子代理 ask 被 reject | 可能不上浮（opencode#39112） |
    | **删除规则（建议）** | allow（宿主默认，行为不变） | **尊重用户策略** | 按用户策略 | 按用户策略 |
 
-   删除是唯一零行为回归又不再越权的选项：worktree 内路径本就不走 `external_directory` 检查，crew 主流程不受影响。若目标是「用户没配也默认收紧」，才需要 `ask`，代价是 headless 下 fail closed、深层子会话可能不上浮——两者都必须先确认宿主行为再定。
+   删除是唯一零行为回归又不再越权的选项：worktree 内路径本就不走 `external_directory` 检查，crew 主流程不受影响。
+
+   **已实施**：`agents/architect.md`、`agents/explorer.md`、`agents/reviewer.md` 的三条规则已删除；`test/crew.test.ts` 增加「读角色不得携带 external_directory 规则」的断言防回退。
+
+   若目标是「用户没配也默认收紧」，才需要 `ask`，代价是 headless 下 fail closed、深层子会话可能不上浮——两者都必须先确认宿主行为再定。
 
 2. **`webfetch` 加域名白名单（architect、explorer 两处）**，`websearch` 可保留。配合 deny-all 在前，未列入的 URL 直接 deny。注意匹配的是请求 URL 本身，若宿主不校验重定向，白名单可被 302 绕过；收窄前需确认匹配粒度。
 
