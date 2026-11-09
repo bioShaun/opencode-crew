@@ -5,57 +5,12 @@ import { parse } from "yaml"
 import { registerTasks } from "./tasks"
 import { registerTaskSnapshot } from "./tasks-snapshot"
 import { composeRoleSystem, splitRoleBody, type RoleAppendices } from "./model-family"
+import { IDS, fail, object, parseCrewConfig, type RoleID } from "./config"
+import { createCrewProfiles } from "./profile-state"
+import { registerProfileRpc } from "./profile-rpc"
 
-const IDS = ["root", "architect", "engineer", "explorer", "reviewer"] as const
-type RoleID = typeof IDS[number]
-type ModelRef = { providerID: string; id: string; variant?: string }
 type Rule = { action: string; resource: string; effect: "allow" | "ask" | "deny" }
 type Role = { description: string; mode: "primary" | "subagent"; steps?: number; permissions: Rule[]; system: string }
-
-function fail(message: string): never { throw new Error(`[opencode-crew] ${message}`) }
-function object(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-}
-function instructions(value: unknown): string[] {
-  if (value === undefined) return []
-  if (!Array.isArray(value)) fail("options.engineerInstructions 必须是字符串数组")
-  if (value.length > 32) fail("options.engineerInstructions 最多 32 项")
-  let total = 0
-  const out = value.map((item, index) => {
-    if (typeof item !== "string") fail(`options.engineerInstructions[${index}] 必须为字符串`)
-    if (/[\r\n]/.test(item)) fail(`options.engineerInstructions[${index}] 不能包含换行`)
-    const text = item.trim()
-    if (!text) fail(`options.engineerInstructions[${index}] 不能为空`)
-    if (text.length > 2000) fail(`options.engineerInstructions[${index}] 最多 2000 字符`)
-    total += text.length
-    return text
-  })
-  if (total > 8000) fail("options.engineerInstructions 总长度最多 8000 字符")
-  return out
-}
-function options(input: unknown) {
-  if (!object(input)) fail("options 必须是对象")
-  for (const key of Object.keys(input)) if (!["models", "steps", "engineerInstructions"].includes(key)) fail(`未知 options.${key}`)
-  const models: Partial<Record<RoleID, ModelRef>> = {}, steps: Partial<Record<RoleID, number>> = {}
-  for (const field of ["models", "steps"] as const) {
-    const map = input[field] ?? {}
-    if (!object(map)) fail(`options.${field} 必须是角色映射`)
-    for (const [id, value] of Object.entries(map)) {
-      if (!IDS.includes(id as RoleID)) fail(`未知角色 options.${field}.${id}`)
-      if (field === "steps") {
-        if (!Number.isSafeInteger(value) || (value as number) <= 0) fail(`options.steps.${id} 必须为正整数`)
-        steps[id as RoleID] = value as number
-      } else {
-        if (typeof value !== "string" || !/^[^\s/#]+\/[^\s#]+(?:#[^\s#]+)?$/.test(value)) {
-          fail(`options.models.${id} 必须为 provider/model[#variant]；省略即可继承会话模型`)
-        }
-        const [left, variant] = value.split("#"), slash = left.indexOf("/")
-        models[id as RoleID] = { providerID: left.slice(0, slash), id: left.slice(slash + 1), ...(variant ? { variant } : {}) }
-      }
-    }
-  }
-  return { models, steps, engineerInstructions: instructions(input.engineerInstructions) }
-}
 
 type LoadedRole = Role & { appendices: RoleAppendices }
 
@@ -77,9 +32,20 @@ export default Plugin.define({
   id: "opencode-crew",
   async setup(ctx) {
     // Validate every input before registering anything; prompts/policies exist only in Markdown.
-    const config = options(ctx.options ?? {})
+    const baseline = parseCrewConfig(ctx.options ?? {})
+    // Profiles are an optional overlay: a broken profile or pointer must never block
+    // plugin load, otherwise the only self-rescue command (`/crew-profile off`) is gone.
+    const profiles = createCrewProfiles({
+      baseline,
+      reload: async () => {
+        if (typeof ctx.agent.reload !== "function") throw new Error("宿主未提供 agent.reload")
+        await ctx.agent.reload()
+      },
+    })
     const roles = Object.fromEntries(IDS.map(id => [id, loadRole(id)])) as Record<RoleID, LoadedRole>
     await ctx.agent.transform(editor => {
+      // Read inside the callback: switching a profile must apply on the next transform.
+      const config = profiles.config()
       for (const id of IDS) editor.update(id, agent => {
         const role = roles[id]
         agent.name = id
@@ -89,23 +55,35 @@ export default Plugin.define({
         agent.steps = config.steps[id] ?? role.steps
         agent.model = config.models[id]
         // An empty Root policy adds no rules; retain the host's existing permissions.
-        if (id === "engineer") agent.permissions = [...agent.permissions, ...role.permissions.map(rule => ({ ...rule }))]
+        // agent.reload() re-runs this transform, so appended rules must be idempotent.
+        if (id === "engineer") {
+          const extra = role.permissions.filter(rule => !agent.permissions.some(existing =>
+            existing.action === rule.action && existing.resource === rule.resource && existing.effect === rule.effect))
+          agent.permissions = [...agent.permissions, ...extra.map(rule => ({ ...rule }))]
+        }
         else if (id !== "root" || role.permissions.length > 0) agent.permissions = role.permissions.map(rule => ({ ...rule }))
         // Match absolute lexical tool paths too; this is not symlink isolation.
-        if (id === "architect") agent.permissions.push({ action: "edit", resource: resolve(ctx.location.directory, "plans") + "/**", effect: "allow" })
+        if (id === "architect") {
+          const resource = resolve(ctx.location.directory, "plans") + "/**"
+          const present = agent.permissions.some(rule => rule.action === "edit" && rule.resource === resource && rule.effect === "allow")
+          if (!present) agent.permissions.push({ action: "edit", resource, effect: "allow" })
+        }
       })
     })
     await ctx.command.transform(editor => editor.add({
       name: "crew",
       description: "切换到 Crew Root；简单任务直接做，复杂任务按需分工",
       async execute({ sessionID, prompt, delivery }) {
+        const config = profiles.config()
         await ctx.session.switchAgent({ sessionID, agent: "root" })
         if (config.models.root) await ctx.session.switchModel({ sessionID, model: config.models.root })
         if (!prompt.text?.trim() && !prompt.files?.length && !prompt.agents?.length && !prompt.skills?.length) return
         await ctx.session.prompt({ ...prompt, sessionID, delivery })
       },
     }))
-    await registerTasks(ctx, config.models.engineer)
+    // A getter, not a snapshot: the next launch must use the currently active profile.
+    await registerTasks(ctx, () => profiles.config().models.engineer)
+    await registerProfileRpc(ctx, profiles)
     await registerTaskSnapshot(ctx)
   },
 })

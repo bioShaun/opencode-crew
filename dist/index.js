@@ -6946,8 +6946,8 @@ var require_public_api = __commonJS(function(exports) {
 
 // src/index.ts
 import { Plugin } from "@opencode/plugin";
-import { readFileSync as readFileSync2 } from "fs";
-import { resolve as resolve3 } from "path";
+import { readFileSync as readFileSync3 } from "fs";
+import { resolve as resolve4 } from "path";
 
 // node_modules/yaml/dist/index.js
 var composer = require_composer();
@@ -7821,7 +7821,7 @@ var ERROR_INFO = {
   },
   MODEL_NOT_CONFIGURED: {
     message: "\u672A\u914D\u7F6E engineer \u6A21\u578B\uFF0C\u4E14\u5F53\u524D Root \u4F1A\u8BDD\u6CA1\u6709\u53EF\u7EE7\u627F\u7684\u6A21\u578B\uFF0C\u672C\u6B21\u672A\u521B\u5EFA\u4F1A\u8BDD\u3002",
-    nextAction: "\u914D\u7F6E options.models.engineer\uFF0C\u6216\u786E\u4FDD\u8C03\u7528\u65B9 Root \u4F1A\u8BDD\u5DF2\u6709\u6A21\u578B\u540E\u91CD\u65B0\u6D3E\u53D1\uFF1B\u4E0D\u8981\u628A\u5B83\u5F53\u4F5C\u5BBF\u4E3B\u6545\u969C\u3002"
+    nextAction: "\u914D\u7F6E active \u6863\u6216 options \u7684 `models.engineer`\uFF0C\u6216\u786E\u4FDD\u8C03\u7528\u65B9 Root \u4F1A\u8BDD\u5DF2\u6709\u6A21\u578B\u540E\u91CD\u65B0\u6D3E\u53D1\uFF1B\u4E0D\u8981\u628A\u5B83\u5F53\u4F5C\u5BBF\u4E3B\u6545\u969C\u3002"
   },
   SESSION_MISMATCH: {
     message: "\u4F1A\u8BDD\u8EAB\u4EFD\u4E0D\u5339\u914D\uFF0C\u542F\u52A8\u7ED3\u679C\u672A\u786E\u8BA4\u3002",
@@ -7864,6 +7864,7 @@ var schema = (properties, required = []) => ({ type: "object", properties, requi
 var str = { type: "string" };
 var output = { type: "object", additionalProperties: true };
 async function registerTasks(ctx, configuredModel) {
+  const readModel = () => typeof configuredModel === "function" ? configuredModel() : configuredModel;
   await ctx.session.hook("retry", async (event) => {
     try {
       const project = inspectProjectFromWorktree(ctx.location.directory);
@@ -7920,6 +7921,7 @@ async function registerTasks(ctx, configuredModel) {
     } catch (e) {
       return failureFrom(e);
     }
+    const model = readModel();
     const id = await identity(tc);
     if ("error" in id)
       return failure(id.error);
@@ -7930,7 +7932,7 @@ async function registerTasks(ctx, configuredModel) {
     let task, periodID;
     try {
       const existing = ledger.findByKey(input.key);
-      if (!existing && !(configuredModel ?? owner.model))
+      if (!existing && !(model ?? owner.model))
         return failure("MODEL_NOT_CONFIGURED");
       const reservation = ledger.reserve(tc.sessionID, input, () => validateWorktree(project.primaryDirectory, input.directory, input.baseline, input.scope));
       task = reservation.task;
@@ -7942,7 +7944,7 @@ async function registerTasks(ctx, configuredModel) {
     }
     try {
       task = ledger.transition(tc.sessionID, task.taskID, "reserved", "session_create_requested");
-      const created = await ctx.session.create({ agent: "engineer", location: { directory: input.directory }, model: configuredModel ?? owner.model, metadata: { crewTask: metadata(task, project.commonDir) } });
+      const created = await ctx.session.create({ agent: "engineer", location: { directory: input.directory }, model: model ?? owner.model, metadata: { crewTask: metadata(task, project.commonDir) } });
       task = ledger.transition(tc.sessionID, task.taskID, "session_create_requested", "session_bound", { sessionID: created.id });
       const current = await ctx.session.get({ sessionID: task.sessionID });
       if (!matches(current, task, project.commonDir)) {
@@ -7953,7 +7955,7 @@ async function registerTasks(ctx, configuredModel) {
       }
       validateWorktree(project.primaryDirectory, input.directory, input.baseline, input.scope);
       task = ledger.transition(tc.sessionID, task.taskID, "session_bound", "prompt_requested");
-      const familyHint = modelFamilyTaskHint(configuredModel ?? owner.model);
+      const familyHint = modelFamilyTaskHint(model ?? owner.model);
       const text = `Goal:
 ${input.goal}
 Scope:
@@ -8242,70 +8244,573 @@ async function registerTaskSnapshot(ctx) {
   });
 }
 
-// src/index.ts
+// src/config.ts
 var IDS = ["root", "architect", "engineer", "explorer", "reviewer"];
+var optionsLabel = {
+  subject: "options",
+  path: (field) => `options.${field}`
+};
+function profileLabel(name) {
+  return {
+    subject: `\u6863 "${name}"`,
+    path: (field) => `\u6863 "${name}" \u7684 ${field}`
+  };
+}
 function fail3(message) {
   throw new Error(`[opencode-crew] ${message}`);
 }
 function object4(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function instructions(value) {
+function instructions(value, label) {
+  const field = label.path("engineerInstructions");
   if (value === undefined)
     return [];
   if (!Array.isArray(value))
-    fail3("options.engineerInstructions \u5FC5\u987B\u662F\u5B57\u7B26\u4E32\u6570\u7EC4");
+    fail3(`${field} \u5FC5\u987B\u662F\u5B57\u7B26\u4E32\u6570\u7EC4`);
   if (value.length > 32)
-    fail3("options.engineerInstructions \u6700\u591A 32 \u9879");
+    fail3(`${field} \u6700\u591A 32 \u9879`);
   let total = 0;
   const out = value.map((item, index) => {
     if (typeof item !== "string")
-      fail3(`options.engineerInstructions[${index}] \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
+      fail3(`${field}[${index}] \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
     if (/[\r\n]/.test(item))
-      fail3(`options.engineerInstructions[${index}] \u4E0D\u80FD\u5305\u542B\u6362\u884C`);
+      fail3(`${field}[${index}] \u4E0D\u80FD\u5305\u542B\u6362\u884C`);
     const text = item.trim();
     if (!text)
-      fail3(`options.engineerInstructions[${index}] \u4E0D\u80FD\u4E3A\u7A7A`);
+      fail3(`${field}[${index}] \u4E0D\u80FD\u4E3A\u7A7A`);
     if (text.length > 2000)
-      fail3(`options.engineerInstructions[${index}] \u6700\u591A 2000 \u5B57\u7B26`);
+      fail3(`${field}[${index}] \u6700\u591A 2000 \u5B57\u7B26`);
     total += text.length;
     return text;
   });
   if (total > 8000)
-    fail3("options.engineerInstructions \u603B\u957F\u5EA6\u6700\u591A 8000 \u5B57\u7B26");
+    fail3(`${field} \u603B\u957F\u5EA6\u6700\u591A 8000 \u5B57\u7B26`);
   return out;
 }
-function options(input) {
+function parseCrewConfig(input, label = optionsLabel) {
   if (!object4(input))
-    fail3("options \u5FC5\u987B\u662F\u5BF9\u8C61");
+    fail3(`${label.subject} \u5FC5\u987B\u662F\u5BF9\u8C61`);
   for (const key of Object.keys(input))
     if (!["models", "steps", "engineerInstructions"].includes(key))
-      fail3(`\u672A\u77E5 options.${key}`);
+      fail3(`\u672A\u77E5 ${label.path(key)}`);
   const models = {}, steps = {};
   for (const field of ["models", "steps"]) {
     const map = input[field] ?? {};
     if (!object4(map))
-      fail3(`options.${field} \u5FC5\u987B\u662F\u89D2\u8272\u6620\u5C04`);
+      fail3(`${label.path(field)} \u5FC5\u987B\u662F\u89D2\u8272\u6620\u5C04`);
     for (const [id, value] of Object.entries(map)) {
       if (!IDS.includes(id))
-        fail3(`\u672A\u77E5\u89D2\u8272 options.${field}.${id}`);
+        fail3(`\u672A\u77E5\u89D2\u8272 ${label.path(field)}.${id}`);
       if (field === "steps") {
         if (!Number.isSafeInteger(value) || value <= 0)
-          fail3(`options.steps.${id} \u5FC5\u987B\u4E3A\u6B63\u6574\u6570`);
+          fail3(`${label.path("steps")}.${id} \u5FC5\u987B\u4E3A\u6B63\u6574\u6570`);
         steps[id] = value;
       } else {
         if (typeof value !== "string" || !/^[^\s/#]+\/[^\s#]+(?:#[^\s#]+)?$/.test(value)) {
-          fail3(`options.models.${id} \u5FC5\u987B\u4E3A provider/model[#variant]\uFF1B\u7701\u7565\u5373\u53EF\u7EE7\u627F\u4F1A\u8BDD\u6A21\u578B`);
+          fail3(`${label.path("models")}.${id} \u5FC5\u987B\u4E3A provider/model[#variant]\uFF1B\u7701\u7565\u5373\u53EF\u7EE7\u627F\u4F1A\u8BDD\u6A21\u578B`);
         }
         const [left, variant] = value.split("#"), slash = left.indexOf("/");
         models[id] = { providerID: left.slice(0, slash), id: left.slice(slash + 1), ...variant ? { variant } : {} };
       }
     }
   }
-  return { models, steps, engineerInstructions: instructions(input.engineerInstructions) };
+  return { models, steps, engineerInstructions: instructions(input.engineerInstructions, label) };
 }
+var PROFILE_NAME_MAX = 64;
+var PROFILE_NAME_PATTERN = /^(?!\.)(?=.*[a-z0-9])[a-z0-9._-]{1,64}$/;
+function isProfileName(name) {
+  return typeof name === "string" && PROFILE_NAME_PATTERN.test(name);
+}
+function profileNameError(name) {
+  return `\u6863\u540D "${String(name)}" \u4E0D\u5408\u6CD5\uFF08\u53EA\u5141\u8BB8\u5C0F\u5199\u5B57\u6BCD a-z\u3001\u6570\u5B57 0-9 \u4E0E . _ -\uFF0C\u81F3\u5C11\u542B\u4E00\u4E2A\u5B57\u6BCD\u6216\u6570\u5B57\uFF0C\u6700\u591A ${PROFILE_NAME_MAX} \u5B57\u7B26\uFF09`;
+}
+function assertProfileName(name) {
+  if (!isProfileName(name))
+    fail3(profileNameError(name));
+}
+
+// src/profiles.ts
+import { existsSync, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, renameSync as renameSync2, unlinkSync as unlinkSync2, writeFileSync as writeFileSync2 } from "fs";
+import { homedir } from "os";
+import { join as join3 } from "path";
+var nodeProfileFs = {
+  existsSync: (path) => existsSync(path),
+  readFileSync: (path, encoding) => readFileSync2(path, encoding),
+  writeFileSync: (path, data, options) => writeFileSync2(path, data, options),
+  renameSync: (from, to) => renameSync2(from, to),
+  unlinkSync: (path) => unlinkSync2(path),
+  mkdirSync: (path, options) => mkdirSync2(path, options),
+  readdirSync: (path) => readdirSync(path)
+};
+var ACTIVE_FILE = "active";
+var PROFILE_MAX_BYTES = 1024 * 1024;
+function profileDirs(env = process.env) {
+  const configured = env.OPENCODE_CREW_PROFILES_DIR;
+  if (configured !== undefined) {
+    const dir = configured.trim();
+    return dir ? [{ dir, source: "user" }] : [];
+  }
+  const base = env.XDG_CONFIG_HOME?.trim() || join3(homedir(), ".config");
+  return [{ dir: join3(base, "opencode", "crew-profiles"), source: "user" }];
+}
+var message = (error) => error instanceof Error ? error.message : String(error);
+var safeExists = (fs, path) => {
+  try {
+    return fs.existsSync(path);
+  } catch {
+    return false;
+  }
+};
+var byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+function loadProfiles(deps = {}) {
+  const fs = deps.fs ?? nodeProfileFs;
+  const dirs = deps.dirs ?? profileDirs();
+  const profiles = [], errors = [], roots = [];
+  for (const root of dirs) {
+    const exists = safeExists(fs, root.dir);
+    roots.push({ dir: root.dir, source: root.source, exists });
+    if (!exists)
+      continue;
+    let files;
+    try {
+      files = fs.readdirSync(root.dir);
+    } catch (error) {
+      errors.push({ kind: "unreadable", name: "", path: root.dir, message: `\u6863\u76EE\u5F55\u4E0D\u53EF\u8BFB\uFF08${root.dir}\uFF09\uFF1A${message(error)}` });
+      continue;
+    }
+    for (const file of [...files].sort()) {
+      if (file.startsWith("."))
+        continue;
+      const match = /^(.+)\.json$/i.exec(file);
+      if (!match)
+        continue;
+      const name = match[1], path = join3(root.dir, file);
+      if (!isProfileName(name)) {
+        errors.push({ kind: "invalid-name", name, path, message: `[opencode-crew] \u6863\u540D "${name}" \u4E0D\u5408\u6CD5\uFF08\u53EA\u5141\u8BB8\u5C0F\u5199\u5B57\u6BCD a-z\u3001\u6570\u5B57 0-9 \u4E0E . _ -\uFF0C\u6700\u591A ${PROFILE_NAME_MAX} \u5B57\u7B26\uFF09` });
+        continue;
+      }
+      let text;
+      try {
+        text = fs.readFileSync(path, "utf8");
+      } catch (error) {
+        errors.push({ kind: "unreadable", name, path, message: `[opencode-crew] \u6863 "${name}" \u4E0D\u53EF\u8BFB\uFF1A${message(error)}` });
+        continue;
+      }
+      const bytes = Buffer.byteLength(text, "utf8");
+      if (bytes > PROFILE_MAX_BYTES) {
+        errors.push({ kind: "invalid-config", name, path, message: `[opencode-crew] \u6863 "${name}" \u8D85\u8FC7 1MB\uFF08${bytes} \u5B57\u8282\uFF09` });
+        continue;
+      }
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        errors.push({ kind: "invalid-json", name, path, message: `[opencode-crew] \u6863 "${name}" \u4E0D\u662F\u5408\u6CD5 JSON` });
+        continue;
+      }
+      try {
+        profiles.push({ name, path, source: root.source, config: parseCrewConfig(json, profileLabel(name)) });
+      } catch (error) {
+        errors.push({ kind: "invalid-config", name, path, message: message(error) });
+      }
+    }
+  }
+  profiles.sort(byName);
+  return { profiles, errors, dirs: roots };
+}
+function findProfile(set, name) {
+  const profile = set.profiles.find((candidate) => candidate.name === name);
+  if (profile)
+    return { ok: true, profile };
+  const error = set.errors.find((candidate) => candidate.name === name);
+  return { ok: false, error: error ?? { kind: "not-found", name, path: "", message: `[opencode-crew] \u6863 "${name}" \u4E0D\u5B58\u5728` } };
+}
+function activeDir(deps) {
+  return (deps.dirs ?? profileDirs())[0]?.dir;
+}
+function readActive(deps = {}) {
+  const fs = deps.fs ?? nodeProfileFs;
+  const dir = activeDir(deps);
+  if (!dir)
+    return { name: null, path: "", raw: null, error: null };
+  const path = join3(dir, ACTIVE_FILE);
+  if (!safeExists(fs, path))
+    return { name: null, path, raw: null, error: null };
+  let raw;
+  try {
+    raw = fs.readFileSync(path, "utf8");
+  } catch (error) {
+    return { name: null, path, raw: null, error: `\u65E0\u6CD5\u8BFB\u53D6 active \u6307\u9488\uFF08${path}\uFF09\uFF1A${message(error)}` };
+  }
+  const trimmed = raw.trim();
+  if (!trimmed)
+    return { name: null, path, raw, error: null };
+  if (!isProfileName(trimmed)) {
+    return { name: null, path, raw, error: "active \u6307\u9488\u5185\u5BB9\u975E\u6CD5\uFF08\u53EA\u5141\u8BB8 a-z 0-9 . _ -\uFF0C\u6700\u591A 64 \u5B57\u7B26\uFF09" };
+  }
+  return { name: trimmed, path, raw, error: null };
+}
+function writeActive(name, deps = {}) {
+  if (name !== null)
+    assertProfileName(name);
+  const fs = deps.fs ?? nodeProfileFs;
+  const dir = activeDir(deps);
+  if (!dir) {
+    if (name === null)
+      return;
+    fail3("\u6CA1\u6709\u53EF\u7528\u7684\u6863\u76EE\u5F55\uFF0C\u65E0\u6CD5\u4FDD\u5B58 active \u6307\u9488");
+  }
+  const target = join3(dir, ACTIVE_FILE);
+  if (name === null) {
+    try {
+      fs.unlinkSync(target);
+    } catch (error) {
+      if (error.code !== "ENOENT")
+        throw error;
+    }
+    return;
+  }
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 448 });
+  } catch {}
+  const unique = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+  const temp = join3(dir, `.${name}.${unique}.tmp`);
+  try {
+    fs.writeFileSync(temp, `${name}
+`, { flag: "wx", mode: 384 });
+    fs.renameSync(temp, target);
+  } catch (error) {
+    try {
+      fs.unlinkSync(temp);
+    } catch {}
+    throw error;
+  }
+}
+
+// src/profile-state.ts
+var RELOAD_WARNING = "\u914D\u7F6E\u5DF2\u5207\u6362\uFF0C\u4F46\u5BBF\u4E3B agent \u91CD\u8F7D\u5931\u8D25\uFF1B\u5C06\u5728\u4E0B\u6B21\u5BBF\u4E3B\u52A8\u4F5C\u540E\u751F\u6548";
+var message2 = (error) => error instanceof Error ? error.message : String(error);
+var emptySet = (dirs = []) => ({ profiles: [], errors: [], dirs });
+var fallback = (baseline, reason, set = emptySet(), requested = null) => ({ active: null, requested, error: `${reason}\uFF1B\u5DF2\u56DE\u9000\u5230 opencode.json \u914D\u7F6E`, config: baseline, set });
+var modelKey = (model) => model ? `${model.providerID}/${model.id}${model.variant ? `#${model.variant}` : ""}` : "";
+var signature = (config) => JSON.stringify({
+  models: Object.keys(config.models).sort().map((id) => [id, modelKey(config.models[id])]),
+  steps: Object.keys(config.steps).sort().map((id) => [id, config.steps[id]]),
+  engineerInstructions: config.engineerInstructions
+});
+var sameConfig = (a, b) => signature(a) === signature(b);
+function resolve3(baseline, fs, dirs) {
+  const deps = fs ? { fs, dirs } : { dirs };
+  let set;
+  try {
+    set = loadProfiles(deps);
+  } catch (error) {
+    return fallback(baseline, `\u8BFB\u53D6\u6863\u76EE\u5F55\u5931\u8D25\uFF1A${message2(error)}`);
+  }
+  let pointer;
+  try {
+    pointer = readActive(deps);
+  } catch (error) {
+    return fallback(baseline, `\u8BFB\u53D6 active \u6307\u9488\u5931\u8D25\uFF1A${message2(error)}`, set);
+  }
+  const requested = pointer.name ?? (pointer.raw?.trim() ? pointer.raw.trim() : null);
+  if (pointer.error)
+    return fallback(baseline, pointer.error, set, requested);
+  if (!pointer.name)
+    return { active: null, requested, error: null, config: baseline, set };
+  const lookup = findProfile(set, pointer.name);
+  if (lookup.ok)
+    return { active: pointer.name, requested: pointer.name, error: null, config: lookup.profile.config, set };
+  const names = set.profiles.map((profile) => profile.name);
+  const available = names.length ? `\u53EF\u7528\u6863\uFF1A${names.join(", ")}` : "\u5F53\u524D\u6CA1\u6709\u53EF\u7528\u6863";
+  const dirError = set.errors.find((error) => error.kind === "unreadable" && !error.name);
+  const reason = lookup.error.kind === "not-found" ? `${dirError ? `${dirError.message}\u3002` : ""}active \u6863 "${pointer.name}" \u4E0D\u5B58\u5728` : `active \u6863 "${pointer.name}" \u6821\u9A8C\u5931\u8D25\uFF1A${lookup.error.message}`;
+  return fallback(baseline, `${reason}\u3002${available}`, set, pointer.name);
+}
+function createCrewProfiles(deps) {
+  const roots = () => deps.dirs ?? profileDirs(deps.env ?? process.env);
+  const readDeps = (dirs) => deps.fs ? { fs: deps.fs, dirs } : { dirs };
+  const info = () => {
+    try {
+      return resolve3(deps.baseline, deps.fs, roots());
+    } catch (error) {
+      return fallback(deps.baseline, `\u8BFB\u53D6\u6863\u76EE\u5F55\u5931\u8D25\uFF1A${message2(error)}`);
+    }
+  };
+  const config = () => info().config;
+  const reload = async () => {
+    if (!deps.reload)
+      return [RELOAD_WARNING];
+    try {
+      await deps.reload();
+      return [];
+    } catch {
+      return [RELOAD_WARNING];
+    }
+  };
+  const result = (state, patch) => ({
+    ok: patch.ok ?? false,
+    active: state.active,
+    changed: patch.changed ?? false,
+    warnings: patch.warnings ?? [],
+    ...patch.code ? { code: patch.code } : {},
+    ...patch.message ? { message: patch.message } : {},
+    info: state
+  });
+  async function switchProfile(name) {
+    const dirs = roots();
+    const read = readDeps(dirs);
+    if (!isProfileName(name))
+      return result(info(), { code: "INVALID_NAME", message: profileNameError(name) });
+    let set;
+    try {
+      set = loadProfiles(read);
+    } catch (error) {
+      return result(info(), { code: "HOST_ERROR", message: `\u8BFB\u53D6\u6863\u76EE\u5F55\u5931\u8D25\uFF1A${message2(error)}` });
+    }
+    const lookup = findProfile(set, name);
+    if (!lookup.ok) {
+      if (lookup.error.kind === "not-found") {
+        const names = set.profiles.map((profile) => profile.name);
+        return result(info(), {
+          code: "NOT_FOUND",
+          message: `\u6863 "${name}" \u4E0D\u5B58\u5728\u3002${names.length ? `\u53EF\u7528\u6863\uFF1A${names.join(", ")}` : "\u5F53\u524D\u6CA1\u6709\u53EF\u7528\u6863"}`
+        });
+      }
+      return result(info(), { code: "INVALID_PROFILE", message: lookup.error.message });
+    }
+    const before = info();
+    const changed = before.active !== name || !sameConfig(before.config, lookup.profile.config);
+    if (changed) {
+      try {
+        writeActive(name, read);
+      } catch (error) {
+        return result(before, {
+          changed: false,
+          code: "WRITE_FAILED",
+          message: `\u5199\u5165 active \u6307\u9488\u5931\u8D25\uFF1A${message2(error)}\uFF1B\u5185\u5B58\u4E0E agent \u5B9A\u4E49\u672A\u6539\u53D8\u3002`
+        });
+      }
+    }
+    const after = info();
+    if (after.active !== name || after.error) {
+      return result(after, {
+        changed,
+        code: "APPLY_FAILED",
+        message: after.error ?? `active \u6307\u9488\u5DF2\u5199\u5165 "${name}"\uFF0C\u4F46\u91CD\u65B0\u8BFB\u53D6\u7ED3\u679C\u4E0D\u4E00\u81F4\uFF1B\u8BF7\u4EBA\u5DE5\u68C0\u67E5\u6863\u76EE\u5F55\u3002`
+      });
+    }
+    const warnings = changed ? await reload() : [];
+    return result(after, { ok: true, changed, warnings });
+  }
+  async function off() {
+    const dirs = roots();
+    const read = readDeps(dirs);
+    let pointer;
+    try {
+      pointer = readActive(read);
+    } catch (error) {
+      return result(info(), { code: "HOST_ERROR", message: `\u8BFB\u53D6 active \u6307\u9488\u5931\u8D25\uFF1A${message2(error)}` });
+    }
+    const changed = pointer.raw !== null || pointer.error !== null;
+    if (changed) {
+      try {
+        writeActive(null, read);
+      } catch (error) {
+        return result(info(), {
+          changed: false,
+          code: "WRITE_FAILED",
+          message: `\u5220\u9664 active \u6307\u9488\u5931\u8D25\uFF1A${message2(error)}\uFF1B\u5185\u5B58\u4E0E agent \u5B9A\u4E49\u672A\u6539\u53D8\u3002`
+        });
+      }
+    }
+    const after = info();
+    if (after.active !== null || after.error) {
+      return result(after, {
+        changed,
+        code: "APPLY_FAILED",
+        message: after.error ?? "active \u6307\u9488\u5DF2\u5220\u9664\uFF0C\u4F46\u91CD\u65B0\u8BFB\u53D6\u4ECD\u6307\u5411\u6863\uFF1B\u8BF7\u4EBA\u5DE5\u68C0\u67E5\u6863\u76EE\u5F55\u3002"
+      });
+    }
+    const warnings = changed ? await reload() : [];
+    return result(after, { ok: true, changed, warnings });
+  }
+  return { config, info, switch: switchProfile, off };
+}
+
+// src/profile-rpc.ts
+var str3 = { type: "string" };
+var bool = { type: "boolean" };
+var count = { type: "integer" };
+var profileViewSchema = {
+  type: "object",
+  properties: {
+    name: str3,
+    source: { type: "string", enum: ["user", "package"] },
+    models: count,
+    steps: count,
+    instructions: count,
+    rootModel: str3,
+    roles: { type: "array", items: { type: "string", enum: [...IDS] } }
+  },
+  required: ["name", "source", "models", "steps", "instructions", "roles"],
+  additionalProperties: false
+};
+var profilesViewSchema = {
+  type: "object",
+  properties: {
+    active: str3,
+    requested: str3,
+    error: str3,
+    dirs: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { dir: str3, source: { type: "string", enum: ["user", "package"] }, exists: bool },
+        required: ["dir", "source", "exists"],
+        additionalProperties: false
+      }
+    },
+    profiles: { type: "array", items: profileViewSchema },
+    errors: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { name: str3, message: str3 },
+        required: ["name", "message"],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ["dirs", "profiles", "errors"],
+  additionalProperties: false
+};
+var switchViewSchema = {
+  type: "object",
+  properties: {
+    ok: bool,
+    active: str3,
+    changed: bool,
+    code: str3,
+    message: str3,
+    warnings: { type: "array", items: str3 },
+    profiles: profilesViewSchema
+  },
+  required: ["ok", "changed", "warnings", "profiles"],
+  additionalProperties: false
+};
+var emptyInput = { type: "object", properties: {}, additionalProperties: false };
+var crewProfiles = {
+  id: "opencode-crew-profiles",
+  methods: {
+    list: { input: emptyInput, output: profilesViewSchema },
+    switch: {
+      input: {
+        type: "object",
+        properties: { name: { type: "string", minLength: 1, maxLength: 64 } },
+        required: ["name"],
+        additionalProperties: false
+      },
+      output: switchViewSchema
+    },
+    off: { input: emptyInput, output: switchViewSchema }
+  },
+  events: {}
+};
+var MODEL_KEY = (model) => `${model.providerID}/${model.id}${model.variant ? `#${model.variant}` : ""}`;
+function toProfilesView(info) {
+  const view = {
+    dirs: info.set.dirs.map((root) => ({ dir: root.dir, source: root.source, exists: root.exists === true })),
+    profiles: info.set.profiles.map((profile) => {
+      const roles = Object.keys(profile.config.models).filter((id) => profile.config.models[id]);
+      const root = profile.config.models.root;
+      return {
+        name: profile.name,
+        source: profile.source,
+        models: roles.length,
+        steps: Object.keys(profile.config.steps).length,
+        instructions: profile.config.engineerInstructions.length,
+        ...root ? { rootModel: MODEL_KEY(root) } : {},
+        roles
+      };
+    }),
+    errors: info.set.errors.map((error) => ({ name: error.name, message: error.message }))
+  };
+  if (info.active)
+    view.active = info.active;
+  if (info.requested)
+    view.requested = info.requested;
+  if (info.error)
+    view.error = info.error;
+  return view;
+}
+function toSwitchView(result) {
+  const view = {
+    ok: result.ok,
+    changed: result.changed,
+    warnings: [...result.warnings],
+    profiles: toProfilesView(result.info)
+  };
+  if (result.active)
+    view.active = result.active;
+  if (result.code)
+    view.code = result.code;
+  if (result.message)
+    view.message = result.message;
+  return view;
+}
+var object5 = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+var emptyProfilesView = () => ({ dirs: [], profiles: [], errors: [] });
+var HOST_ERROR_MESSAGE = "\u5BBF\u4E3B\u8C03\u7528\u5931\u8D25\uFF0C\u6863\u4F4D\u72B6\u6001\u672A\u6539\u53D8\uFF1B\u8BF7\u68C0\u67E5 OpenCode \u65E5\u5FD7\u540E\u91CD\u8BD5\u3002";
+function safeView(profiles) {
+  try {
+    return toProfilesView(profiles.info());
+  } catch {
+    return emptyProfilesView();
+  }
+}
+async function registerProfileRpc(ctx, profiles) {
+  const domain = ctx.rpc;
+  if (!domain || typeof domain.register !== "function")
+    return;
+  try {
+    await domain.register(crewProfiles, {
+      async list() {
+        return safeView(profiles);
+      },
+      async switch(raw) {
+        const name = object5(raw) ? raw.name : undefined;
+        if (!isProfileName(name)) {
+          return {
+            ok: false,
+            changed: false,
+            code: "INVALID_NAME",
+            message: profileNameError(name),
+            warnings: [],
+            profiles: safeView(profiles)
+          };
+        }
+        try {
+          return toSwitchView(await profiles.switch(name));
+        } catch {
+          return { ok: false, changed: false, code: "HOST_ERROR", message: HOST_ERROR_MESSAGE, warnings: [], profiles: safeView(profiles) };
+        }
+      },
+      async off() {
+        try {
+          return toSwitchView(await profiles.off());
+        } catch {
+          return { ok: false, changed: false, code: "HOST_ERROR", message: HOST_ERROR_MESSAGE, warnings: [], profiles: safeView(profiles) };
+        }
+      }
+    });
+  } catch {}
+}
+
+// src/index.ts
 function loadRole(id) {
-  const text = readFileSync2(new URL(`../agents/${id}.md`, import.meta.url), "utf8");
+  const text = readFileSync3(new URL(`../agents/${id}.md`, import.meta.url), "utf8");
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]+)$/.exec(text);
   if (!match)
     fail3(`agents/${id}.md \u7F3A\u5C11 frontmatter \u6216\u6B63\u6587`);
@@ -8327,9 +8832,18 @@ function loadRole(id) {
 var src_default = Plugin.define({
   id: "opencode-crew",
   async setup(ctx) {
-    const config = options(ctx.options ?? {});
+    const baseline = parseCrewConfig(ctx.options ?? {});
+    const profiles = createCrewProfiles({
+      baseline,
+      reload: async () => {
+        if (typeof ctx.agent.reload !== "function")
+          throw new Error("\u5BBF\u4E3B\u672A\u63D0\u4F9B agent.reload");
+        await ctx.agent.reload();
+      }
+    });
     const roles = Object.fromEntries(IDS.map((id) => [id, loadRole(id)]));
     await ctx.agent.transform((editor) => {
+      const config = profiles.config();
       for (const id of IDS)
         editor.update(id, (agent) => {
           const role = roles[id];
@@ -8339,18 +8853,24 @@ var src_default = Plugin.define({
           agent.system = composeRoleSystem(role.system, role.appendices, config.models[id], id === "engineer" ? config.engineerInstructions : undefined);
           agent.steps = config.steps[id] ?? role.steps;
           agent.model = config.models[id];
-          if (id === "engineer")
-            agent.permissions = [...agent.permissions, ...role.permissions.map((rule) => ({ ...rule }))];
-          else if (id !== "root" || role.permissions.length > 0)
+          if (id === "engineer") {
+            const extra = role.permissions.filter((rule) => !agent.permissions.some((existing) => existing.action === rule.action && existing.resource === rule.resource && existing.effect === rule.effect));
+            agent.permissions = [...agent.permissions, ...extra.map((rule) => ({ ...rule }))];
+          } else if (id !== "root" || role.permissions.length > 0)
             agent.permissions = role.permissions.map((rule) => ({ ...rule }));
-          if (id === "architect")
-            agent.permissions.push({ action: "edit", resource: resolve3(ctx.location.directory, "plans") + "/**", effect: "allow" });
+          if (id === "architect") {
+            const resource = resolve4(ctx.location.directory, "plans") + "/**";
+            const present = agent.permissions.some((rule) => rule.action === "edit" && rule.resource === resource && rule.effect === "allow");
+            if (!present)
+              agent.permissions.push({ action: "edit", resource, effect: "allow" });
+          }
         });
     });
     await ctx.command.transform((editor) => editor.add({
       name: "crew",
       description: "\u5207\u6362\u5230 Crew Root\uFF1B\u7B80\u5355\u4EFB\u52A1\u76F4\u63A5\u505A\uFF0C\u590D\u6742\u4EFB\u52A1\u6309\u9700\u5206\u5DE5",
       async execute({ sessionID, prompt, delivery }) {
+        const config = profiles.config();
         await ctx.session.switchAgent({ sessionID, agent: "root" });
         if (config.models.root)
           await ctx.session.switchModel({ sessionID, model: config.models.root });
@@ -8359,7 +8879,8 @@ var src_default = Plugin.define({
         await ctx.session.prompt({ ...prompt, sessionID, delivery });
       }
     }));
-    await registerTasks(ctx, config.models.engineer);
+    await registerTasks(ctx, () => profiles.config().models.engineer);
+    await registerProfileRpc(ctx, profiles);
     await registerTaskSnapshot(ctx);
   }
 });

@@ -1,5 +1,7 @@
 import { test, expect } from "bun:test"
-import { readFileSync, existsSync } from "node:fs"
+import { readFileSync, existsSync, mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { splitRoleBody } from "../src/model-family"
 
@@ -205,4 +207,119 @@ test('strict write and fixed shell rules enforce whole-value wildcard boundaries
     expect(wildcardEffect(reviewer, 'shell', rule.resource + ' --help')).toBe('deny')
   }
   for (const command of ['git status', 'git push', 'git reset --hard', 'sh -c id']) expect(wildcardEffect(reviewer, 'shell', command)).toBe('deny')
+})
+
+// --- Crew profiles (MVP) -----------------------------------------------------
+// These cases point this process at a temporary profile directory for their
+// duration; the preloaded test/setup.ts keeps every other case isolated.
+function profileDir(files: Record<string, unknown>, active?: string) {
+  const dir = mkdtempSync(join(tmpdir(), "crew-profile-case-"))
+  for (const [name, body] of Object.entries(files)) {
+    writeFileSync(join(dir, `${name}.json`), typeof body === "string" ? body : JSON.stringify(body))
+  }
+  if (active !== undefined) writeFileSync(join(dir, "active"), `${active}\n`)
+  const previous = process.env.OPENCODE_CREW_PROFILES_DIR
+  process.env.OPENCODE_CREW_PROFILES_DIR = dir
+  return {
+    dir,
+    restore: () => {
+      if (previous === undefined) delete process.env.OPENCODE_CREW_PROFILES_DIR
+      else process.env.OPENCODE_CREW_PROFILES_DIR = previous
+    },
+  }
+}
+/** Captures the transform so a test can replay it like `agent.reload()` does. */
+function replayable(f: ReturnType<typeof fixture>) {
+  const editor = {
+    get: (id: string) => f.agents.get(id),
+    list: () => [...f.agents.values()],
+    update: (id: string, fn: any) => { const a = f.agents.get(id) ?? { id, permissions: [] }; fn(a); f.agents.set(id, a) },
+  }
+  const runs: Array<() => void> = []
+  f.ctx.agent.transform = async (fn: any) => { runs.push(() => fn(editor)); return fn(editor) }
+  return runs
+}
+const profileModels = {
+  root: "prof/root#high",
+  architect: "prof/architect",
+  engineer: "prof/engineer#medium",
+  explorer: "prof/explorer",
+  reviewer: "prof/reviewer#high",
+}
+
+test("an active profile replaces models, steps and engineer instructions for all five roles", async () => {
+  const scope = profileDir({ fast: { models: profileModels, steps: { engineer: 12, reviewer: 9 }, engineerInstructions: ["profile rule"] } }, "fast")
+  try {
+    const f = fixture({ models })
+    await (await plugin()).setup(f.ctx)
+    expect(f.agents.get("root").model).toEqual({ providerID: "prof", id: "root", variant: "high" })
+    expect(f.agents.get("architect").model).toEqual({ providerID: "prof", id: "architect" })
+    expect(f.agents.get("explorer").model).toEqual({ providerID: "prof", id: "explorer" })
+    expect(f.agents.get("reviewer").model).toEqual({ providerID: "prof", id: "reviewer", variant: "high" })
+    expect(f.agents.get("engineer").model).toEqual({ providerID: "prof", id: "engineer", variant: "medium" })
+    expect(f.agents.get("engineer").steps).toBe(12)
+    expect(f.agents.get("reviewer").steps).toBe(9)
+    // Steps not in the profile fall back to Markdown frontmatter.
+    expect(f.agents.get("architect").steps).toBe(40)
+    // Whole-profile replacement: options.engineerInstructions never stacks.
+    expect(f.agents.get("engineer").system).toContain("## 项目补充规则")
+    expect(f.agents.get("engineer").system).toContain("profile rule")
+  } finally { scope.restore() }
+})
+
+test("a profile without models.root keeps the session model on /crew and re-reads after off", async () => {
+  const scope = profileDir({ noroot: { steps: { engineer: 20 } } }, "noroot")
+  try {
+    const f = fixture({ models })
+    await (await plugin()).setup(f.ctx)
+    const command = f.commands.find(c => c.name === "crew")
+    await command.execute({ sessionID: "ses_test", prompt: { text: "hi" }, delivery: "steer" })
+    expect(f.calls.map(c => c[0])).toEqual(["agent", "prompt"])
+    expect(f.agents.get("engineer").steps).toBe(20)
+    expect(f.agents.get("engineer").model).toBeUndefined()
+
+    // /crew-profile off deletes the pointer; the next call sees the options config.
+    writeFileSync(join(scope.dir, "active"), "")
+    await command.execute({ sessionID: "ses_test", prompt: { text: "hi" }, delivery: "steer" })
+    expect(f.calls.filter(c => c[0] === "model")).toHaveLength(1)
+    expect(f.calls.find(c => c[0] === "model")[1].model).toEqual({ providerID: "example", id: "root", variant: "high" })
+  } finally { scope.restore() }
+})
+
+test("agent transforms read the live profile and appends stay idempotent across reloads", async () => {
+  const seeded = [
+    { action: "*", resource: "*", effect: "allow" },
+    { action: "subagent", resource: "*", effect: "allow" },
+  ]
+  const scope = profileDir({ fast: { steps: { engineer: 15 } } }, undefined)
+  try {
+    const f = fixture({ models }, [], { engineer: structuredClone(seeded) })
+    const runs = replayable(f)
+    await (await plugin()).setup(f.ctx)
+    expect(runs).toHaveLength(1)
+    runs[0]()
+    runs[0]()
+    const engineer = f.agents.get("engineer")
+    const denied = engineer.permissions.filter((p: any) => p.effect === "deny" && ["subagent", "question", "execute"].includes(p.action))
+    expect(denied).toHaveLength(3)
+    expect(engineer.permissions.filter((p: any) => p.action === "subagent" && p.effect === "allow")).toHaveLength(1)
+    const architect = f.agents.get("architect")
+    const absolute = architect.permissions.filter((p: any) => p.action === "edit" && p.resource.endsWith("/plans/**"))
+    expect(absolute).toHaveLength(1)
+
+    // Switching the pointer is visible to the very next transform.
+    writeFileSync(join(scope.dir, "active"), "fast\n")
+    runs[0]()
+    expect(f.agents.get("engineer").steps).toBe(15)
+  } finally { scope.restore() }
+})
+
+test("a broken profile never blocks setup; the plugin runs from options", async () => {
+  const scope = profileDir({ broken: { models: { root: "not-a-model" } } }, "broken")
+  try {
+    const f = fixture({ models })
+    await expect((await plugin()).setup(f.ctx)).resolves.toBeUndefined()
+    expect(f.agents.get("root").model).toEqual({ providerID: "example", id: "root", variant: "high" })
+    expect(f.agents.get("engineer").model).toEqual({ providerID: "example", id: "worker", variant: "medium" })
+  } finally { scope.restore() }
 })

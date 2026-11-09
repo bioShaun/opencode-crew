@@ -9,6 +9,8 @@ import { REPORT_STATUS_PROMPT_HINT } from './report-status'
 
 type Host = Context
 type ModelRef = { providerID: string; id: string; variant?: string }
+/** A fixed model or a lazy source, so a profile switch applies to the next launch. */
+export type ModelSource = ModelRef | (() => ModelRef | undefined)
 const marker = 'opencode-crew-stage1'
 const object = (x: unknown): x is Record<string, any> => !!x && typeof x === 'object' && !Array.isArray(x)
 const ERROR_INFO: Record<string, { message: string; nextAction: string }> = {
@@ -58,7 +60,7 @@ const ERROR_INFO: Record<string, { message: string; nextAction: string }> = {
  },
  MODEL_NOT_CONFIGURED: {
   message: '未配置 engineer 模型，且当前 Root 会话没有可继承的模型，本次未创建会话。',
-  nextAction: '配置 options.models.engineer，或确保调用方 Root 会话已有模型后重新派发；不要把它当作宿主故障。',
+  nextAction: '配置 active 档或 options 的 `models.engineer`，或确保调用方 Root 会话已有模型后重新派发；不要把它当作宿主故障。',
  },
  SESSION_MISMATCH: {
   message: '会话身份不匹配，启动结果未确认。',
@@ -101,7 +103,8 @@ const schema = (properties:Record<string,unknown>, required:string[]=[]) => ({ty
 const str = {type:'string'}
 const output = {type:'object',additionalProperties:true} as any
 
-export async function registerTasks(ctx:Host, configuredModel?:ModelRef) {
+export async function registerTasks(ctx:Host, configuredModel?:ModelSource) {
+ const readModel = ():ModelRef|undefined => typeof configuredModel==='function' ? configuredModel() : configuredModel
  await ctx.session.hook('retry', async event => {
   try {
    const project=inspectProjectFromWorktree(ctx.location.directory)
@@ -140,6 +143,9 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelRef) {
     try { input={...input,directory:realpathSync(input.directory)} }
     catch(e) { if ((e as NodeJS.ErrnoException).code!=='ENOENT') throw e }
    } catch(e) { return failureFrom(e) }
+  // Read once per launch so the check, session create and task hint agree even if a
+  // profile switch happens mid-call.
+  const model=readModel()
   const id=await identity(tc); if ('error' in id) return failure(id.error!)
   const {project,owner,ledger}=id
   await authorize(tc,'crew_task_start',[project.primaryDirectory])
@@ -148,14 +154,14 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelRef) {
   let task:TaskRecord, periodID:string|undefined
   try {
    const existing=ledger.findByKey(input.key)
-   if (!existing && !(configuredModel ?? owner.model)) return failure('MODEL_NOT_CONFIGURED')
+   if (!existing && !(model ?? owner.model)) return failure('MODEL_NOT_CONFIGURED')
    const reservation=ledger.reserve(tc.sessionID,input,()=>validateWorktree(project.primaryDirectory,input.directory,input.baseline,input.scope))
    task=reservation.task; periodID=reservation.periodID
    if (reservation.replayed) return response({ok:true,task:taskView(task,undefined,{lifecycle:reservation.lifecycle,periodID:reservation.periodID,closeout:reservation.closeout}),warnings:['重放不会重新投递。']})
    } catch(e) { return failureFrom(e) }
   try {
    task=ledger.transition(tc.sessionID,task.taskID,'reserved','session_create_requested')
-   const created=await ctx.session.create({agent:'engineer',location:{directory:input.directory},model:configuredModel ?? owner.model!,metadata:{crewTask:metadata(task,project.commonDir)}})
+   const created=await ctx.session.create({agent:'engineer',location:{directory:input.directory},model:model ?? owner.model!,metadata:{crewTask:metadata(task,project.commonDir)}})
    task=ledger.transition(tc.sessionID,task.taskID,'session_create_requested','session_bound',{sessionID:created.id})
    const current=await ctx.session.get({sessionID:task.sessionID!})
    if (!matches(current,task,project.commonDir)) {
@@ -164,7 +170,7 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelRef) {
    }
    validateWorktree(project.primaryDirectory,input.directory,input.baseline,input.scope)
    task=ledger.transition(tc.sessionID,task.taskID,'session_bound','prompt_requested')
-   const familyHint=modelFamilyTaskHint(configuredModel ?? owner.model)
+   const familyHint=modelFamilyTaskHint(model ?? owner.model)
    const text=`Goal:\n${input.goal}\nScope:\n${input.scope.join('\n')}\nDecided: bind-only，scope 不是沙箱。cwd: ${input.directory}; baseline: ${input.baseline}; key: ${input.key}。禁止 commit、push、merge、后台进程、脱离进程组、服务和范围外写入。\nApproach: 行为变更先仅写测试并运行红灯，再实现并运行绿灯；保留证据。\nAcceptance:\n${input.acceptance}\nCheck:\n${input.check}${familyHint ? '\n'+familyHint : ''}\n${REPORT_STATUS_PROMPT_HINT}`
    await ctx.session.prompt({sessionID:task.sessionID!,text,delivery:'queue',metadata:{crewTask:metadata(task,project.commonDir)}})
    task=ledger.transition(tc.sessionID,task.taskID,'prompt_requested','submitted')
