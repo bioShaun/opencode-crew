@@ -202,7 +202,7 @@ opencode-crew/
     └── reviewer.md
 ```
 
-Role prompts, permissions and default steps live only in Markdown; plugin source does not maintain a second copy. Frontmatter supports `description`, `mode`, `steps` and `permissions`; the body is the system prompt. Models are set only through plugin options. Invalid fields, roles or model formats fail immediately; all input is validated before registration.
+Role prompts, permissions and default steps live only in Markdown; plugin source does not maintain a second copy. Frontmatter supports `description`, `mode`, `steps` and `permissions`; the body is the system prompt. Models are set through plugin options, and an active Crew profile can override them. Invalid fields, roles or model formats fail immediately; all input is validated before registration.
 
 After changing packaged Markdown, use OpenCode `/reload` to force a full reload and reread roles; automatic host watching of all nested package files is not guaranteed. Package upgrades may overwrite customized Markdown, so preserve custom files before upgrading. There is currently no separate custom directory/alias mechanism, to avoid duplicate definitions.
 
