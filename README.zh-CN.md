@@ -18,7 +18,8 @@ Root 策略规定同一 cwd 同时只有一个写入者，Root 与 engineer 不�
 
 GPT 与 Claude 提示风格的轻量差异（角色可选附录 + 运行时短 hint，非整段双轨 preset）见 [`docs/model-family-prompts.md`](docs/model-family-prompts.md)。
 Ticket/Session/Assignment 映射与结构化 `Report` 六态（对照 dsh、不引入 Source/Eval/Policy）见 [`docs/dsh-mapping.md`](docs/dsh-mapping.md)。
-会话页只读 Crew 侧栏（Alerts / Delegations / Subagents）见 [`docs/sidebar-ui.md`](docs/sidebar-ui.md)。包导出 `opencode-crew/tui`（`dist/tui.js`）供宿主 TUI 加载；提醒区覆盖 crew_task 的权限请求以及 `waiting` / `blocked` / `failed`，按 failed → blocked → 权限 → waiting 排序。
+会话页只读 Crew 侧栏（Alerts / Delegations / Subagents）见 [`docs/sidebar-ui.md`](docs/sidebar-ui.md)。包导出 `opencode-crew/tui`（`dist/tui.js`）供宿主 TUI 加载；提醒区覆盖 crew_task 的权限请求以及 `waiting` / `blocked` / `failed`，按 failed → blocked → 权限 → waiting 排序。Crew claim 故障会被隔离：显示可见回退并有界自动重试，而不是整块槽位消失。
+角色权限合并语义、`external_directory` 改为继承、以及仍开放的 `webfetch` 风险见 [`docs/role-permissions-review.md`](docs/role-permissions-review.md)；宿主升级后的复核清单见 [`docs/role-permissions-host-checks.md`](docs/role-permissions-host-checks.md)。
 
 原生委派仍由宿主控制，不自动隔离。另有显式 `crew_task_*` 工具，将手工准备的 worktree 绑定到独立 engineer 会话，并使用受限本地 ledger 与锁；它不是调度器、DAG 或自动 worktree 管理器。私有宿主已运行两个真实 engineer 任务，但未验证执行时间重叠。
 
@@ -174,7 +175,7 @@ Root 的 Markdown 权限列表为空时，Crew 保留宿主提供的 Root 权限
 
 Engineer 则按原顺序保留宿主提供的权限规则，并在末尾追加其 Markdown 规则：禁止 `subagent`、`question` 和 `execute`。其他已有宿主 allow/ask/deny 规则仍然生效；Crew 不添加通配放行。Architect、explorer 和 reviewer 继续使用严格的替换策略。
 
-三个严格角色允许技能及外部目录检查，方便读取常规参考资料；读取 `.env`、`.env.*` 仍需询问，`.env.example` 放行。这不授予外部编辑或 shell 权限；除上表列出的规则外，其他操作仍禁止。OpenCode 的路径权限不是防符号链接的沙箱：`plans/` 内的符号链接可能破坏 architect 的预期写入边界，别名也可能隐藏敏感文件名。不能依靠这些角色规则隔离不可信的文件系统布局。
+三个严格角色允许技能，方便读取常规参考资料；读取 `.env`、`.env.*` 仍需询问，`.env.example` 放行。它们不再自带 `external_directory` 规则：宿主默认仍是允许，但会尊重用户自己的全局 ask/deny（agent 规则追加在最后，且 last match wins）。这不授予外部编辑或 shell 权限。architect 与 explorer 仍开放不加限制的 `webfetch`/`websearch`（已知风险，见 [`docs/role-permissions-review.md`](docs/role-permissions-review.md)）。除上表列出的规则外，其他操作仍禁止。OpenCode 的路径权限不是防符号链接的沙箱：`plans/` 内的符号链接可能破坏 architect 的预期写入边界，别名也可能隐藏敏感文件名。不能依靠这些角色规则隔离不可信的文件系统布局。
 
 不是固定流水线。Root 已掌握上下文，剩余修改和必要验证明确、局部，且无需进一步调查、设计测试或独立复核时可直做；否则优先委派。长任务才按需使用 `plans/`。同一 cwd 一次只能有一个写入者；直做不免验收。
 
@@ -193,7 +194,7 @@ opencode-crew/
 ├── src/maintenance-cli.ts   # 本地维护入口
 ├── dist/index.js            # 分发入口，内含 YAML 解析器
 ├── dist/tui.js              # TUI 侧栏入口（`opencode-crew/tui`）
-├── docs/                    # 角色协作图、dsh 映射、模型族、侧栏 UI、配置档
+├── docs/                    # 角色协作图、dsh 映射、模型族、侧栏 UI、配置档、角色权限
 └── agents/
     ├── root.md
     ├── architect.md
