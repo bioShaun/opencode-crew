@@ -211,8 +211,8 @@ explorer       9       640k     $1.41
 
 | 内容 | 来源 | 口径与边界 |
 | --- | --- | --- |
-| 会话族、agent、嵌套关系 | 宿主 `data.session.family` + 事件；`active()` 校准；`session.get` 补 parentID | Delegations 的 running 由 `/active` 快照校准：有运行中成员时每 15s，空闲时每 60s 只探测 active；`session.created` / `session.execution.*` 事件立即更新，没有事件的成员由校准发现。宿主的 `family` 缓存不保证包含本轮新派出的嵌套子会话，因此未知 session 只做一次 `session.get` 归属核对并缓存。快照首次返回前退回 `time.busy`/`idle` 水位，再退回 `status` |
-| 步数上限 | `data.location.agent` 的 `AgentInfo.steps` | 来自 `agents/*.md` 的 `steps` 和配置 `options.steps`，由 [`src/index.ts:88`](../src/index.ts#L88) 写入；当前 architect 40、engineer 80、explorer 30、reviewer 30 |
+| 会话族、agent、嵌套关系 | 宿主 `data.session.family` + 事件；`client.session.list({ parentID })` 补齐；`active()` 校准；`session.get` 补 parentID | Delegations 的 running 由 `/active` 快照校准：有运行中成员时每 15s，空闲时每 60s 只探测 active；`session.created` / `session.execution.*` 事件立即更新，没有事件的成员由校准发现。宿主的 `family` 缓存不保证包含本轮新派出的嵌套子会话，因此未知 session 只做一次 `session.get` 归属核对并缓存。冷启动后宿主 family 缓存可能为空，此时用 `client.session.list({ parentID, order: "desc", limit: 200 })` 拉 Root 的直接子会话（最多 4 次指数退避重试，`server.connected` 时再拉一次），避免 Subagents 整表消失。`agent.list` 抛错时退回空列表。快照首次返回前退回 `time.busy`/`idle` 水位，再退回 `status` |
+| 步数上限 | `data.location.agent` 的 `AgentInfo.steps` | 来自 `agents/*.md` 的 `steps` 和配置 `options.steps`，由 [`src/index.ts:55`](../src/index.ts#L55) 写入；当前 architect 40、engineer 80、explorer 30、reviewer 30 |
 | 已用步数 | 运行中会话 `client.message.list({ type: "assistant", limit: 100 })` | OpenCode 按 runner 的逻辑 step 计数（[`runner/llm.ts`](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/session/runner/llm.ts)），重试、压缩、截断续写会让一个 step 对应多条消息，TUI 只能用子会话 assistant 消息数近似，显示为 `~N/M`；同一会话跨轮复用时消息数继续累计，因此可能长期超过单轮上限；80% 与用满的判定也基于该近似值 |
 | 子会话数 | 会话族里的 `SessionInfo.agent` | 按会话去重，不数工具调用；标题的 N 为各角色合计。`crew_task` 的 tokens / cost 并入 engineer，但不计入子会话数 |
 | tokens | `SessionInfo.tokens`；`crew_task` 快照的消息 tokens | Subagents 显示 `工作 + cache.read`；工作 token = input + output + reasoning + cache.write，缺失的消息跳过；异常阈值只用工作 token |
@@ -241,13 +241,17 @@ explorer       9       640k     $1.41
 当前不拆第二个 `opencode-crew-ui` 插件。建议在同一个包和版本中增加独立 TUI 入口：
 
 ```text
-src/index.ts              Server：角色、命令、任务、ledger
-src/tui/index.tsx         TUI：注册 sidebar.content prepend
-src/tui/alerts.tsx        提醒区
-src/tui/delegations.tsx   Delegations 区块
-src/tui/subagents.tsx     Subagents 区块
-src/tui/view-model.ts     只读展示类型、统计口径与异常规则（便于单测）
+src/index.ts                   Server：角色、命令、任务、ledger
+src/tui/index.tsx              TUI：注册 sidebar.content prepend，外包 SidebarRecovery
+src/tui/sidebar-recovery.tsx   插件内 ErrorBoundary：可见回退、有界自动重试、手动重试
+src/tui/sidebar.tsx            Crew claim 主体（family 补齐、校准、区块组装）
+src/tui/alerts.tsx             提醒区
+src/tui/delegations.tsx        Delegations 区块
+src/tui/subagents.tsx          Subagents 区块
+src/tui/view-model.ts          只读展示类型、统计口径与异常规则（便于单测）
 ```
+
+Crew claim 外包在插件内的 `SidebarRecovery` 里，不再把 setup / effects / 主题读取中的异常交给宿主 ErrorBoundary（其回退是空，侧栏会静默消失）。故障时显示「Crew 暂时不可用」、仅内存的诊断编号（只记录错误类型或 `null`，不检查或序列化抛出值），以及最多 3 次自动重试（1s / 3s / 10s）。用尽后保留手动「点击重试」；命令面板有 `Retry Crew sidebar`。注册命令失败不影响鼠标重试。cleanup 在创建资源之前注册，避免 setup 故障或恢复重挂泄漏监听和定时器。TUI 包通过 `createSolidTransformPlugin()` 构建，使 JSX 走 OpenTUI 的 Solid 渲染器。
 
 Server 不依赖 Solid / OpenTUI；TUI 不导入 ledger 实现或直接访问任务文件。只有 UI 未来需要支持非 Crew 任务、多个前端或独立发布时，才基于稳定的公共只读 API 拆成伴随插件。
 
@@ -263,6 +267,7 @@ Server 不依赖 Solid / OpenTUI；TUI 不导入 ledger 实现或直接访问任
 8. Alerts 含 `waiting` 且可点 session；按 failed → blocked → 权限 → waiting 排序。
 9. Crew claim 显示校准新鲜度（未校准 / 校准 … 前 / 可能滞后）。
 10. Subagents 脚注标明 `tok 含 cache.read`。
+11. Crew claim 故障时显示可见回退与重试，而不是整块侧栏槽位消失。
 
 ## 生态参考（借鉴了什么 / 我们怎么落）
 
@@ -278,7 +283,7 @@ Server 不依赖 Solid / OpenTUI；TUI 不导入 ledger 实现或直接访问任
 
 ## 未决事项
 
-- ~~插件首次渲染时会话族数据可能不完整~~ 已绕开：Delegations 不再依赖宿主的 `family` / `message` 缓存渲染运行中的会话。运行中的会话由 step/tool/usage 等事件在本地 250ms 窗口内合并更新（不逐 delta 发请求），另有 15s 校准从 `/active` 取 liveness、`message.list` 补齐漏掉的事件；空闲时 60s 只探测 `/active`，不拉消息。宿主的 `session.sync(rootID, {children:true})` 仍保留为冷启动补齐（只在其缓存 miss 时生效）。
+- ~~插件首次渲染时会话族数据可能不完整~~ 已绕开：Delegations 不再依赖宿主的 `family` / `message` 缓存渲染运行中的会话。运行中的会话由 step/tool/usage 等事件在本地 250ms 窗口内合并更新（不逐 delta 发请求），另有 15s 校准从 `/active` 取 liveness、`message.list` 补齐漏掉的事件；空闲时 60s 只探测 `/active`，不拉消息。宿主的 `session.sync(rootID, {children:true})` 仍保留为冷启动补齐（只在其缓存 miss 时生效）。冷启动后空的 family 缓存另由 `client.session.list({ parentID })` 补齐（最多 4 次退避重试），避免 Subagents 整表消失。
 - 宿主的 `session.created` 会把 `session.message:<id>` 标记为已完成但不拉取历史，之后 `message.sync` 直接 no-op；因此本轮新建的子会话在宿主 store 里可能只有零散事件行。侧栏对缺失基线只做一次定向 `message.list` 补取，按消息 id 合并，失败留到下一次校准重试；非运行会话仍读宿主 store。
 - 服务端 `/session/active` 快照本身可能短暂包含刚结束的会话（重连时尤其明显），客户端也可能漏收终止事件；sidebar 在 15s（空闲 60s）校准中发现 active 消失时补取最终快照并保留，失败则保留待校准标记重试，不退回旧 host 缓存。若上游能保证 active 快照与终止事件一致，可去掉 busy/idle 兜底。注意 `server.connected` 是用 `reconcile` 覆盖 active 表（会删除快照外的 key），问题在快照内容或事件丢失，而非“只增不减”。
 - `crew_task` 会话不在 Root 会话族里，尚未核实 `data.session.get` / `message.list` / `permission.list` / `cost` 能否直接读到它，是否需要先 `sync(taskSessionID)`。

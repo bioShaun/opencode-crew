@@ -18,7 +18,8 @@ Root's policy allows only one writer in the same cwd at a time; Root and enginee
 
 For lightweight GPT vs Claude prompt-style notes (optional role appendices + short runtime hints, not dual-track presets), see [`docs/model-family-prompts.md`](docs/model-family-prompts.md).
 For Ticket/Session/Assignment mapping and structured `Report` statuses borrowed from dsh (without Source/Eval/Policy), see [`docs/dsh-mapping.md`](docs/dsh-mapping.md).
-For the read-only session-page Crew sidebar (Alerts / Delegations / Subagents), see [`docs/sidebar-ui.md`](docs/sidebar-ui.md). The package exports `opencode-crew/tui` (`dist/tui.js`) for the host TUI; Alerts cover crew_task permission requests plus `waiting` / `blocked` / `failed`, sorted failed → blocked → permission → waiting.
+For the read-only session-page Crew sidebar (Alerts / Delegations / Subagents), see [`docs/sidebar-ui.md`](docs/sidebar-ui.md). The package exports `opencode-crew/tui` (`dist/tui.js`) for the host TUI; Alerts cover crew_task permission requests plus `waiting` / `blocked` / `failed`, sorted failed → blocked → permission → waiting. A fault in the Crew claim is isolated behind a visible fallback with bounded auto-retry, rather than clearing the slot.
+Role permission merge semantics, the `external_directory` inheritance fix, and the recorded `webfetch` risk are in [`docs/role-permissions-review.md`](docs/role-permissions-review.md); host-upgrade checks are in [`docs/role-permissions-host-checks.md`](docs/role-permissions-host-checks.md).
 
 Native delegation remains host-controlled and is not automatically isolated. Separately, the explicit `crew_task_*` tools bind a manually prepared worktree to an independent engineer session with a limited local ledger and lock; they are not a scheduler, DAG, or automatic worktree manager. Two real engineer tasks have run in a private host, but their execution overlap was not verified.
 
@@ -174,7 +175,7 @@ When Root's Markdown permission list is empty, Crew leaves the host-provided Roo
 
 Engineer instead retains the host-provided permission rules in order and appends its Markdown rules: denials for `subagent`, `question`, and `execute`. Existing host allow/ask/deny rules otherwise remain effective; Crew does not add a wildcard allow. Architect, explorer, and reviewer continue to use their strict replacement policies.
 
-The three strict roles allow skills and external-directory checks for routine reference reading, while their read rules still ask for `.env` and `.env.*` and allow `.env.example`. This does not grant external edits or shell access. Their other actions remain denied except the explicit role rules above. OpenCode path permissions are not a symlink-safe sandbox: a symlink inside `plans/` can undermine architect's intended write boundary, and an alias can obscure a sensitive filename. Do not use these role rules as isolation against untrusted filesystem layouts.
+The three strict roles allow skills for routine reference reading, while their read rules still ask for `.env` and `.env.*` and allow `.env.example`. They do not ship an `external_directory` rule: the host default remains allow, and a user's global ask/deny is respected because agent rules are appended last and the last match wins. This does not grant external edits or shell access. Architect and explorer still allow unrestricted `webfetch` and `websearch` (a recorded risk; see [`docs/role-permissions-review.md`](docs/role-permissions-review.md)). Their other actions remain denied except the explicit role rules above. OpenCode path permissions are not a symlink-safe sandbox: a symlink inside `plans/` can undermine architect's intended write boundary, and an alias can obscure a sensitive filename. Do not use these role rules as isolation against untrusted filesystem layouts.
 
 This is not a fixed pipeline. Root may work directly when it already has context, the remaining changes and necessary verification are clear and local, and no further investigation, test design or independent review is needed; otherwise it prefers delegation. Use `plans/` as needed for long tasks. Only one writer may modify a cwd at a time; direct work still requires acceptance checks.
 
@@ -193,7 +194,7 @@ opencode-crew/
 ├── src/maintenance-cli.ts   # local maintenance entry
 ├── dist/index.js            # distribution entry, includes YAML parser
 ├── dist/tui.js              # TUI sidebar entry (`opencode-crew/tui`)
-├── docs/                    # role diagram, dsh mapping, model-family, sidebar UI, profiles
+├── docs/                    # role diagram, dsh mapping, model-family, sidebar UI, profiles, role permissions
 └── agents/
     ├── root.md
     ├── architect.md
