@@ -327,9 +327,10 @@ export function buildSidebar(input: ViewInput): SidebarView {
     for (const p of t.permissions ?? []) {
       alerts.push(alertRow(t, 'permission', `${p.action} ${relative(p.resources[0], t.directory)}`.trim()))
     }
-    if (t.report?.status === 'waiting') alerts.push(alertRow(t, 'waiting', t.report.reason ?? '等待外部输入'))
-    if (t.report?.status === 'blocked') alerts.push(alertRow(t, 'blocked', t.report.reason ?? ''))
-    if (t.report?.status === 'failed') alerts.push(alertRow(t, 'failed', t.report.reason ?? ''))
+    const report = effectiveReport(t)
+    if (report === 'waiting') alerts.push(alertRow(t, 'waiting', t.report?.reason ?? '等待外部输入'))
+    if (report === 'blocked') alerts.push(alertRow(t, 'blocked', t.report?.reason ?? ''))
+    if (report === 'failed') alerts.push(alertRow(t, 'failed', t.report?.reason ?? '查看失败日志'))
   }
   alerts.sort((a, b) => {
     const ra = ALERT_RANK[a.kind ?? 'waiting']

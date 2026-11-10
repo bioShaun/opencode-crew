@@ -135,7 +135,9 @@ export function Sidebar(props: { sessionID: string }) {
       const options = context.location ? { location: context.location } : undefined
       setTasks(parseTasksOutput(await client.tasks({ sessionID: props.sessionID }, options)))
     } catch {
-      setTasks([])
+      // Keep the last successful snapshot. Clearing here would hide
+      // waiting/blocked/failed Alerts while a successful probe can still
+      // stamp "just calibrated".
     }
   }
 

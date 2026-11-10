@@ -77,7 +77,7 @@ OpenCode v2.2.5 的原生侧栏结构为：
 
 ### 2. 提醒区，条件显示
 
-只放 `crew_task` 会话中需要人处理的事：待处理权限、`waiting`（等人）、blocked、failed。例如（`blocked` 状态，已按优先级排序）：
+只放 `crew_task` 会话中需要人处理的事：待处理权限、`waiting`（等人）、blocked、failed。没有 `Report:` 行、但观察到会话 `failed` 或 `interrupted` 的崩溃/中断，同样记为 failed 并进入 Alerts。例如（`blocked` 状态，已按优先级排序）：
 
 ```text
 ! ct_migrate    failed bun test 退出…
@@ -187,6 +187,7 @@ explorer       9       640k     $1.41
 - 距上次成功校准 ≤ 1.5×当前校准间隔：`校准 Xs/m 前`（faint）。
 - 超过 1.5×间隔：`可能滞后 · 校准 …`（warning）。
 - 该行只读，不提供刷新按钮（刷新仍靠事件与校准 tick）。
+- live 快照在 active 探测失败时保留上次校准时间；`crew_task` 快照在 RPC 失败时同样保留上一帧，避免 Alerts 被清空却仍显示「刚校准」。
 
 ### 5. Todo / Context
 
@@ -222,7 +223,7 @@ explorer       9       640k     $1.41
 | 提醒区权限 | `data.session.permission.list(taskSessionID)` | 任务会话 ID 来自 Server 快照；只用于提示和跳转，不直接授权 |
 | VCS 分支、路径 | 原生 footer / `data.location.vcs` | Crew 不替换 footer |
 | Todo、Context | 宿主原生功能 | 不重复实现 |
-| `crew_task` 受管任务 | Server 提供的只读快照 | 不直接读取 ledger，不调用模型工具冒充 UI 查询 |
+| `crew_task` 受管任务 | Server 提供的只读快照 | 不直接读取 ledger，不调用模型工具冒充 UI 查询；RPC 瞬时失败时保留上一帧，不清空任务和 Alerts |
 
 `crew_task` 快照应由 Server 按当前 `ownerSessionID` 隔离，并显式白名单输出 `taskID`、任务会话 ID、directory、scope 数量、state、lifecycle、观察到的会话状态、check 和展示用 next action。不要把完整 registry、其他 Root 的任务或内部锁状态传给 TUI；TUI 不读 ledger。
 
@@ -264,7 +265,7 @@ Server 不依赖 Solid / OpenTUI；TUI 不导入 ledger 实现或直接访问任
 5. `crew_task` 的任务数据只来自 Server 按 `ownerSessionID` 隔离的快照，TUI 不直接读取或修改 ledger。
 6. `ready` 不被呈现为测试通过或验收完成，界面不使用绿色。
 7. 侧栏不提供授权、调度、worktree 清理、整合或「批准 stop」操作；TUI 不写任务态。
-8. Alerts 含 `waiting` 且可点 session；按 failed → blocked → 权限 → waiting 排序。
+8. Alerts 含 `waiting`，以及无 Report 行但观察到 `failed` / `interrupted` 的失败；可点 session；按 failed → blocked → 权限 → waiting 排序。
 9. Crew claim 显示校准新鲜度（未校准 / 校准 … 前 / 可能滞后）。
 10. Subagents 脚注标明 `tok 含 cache.read`。
 11. Crew claim 故障时显示可见回退与重试，而不是整块侧栏槽位消失。
