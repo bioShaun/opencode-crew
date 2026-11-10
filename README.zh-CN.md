@@ -58,13 +58,17 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
         "engineerInstructions": [
           "临时和中间文件放在项目内，禁止使用 /tmp；子进程同样遵守。",
           "重活先执行项目的资源预检，再按项目规定通过调度器提交。"
-        ]
+        ],
+        "modelDisplay": "inline",
+        "modelAliases": { "provider/model": "h4-lite" }
       }
     }
   ],
   "default_agent": "root"
 }
 ```
+
+别名和 `modelDisplay` 要重载插件才生效，不会热更新。
 
 以上是待替换的占位模型，provider、凭证和模型可用性由目标机配置提供，包内不包含密钥或具体模型默认值。`models` 可省略部分角色；省略表示遵循 OpenCode 原生模型继承规则，不是字符串 `inherit`。子代理继承父会话模型；主会话保持其已选模型。`/crew` 会显式选择已配置的 Root 模型，未配置则保留当前会话模型。当 `models.engineer` 和调用方 Root 会话都拿不出模型时，`crew_task_start` 在写 ledger 或创建会话之前以 `MODEL_NOT_CONFIGURED` 拒派；同 key 重放已有记录不做该检查。
 

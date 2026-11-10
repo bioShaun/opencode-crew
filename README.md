@@ -58,13 +58,17 @@ After installation, find the Crew plugin entry added by the command in your exis
         "engineerInstructions": [
           "Keep temporary and intermediate files inside the project; do not use /tmp, including for child processes.",
           "For heavy jobs, run the project's resource preflight and submit through its scheduler."
-        ]
+        ],
+        "modelDisplay": "inline",
+        "modelAliases": { "provider/model": "h4-lite" }
       }
     }
   ],
   "default_agent": "root"
 }
 ```
+
+Aliases and `modelDisplay` take effect only after the plugin is reloaded; they do not hot-update.
 
 These models are placeholders to replace. Providers, credentials and model availability come from the target machine's configuration; the package contains no keys or concrete model defaults. Roles may be omitted from `models`: omission follows native OpenCode model inheritance, not the string `inherit`. Subagents inherit the parent session model; the primary session keeps its selected model. `/crew` explicitly selects the configured Root model, or retains the current session model if none is configured. `crew_task_start` refuses with `MODEL_NOT_CONFIGURED` before any ledger write or session create when neither `models.engineer` nor the calling Root session provides a model; a same-key replay of an existing record does not need the check.
 

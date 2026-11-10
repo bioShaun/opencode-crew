@@ -4,7 +4,7 @@
 
 OpenCode 会话页右侧在没有 Todo、MCP 或其他扩展内容时较空。Crew 的实际工作大多走原生 subagent，派给 architect、engineer、explorer、reviewer；`crew_task` 很少触发。原生主区域已经显示权限、完成/失败通知和模型，但看不到“现在谁在跑、跑到哪一步、哪个角色用量异常”。侧栏补的就是这些，不替换成独立的 Crew 控制台。
 
-设计结论：**Crew 通过一个 `prepend: "sidebar.content"` claim 插入提醒区（条件显示）、Delegations 和 Subagents 三块，保留原生会话标题、Todo、Context 和 footer。** 不 `replace` 整个 `sidebar.content`；有配置档激活（或指针失败需提示）时以 `append: "sidebar.footer"` 追加（不替换）`ProfileFooter`（一行 `profile: <name>` 或 `profile: off ⚠`），无档且无错误时不占 footer。侧栏不展示 Crew 角色列表，也不显示模型名。
+设计结论：**Crew 通过一个 `prepend: "sidebar.content"` claim 插入提醒区（条件显示）、Delegations 和 Subagents 三块，保留原生会话标题、Todo、Context 和 footer。** 不 `replace` 整个 `sidebar.content`；有配置档激活（或指针失败需提示）时以 `append: "sidebar.footer"` 追加（不替换）`ProfileFooter`（一行 `profile: <name>` 或 `profile: off ⚠`），无档且无错误时不占 footer。侧栏不展示 Crew 角色列表。Delegations 显示实际模型（7 列），可配别名/关闭。
 
 基线：
 
@@ -25,10 +25,10 @@ HTML 可直接在浏览器打开，用 `?state=<name>` 或页面顶部切换栏�
 | `active`（默认） | 日常情况：engineer、explorer 并行运行；Subagents 4 个角色；无 `crew_task`，提醒区为空 |
 | `idle` | 无运行中的 delegation，Delegations 隐藏；Subagents 显示本次汇总；Todo 全部完成 |
 | `blocked` | 两个 `crew_task`（blocked、failed）和对应提醒，作为 `crew_task` 两行样式示例；engineer 因一次用满 `~80/80` 在 Subagents 中标黄 |
-| `stall` | 一个普通子代理无输出：5–15 分钟为软 stall（`无输出 Xm`，活动列 info，非整行 warning）；≥15 分钟硬 stall 才整行 warning |
+| `stall` | 一个普通子代理无输出：5–15 分钟为软 stall（`无输出 Xm`，活动列 info）；≥15 分钟硬 stall 只把角色、活动和步数升为 warning，模型列保持 muted，`—` 保持 faint |
 | `overflow` | 4 个运行中的子代理、1 个 waiting 的 `crew_task`、1 条权限提醒、8 条 Todo；内容超高，`sidebar.content` 垂直滚动，标题和 footer 固定 |
 | `long` | 超长会话标题、任务 ID、自定义角色名（合成缩进压力数据）、活动、check 命令、路径和分支名，验证省略号截断 |
-| `anomaly` | explorer 9 个子会话、640k tokens、$1.41，其中一次用满 `~30/30`；Delegations 中的 explorer 行和 Subagents 中的 explorer 行都为 warning |
+| `anomaly` | explorer 9 个子会话、640k tokens、$1.41，其中一次用满 `~30/30`；Delegations 中 explorer 的角色、活动和步数，以及 Subagents 中的 explorer 行，都为 warning |
 
 ## 宿主约束与参考
 
@@ -96,29 +96,45 @@ OpenCode v2.2.5 的原生侧栏结构为：
 
 只列当前 Root 会话族里正在运行的 delegation，外加 Root 拥有的 `crew_task` 会话。标题 `Delegations (N running)`：`Delegations` 粗体 text.base，括号部分 muted；N 为运行中的普通子代理数加 progress / waiting 的 `crew_task` 数。
 
-普通子代理每个占一行，三列：角色名 10 列、活动、右对齐的步数（通常 6 列，步数超长时最多扩到 12 列并压缩活动列），列间空 1 列，合计 37 列。嵌套为布局预留：每层在角色名前多缩进 2 列，缩进计入 10 列；但 Crew 的五个角色都 deny `subagent`（见 `agents/engineer.md`），实际不会产生嵌套会话，所有 delegation 都是 Root 的直接子会话。`active` 状态：
+普通子代理每个占一行。默认 `modelDisplay` 为 `inline`：角色名 10 列、实际模型 7 列、活动、右对齐的步数（通常 6 列，步数超长时最多扩到 12 列并压缩活动列），列间空 1 列，合计 37 列。
+
+```text
+inline : 角色 10 + 空 1 + model 7 + 空 1 + 活动 11 + 空 1 + 步数 6 = 37
+off    : 角色 10 + 空 1 +              活动 19 + 空 1 + 步数 6 = 37
+```
+
+模型列显示该会话的实际模型。别名键是 `provider/model`；未命中别名时截断 `model.id`。缺失显示 `—`，不回落 Crew 配置值。`modelDisplay` 设为 `off` 时去掉模型列，活动列回到 19，整行仍是 37。别名和 `modelDisplay` 要重载插件才生效，不加热更新。
+
+嵌套为布局预留：每层在角色名前多缩进 2 列，缩进计入 10 列；但 Crew 的五个角色都 deny `subagent`（见 `agents/engineer.md`），实际不会产生嵌套会话，所有 delegation 都是 Root 的直接子会话。`active` 状态（`inline`）：
 
 ```text
 Delegations (2 running)
+engineer   ds4.1   edit…       ~41/80
+explorer   h4-lite read…        ~8/30
+```
+
+`off` 仍是活动列 19 的旧布局：
+
+```text
 engineer   command…            ~41/80
 explorer   read…                ~8/30
 ```
 
 - 活动文案使用紧凑形式（侧栏只列运行中项，`Running` 前缀冗余）：思考中为 `thinking…`；工具运行中为 `<noun>…`，工具输入仍在流式生成时为 `prep <noun>…`；noun 为工具名，`shell` 写作 `command`，`execute` 写作 `code`（如 `read…`、`edit…`、`prep write…`）。主区域仍由宿主显示完整文案，两侧有意不同。
 - 步数写成 `~已用/上限`，因为已用步数是近似值（见“数据来源与口径”）。
-- 颜色：角色名 text.base，活动 info，步数 faint。
-- **软 / 硬 stall**：运行中且无确认输出 ≥5 分钟时，活动列改为 `无输出 Xm`，但保持 info（短时自愈不与硬失败同等醒目）。≥15 分钟或步数达到上限 80% 时，整行 warning：
+- 颜色：角色名 text.base，模型列 text.muted，缺失时的 `—` 为 text.faint，活动 info，步数 faint。模型列不参与 warning。
+- **软 / 硬 stall**：运行中且无确认输出 ≥5 分钟时，活动列改为 `无输出 Xm`，但保持 info（短时自愈不与硬失败同等醒目）。硬 stall（≥15 分钟）或步数达到上限 80% 时，只把角色、活动和步数升为 warning；模型列保持 muted，`—` 保持 faint：
 
 ```text
-engineer   无输出 6m           ~41/80   ← 软 stall（info）
-engineer   无输出 16m          ~41/80   ← 硬 stall（整行 warning）
+engineer   ds4.1   无输出 6m   ~41/80   ← 软 stall（活动列 info）
+engineer   ds4.1   无输出 16m  ~41/80   ← 硬 stall（角色、活动、步数 warning；模型列 muted）
 ```
 
 `crew_task` 每个占两行。第 1 行：任务 ID（text.base）、Report 状态、步数（faint）；第 2 行：progress / waiting 为 `check <命令>`，ready 为 `next Root 验收证据`，blocked / failed 为 `next <原因或下一步>`，键名 faint，值 muted。`blocked` 状态：
 
 ```text
 Delegations (1 running)
-reviewer   read…                ~6/30
+reviewer   —       read…        ~6/30
 ct_fixture             blocked ~17/80
 next 补充 ledger fixture
 ct_migrate              failed ~80/80
@@ -159,12 +175,12 @@ reviewer       1   52k+210k     $0.21
   绝对下限用来避免小会话或 engineer 正常的高用量被误报。阈值是示意值，待实测后调整。
 - **脚注（faint）**：`tok 含 cache.read · 见 sidebar-ui`，固定标明 `tok+cache` 口径含 cache.read，并把异常规则指回本文，减少「数字对不上」争议。
 
-`anomaly` 状态：explorer 一行为 warning，对应的 Delegations 行因 `~26/30` 超过 80% 也为 warning：
+`anomaly` 状态：explorer 一行为 warning。对应的 Delegations 行因 `~26/30` 超过 80%，角色、活动和步数升为 warning，模型列保持 muted：
 
 ```text
 Delegations (2 running)
-engineer   edit…               ~33/80
-explorer   grep…               ~26/30
+engineer   ds4.1   edit…       ~33/80
+explorer   h4-lite grep…       ~26/30
 
 Subagents (11 sessions · $2.00)
             sess  tok+cache      cost
@@ -232,6 +248,7 @@ explorer       9       640k     $1.41
 
 - 字符网格：侧栏 42 列，左右内边距 2 列，内容区 37 列；单一字号，层级只靠粗体和颜色区分。
 - 使用宿主 `background.raised.base`、`text.base` / `text.muted` / `text.faint` 和 feedback 的 info / warning / error，不定义第二套主题系统，不用绿色。
+- Delegations 的模型列用 `text.muted`，`—` 用 `text.faint`，不参与 warning。
 - 无卡片、无渐变、无 chip、无大标题；分区依靠空行和粗体标签，标题括号内的计数用 muted。
 - 超长内容用省略号截断；内容超高时只垂直滚动，不出现横向滚动，标题和 footer 固定。
 - 第一版只读：提醒区只提供跳转，不增加 start / stop / approve / merge /「批准 stop」等侧栏操作；TUI 不写任务态、不读 ledger。
@@ -263,6 +280,9 @@ Server 不依赖 Solid / OpenTUI；TUI 不导入 ledger 实现或直接访问任
 8. Alerts 含 `waiting` 且可点 session；按 failed → blocked → 权限 → waiting 排序。
 9. Crew claim 显示校准新鲜度（未校准 / 校准 … 前 / 可能滞后）。
 10. Subagents 脚注标明 `tok 含 cache.read`。
+11. Delegations 的模型列为 7 列，整行仍为 37 列。
+12. 缺模型时显示 `—`。
+13. `modelDisplay` 为 `off` 时，活动列恢复为 19 列。
 
 ## 生态参考（借鉴了什么 / 我们怎么落）
 

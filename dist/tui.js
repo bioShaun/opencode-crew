@@ -22,6 +22,62 @@ import { createComponent as _$createComponent5 } from "@opentui/solid";
 import { createEffect, createMemo, createSignal as createSignal2, For as For5, on, onCleanup, Show as Show2 } from "solid-js";
 import { usePlugin as usePlugin2 } from "@opencode/plugin/tui";
 
+// src/config.ts
+var IDS = ["root", "architect", "engineer", "explorer", "reviewer"];
+function fail(message) {
+  throw new Error(`[opencode-crew] ${message}`);
+}
+function object(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+var ALIAS_KEY = /^[^\s/]+\/[^\s/]+$/;
+var CONTROL = /[\u0000-\u001f\u007f]/;
+function parseAliases(value) {
+  if (value === undefined)
+    return {};
+  const field = "options.modelAliases";
+  if (!object(value))
+    fail(`${field} \u5FC5\u987B\u662F\u5BF9\u8C61`);
+  const entries = Object.entries(value);
+  if (entries.length > 64)
+    fail(`${field} \u6700\u591A 64 \u9879`);
+  const aliases = {};
+  for (const [key, raw] of entries) {
+    if (!ALIAS_KEY.test(key))
+      fail(`${field} \u7684\u952E "${key}" \u5FC5\u987B\u4E3A provider/model`);
+    const item = `${field}.${key}`;
+    if (typeof raw !== "string")
+      fail(`${item} \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
+    const text = raw.trim();
+    if (!text)
+      fail(`${item} \u4E0D\u80FD\u4E3A\u7A7A`);
+    if (CONTROL.test(raw))
+      fail(`${item} \u4E0D\u80FD\u5305\u542B\u63A7\u5236\u5B57\u7B26`);
+    if (text.length > 12)
+      fail(`${item} \u6700\u591A 12 \u5B57\u7B26`);
+    aliases[key] = text;
+  }
+  return aliases;
+}
+function parseDisplayMode(value) {
+  if (value === undefined)
+    return "inline";
+  if (value === "inline" || value === "off")
+    return value;
+  fail("options.modelDisplay \u5FC5\u987B\u4E3A inline \u6216 off");
+}
+function parseCrewDisplay(input) {
+  if (input == null)
+    return { aliases: {}, display: "inline" };
+  if (!object(input))
+    fail("options \u5FC5\u987B\u662F\u5BF9\u8C61");
+  return { aliases: parseAliases(input.modelAliases), display: parseDisplayMode(input.modelDisplay) };
+}
+var PROFILE_NAME_PATTERN = /^(?!\.)(?=.*[a-z0-9])[a-z0-9._-]{1,64}$/;
+function isProfileName(name) {
+  return typeof name === "string" && PROFILE_NAME_PATTERN.test(name);
+}
+
 // src/snapshot.ts
 var taskSchema = {
   type: "object",
@@ -89,12 +145,12 @@ var crewTasks = {
   },
   events: {}
 };
-var object = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+var object2 = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 var str = (x) => typeof x === "string";
 var num = (x) => typeof x === "number" && Number.isFinite(x);
 var REPORT = ["progress", "waiting", "ready", "blocked", "failed", "dropped"];
 function task(value) {
-  if (!object(value) || !str(value.taskID) || !str(value.directory) || !str(value.state) || value.lifecycle !== "active" && value.lifecycle !== "closed" || !str(value.check))
+  if (!object2(value) || !str(value.taskID) || !str(value.directory) || !str(value.state) || value.lifecycle !== "active" && value.lifecycle !== "closed" || !str(value.check))
     return;
   const view = {
     taskID: value.taskID,
@@ -107,7 +163,7 @@ function task(value) {
   };
   if (str(value.sessionID))
     view.sessionID = value.sessionID;
-  if (object(value.observed)) {
+  if (object2(value.observed)) {
     const o = value.observed;
     const observed = {};
     if (o.outcome === "succeeded" || o.outcome === "failed" || o.outcome === "interrupted")
@@ -121,7 +177,7 @@ function task(value) {
     if (Object.keys(observed).length)
       view.observed = observed;
   }
-  if (object(value.report) && str(value.report.status) && REPORT.includes(value.report.status)) {
+  if (object2(value.report) && str(value.report.status) && REPORT.includes(value.report.status)) {
     view.report = {
       status: value.report.status,
       ...str(value.report.reason) ? { reason: value.report.reason } : {}
@@ -134,14 +190,14 @@ function task(value) {
   if (num(value.cost))
     view.cost = value.cost;
   if (Array.isArray(value.permissions)) {
-    const permissions = value.permissions.flatMap((p) => object(p) && str(p.action) && Array.isArray(p.resources) && p.resources.every(str) ? [{ action: p.action, resources: [...p.resources] }] : []);
+    const permissions = value.permissions.flatMap((p) => object2(p) && str(p.action) && Array.isArray(p.resources) && p.resources.every(str) ? [{ action: p.action, resources: [...p.resources] }] : []);
     if (permissions.length)
       view.permissions = permissions;
   }
   return view;
 }
 function parseTasksOutput(value) {
-  if (!object(value) || !Array.isArray(value.tasks))
+  if (!object2(value) || !Array.isArray(value.tasks))
     return [];
   return value.tasks.flatMap((item) => {
     const parsed = task(item);
@@ -264,6 +320,14 @@ function alertRow(task, kind, text) {
 }
 var relative = (resource, directory) => resource === undefined ? "" : resource.startsWith(directory + "/") ? resource.slice(directory.length + 1) : resource;
 var effectiveReport = (t) => t.report?.status && t.report.status !== "dropped" ? t.report.status : t.observed?.outcome === "failed" || t.observed?.outcome === "interrupted" ? "failed" : "progress";
+var MODEL_WIDTH = 7;
+var MODEL_GAP = 1;
+var modelKey = (m) => `${m.providerID}/${m.id}`;
+var modelCell = (m, aliases) => {
+  if (!m)
+    return "\u2014";
+  return truncateCells(aliases?.[modelKey(m)] ?? m.id, MODEL_WIDTH);
+};
 function delegationRow(s, depth, input) {
   const limit = input.limit(s.agent);
   const messages = input.messages(s.id);
@@ -281,14 +345,19 @@ function delegationRow(s, depth, input) {
   const stepTone = warn ? "warning" : "faint";
   const step = `~${steps}/${limit || "\u2014"}`;
   const stepWidth = Math.min(12, Math.max(6, cells(step)));
-  const activityWidth = WIDTH - 10 - 1 - 1 - stepWidth;
-  return [
+  const showModel = input.modelDisplay !== "off";
+  const modelW = showModel ? MODEL_WIDTH + MODEL_GAP : 0;
+  const activityWidth = WIDTH - 10 - 1 - 1 - stepWidth - modelW;
+  const modelTone = s.model ? "muted" : "faint";
+  const spans = [
     span(padEndCells(truncateCells(role, 10), 10), roleTone),
-    span(" ", roleTone),
-    span(padEndCells(truncateCells(activity, activityWidth), activityWidth), activityTone),
-    span(" ", roleTone),
-    span(padStartCells(truncateCells(step, stepWidth), stepWidth), stepTone)
+    span(" ", roleTone)
   ];
+  if (showModel) {
+    spans.push(span(padEndCells(modelCell(s.model, input.modelAliases), MODEL_WIDTH), modelTone), span(" ", modelTone));
+  }
+  spans.push(span(padEndCells(truncateCells(activity, activityWidth), activityWidth), activityTone), span(" ", roleTone), span(padStartCells(truncateCells(step, stepWidth), stepWidth), stepTone));
+  return spans;
 }
 function taskRows(t, limit) {
   const report = effectiveReport(t);
@@ -311,6 +380,7 @@ function taskRows(t, limit) {
   return [head, tail];
 }
 function buildSidebar(input) {
+  input = { ...input, modelDisplay: input.modelDisplay ?? "inline" };
   const family = input.sessions.filter((s) => s.id !== input.rootID);
   const byID = new Map(family.map((s) => [s.id, s]));
   const childrenOf = new Map;
@@ -490,7 +560,8 @@ function mergeSession(local, remote) {
     busy: remote.busy === undefined ? local.busy : Math.max(local.busy ?? 0, remote.busy),
     idle: remote.idle === undefined ? local.idle : Math.max(local.idle ?? 0, remote.idle),
     tokens: tokensOf(local.tokens, remote.tokens),
-    cost: Math.max(local.cost ?? 0, remote.cost ?? 0)
+    cost: Math.max(local.cost ?? 0, remote.cost ?? 0),
+    model: remote.model ?? local.model
   };
 }
 
@@ -1221,7 +1292,8 @@ function Sidebar(props) {
       busy: s.time.busy,
       idle: s.time.idle,
       tokens: s.tokens,
-      cost: s.cost
+      cost: s.cost,
+      model: s.model
     } : undefined;
   };
   const toView = (info) => ({
@@ -1233,7 +1305,8 @@ function Sidebar(props) {
     busy: info.time.busy,
     idle: info.time.idle,
     tokens: info.tokens,
-    cost: info.cost
+    cost: info.cost,
+    model: info.model
   });
   const storeMessages = (id) => attempt(() => context.data.session.message.list(id), []);
   let familyGen = 0;
@@ -1351,6 +1424,7 @@ function Sidebar(props) {
   }));
   createEffect(() => hydrate());
   const statusOf = (id) => attempt(() => context.data.session.status(id), "idle");
+  const display = createMemo(() => parseCrewDisplay(context.options));
   const view = createMemo(() => {
     const rootID = rootOf(props.sessionID);
     const snapshot = live();
@@ -1375,7 +1449,9 @@ function Sidebar(props) {
       limit: stepsOf,
       known: snapshot.known,
       calibratedAt: snapshot.calibratedAt,
-      calibrationIntervalMs: snapshot.calibrationIntervalMs
+      calibrationIntervalMs: snapshot.calibrationIntervalMs,
+      modelDisplay: display().display,
+      modelAliases: display().aliases
     });
   });
   const blocks = createMemo(() => {
@@ -1664,13 +1740,6 @@ function profileFooterLabel(view) {
   return;
 }
 
-// src/config.ts
-var IDS = ["root", "architect", "engineer", "explorer", "reviewer"];
-var PROFILE_NAME_PATTERN = /^(?!\.)(?=.*[a-z0-9])[a-z0-9._-]{1,64}$/;
-function isProfileName(name) {
-  return typeof name === "string" && PROFILE_NAME_PATTERN.test(name);
-}
-
 // src/profile-rpc.ts
 var str2 = { type: "string" };
 var bool = { type: "boolean" };
@@ -1750,13 +1819,13 @@ var crewProfiles = {
   },
   events: {}
 };
-var object2 = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+var object3 = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 var isStr = (value) => typeof value === "string";
 var isCount = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
 var emptyProfilesView = () => ({ dirs: [], profiles: [], errors: [] });
 function parseProfilesView(value) {
   const view = emptyProfilesView();
-  if (!object2(value))
+  if (!object3(value))
     return view;
   if (isProfileName(value.active))
     view.active = value.active;
@@ -1766,14 +1835,14 @@ function parseProfilesView(value) {
     view.error = value.error;
   if (Array.isArray(value.dirs)) {
     for (const root of value.dirs) {
-      if (!object2(root) || !isStr(root.dir) || root.source !== "user" && root.source !== "package")
+      if (!object3(root) || !isStr(root.dir) || root.source !== "user" && root.source !== "package")
         continue;
       view.dirs.push({ dir: root.dir, source: root.source, exists: root.exists === true });
     }
   }
   if (Array.isArray(value.profiles)) {
     for (const profile of value.profiles) {
-      if (!object2(profile) || !isProfileName(profile.name) || profile.source !== "user" && profile.source !== "package")
+      if (!object3(profile) || !isProfileName(profile.name) || profile.source !== "user" && profile.source !== "package")
         continue;
       const roles = Array.isArray(profile.roles) ? profile.roles.filter((role) => isStr(role) && IDS.includes(role)) : [];
       view.profiles.push({
@@ -1789,7 +1858,7 @@ function parseProfilesView(value) {
   }
   if (Array.isArray(value.errors)) {
     for (const error of value.errors) {
-      if (!object2(error) || !isStr(error.name) || !isStr(error.message))
+      if (!object3(error) || !isStr(error.name) || !isStr(error.message))
         continue;
       view.errors.push({ name: error.name, message: error.message });
     }
@@ -1797,7 +1866,7 @@ function parseProfilesView(value) {
   return view;
 }
 function parseSwitchView(value) {
-  if (!object2(value) || typeof value.ok !== "boolean")
+  if (!object3(value) || typeof value.ok !== "boolean")
     return;
   const view = {
     ok: value.ok,
