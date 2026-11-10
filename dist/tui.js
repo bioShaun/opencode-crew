@@ -324,12 +324,13 @@ function buildSidebar(input) {
     for (const p of t.permissions ?? []) {
       alerts.push(alertRow(t, "permission", `${p.action} ${relative(p.resources[0], t.directory)}`.trim()));
     }
-    if (t.report?.status === "waiting")
-      alerts.push(alertRow(t, "waiting", t.report.reason ?? "\u7B49\u5F85\u5916\u90E8\u8F93\u5165"));
-    if (t.report?.status === "blocked")
-      alerts.push(alertRow(t, "blocked", t.report.reason ?? ""));
-    if (t.report?.status === "failed")
-      alerts.push(alertRow(t, "failed", t.report.reason ?? ""));
+    const report = effectiveReport(t);
+    if (report === "waiting")
+      alerts.push(alertRow(t, "waiting", t.report?.reason ?? "\u7B49\u5F85\u5916\u90E8\u8F93\u5165"));
+    if (report === "blocked")
+      alerts.push(alertRow(t, "blocked", t.report?.reason ?? ""));
+    if (report === "failed")
+      alerts.push(alertRow(t, "failed", t.report?.reason ?? "\u67E5\u770B\u5931\u8D25\u65E5\u5FD7"));
   }
   alerts.sort((a, b) => {
     const ra = ALERT_RANK[a.kind ?? "waiting"];
@@ -462,7 +463,17 @@ var totalTokens = (s) => {
   const t = s?.tokens;
   return t ? (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + (t.cache?.write ?? 0) : 0;
 };
-var tokensOf = (a, b) => totalTokens({ id: "", created: 0, updated: 0, tokens: b }) > totalTokens({ id: "", created: 0, updated: 0, tokens: a }) ? b : a;
+var tokensOf = (a, b) => {
+  if (!b)
+    return a;
+  if (!a)
+    return b;
+  const pick = totalTokens({ id: "", created: 0, updated: 0, tokens: b }) > totalTokens({ id: "", created: 0, updated: 0, tokens: a }) ? b : a;
+  const read = Math.max(a.cache?.read ?? 0, b.cache?.read ?? 0);
+  if ((pick.cache?.read ?? 0) >= read)
+    return pick;
+  return { ...pick, cache: { write: pick.cache?.write ?? 0, read } };
+};
 function mergeMessages(base, incoming) {
   const byID = new Map;
   const rest = [];
@@ -521,6 +532,7 @@ class LiveController {
   calibrationDue = 0;
   draining = false;
   trailing = false;
+  trailingForce = false;
   constructor(options) {
     this.options = options;
     this.clock = options.clock ?? realClock;
@@ -546,6 +558,7 @@ class LiveController {
     this.activeKnown = false;
     this.lastCalibratedAt = 0;
     this.trailing = false;
+    this.trailingForce = false;
     this.rootID = rootID;
     this.emit();
     this.refreshNow();
@@ -629,6 +642,8 @@ class LiveController {
       if (this.disposed)
         return false;
       this.resolving.delete(id);
+      if (belongs === undefined)
+        return false;
       if (!belongs) {
         this.member.set(id, false);
         this.awaiting.delete(id);
@@ -649,6 +664,8 @@ class LiveController {
   async belongs(id) {
     if (id === this.rootID)
       return true;
+    if (this.member.get(id) === true)
+      return true;
     const host = this.options.family();
     if (host.includes(id))
       return true;
@@ -661,7 +678,7 @@ class LiveController {
       if (this.disposed)
         return false;
       if (!info)
-        return false;
+        return;
       if (host.includes(info.id))
         return true;
       if (!info.parentID)
@@ -849,13 +866,21 @@ class LiveController {
       return false;
     this.activeKnown = true;
     const next = new Set;
-    for (const id of ids)
-      if (await this.belongs(id))
+    const unknown = new Set;
+    for (const id of ids) {
+      const result = await this.belongs(id);
+      if (result) {
         next.add(id);
+        if (id !== this.rootID)
+          this.member.set(id, true);
+      } else if (result === undefined) {
+        unknown.add(id);
+      }
+    }
     if (this.disposed)
       return false;
     for (const id of [...this.running]) {
-      if (next.has(id))
+      if (next.has(id) || unknown.has(id))
         continue;
       this.running.delete(id);
       if (id === this.rootID)
@@ -884,25 +909,26 @@ class LiveController {
       return;
     if (this.draining) {
       this.trailing = true;
+      if (force)
+        this.trailingForce = true;
       return;
     }
     this.draining = true;
     try {
-      const ids = [...new Set([...this.dirty, ...this.finalPending])];
-      for (let index = 0;index < ids.length; index += this.concurrency) {
-        await Promise.all(ids.slice(index, index + this.concurrency).map((id) => this.pull(id, force)));
-        if (this.disposed)
-          return;
-      }
+      do {
+        const useForce = force || this.trailingForce;
+        this.trailing = false;
+        this.trailingForce = false;
+        const ids = [...new Set([...this.dirty, ...this.finalPending])];
+        for (let index = 0;index < ids.length; index += this.concurrency) {
+          await Promise.all(ids.slice(index, index + this.concurrency).map((id) => this.pull(id, useForce)));
+          if (this.disposed)
+            return;
+        }
+        force = useForce;
+      } while (this.trailing);
     } finally {
       this.draining = false;
-    }
-    if (this.trailing) {
-      this.trailing = false;
-      if (!this.disposed) {
-        this.emit();
-        this.arm();
-      }
     }
   }
   pull(id, force) {
@@ -1276,9 +1302,7 @@ function Sidebar(props) {
       setTasks(parseTasksOutput(await client.tasks({
         sessionID: props.sessionID
       }, options)));
-    } catch {
-      setTasks([]);
-    }
+    } catch {}
   };
   let controller;
   let unlisten;
