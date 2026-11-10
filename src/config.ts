@@ -76,6 +76,61 @@ export function parseCrewConfig(input: unknown, label: ConfigLabel = optionsLabe
   return { models, steps, engineerInstructions: instructions(input.engineerInstructions, label) }
 }
 
+// --- Sidebar display ---------------------------------------------------------
+// Plugin options only. Profile files stay on parseCrewConfig's strict key set.
+
+export type ModelDisplay = "inline" | "off"
+export interface CrewDisplayConfig {
+  aliases: Readonly<Record<string, string>>
+  display: ModelDisplay
+}
+export const defaultDisplay: CrewDisplayConfig = { aliases: {}, display: "inline" }
+
+const ALIAS_KEY = /^[^\s/]+\/[^\s/]+$/
+const CONTROL = /[\u0000-\u001f\u007f]/
+
+function parseAliases(value: unknown): Readonly<Record<string, string>> {
+  if (value === undefined) return {}
+  const field = "options.modelAliases"
+  if (!object(value)) fail(`${field} 必须是对象`)
+  const entries = Object.entries(value)
+  if (entries.length > 64) fail(`${field} 最多 64 项`)
+  const aliases: Record<string, string> = {}
+  for (const [key, raw] of entries) {
+    if (!ALIAS_KEY.test(key)) fail(`${field} 的键 "${key}" 必须为 provider/model`)
+    const item = `${field}.${key}`
+    if (typeof raw !== "string") fail(`${item} 必须为字符串`)
+    const text = raw.trim()
+    if (!text) fail(`${item} 不能为空`)
+    if (CONTROL.test(raw)) fail(`${item} 不能包含控制字符`)
+    if (text.length > 12) fail(`${item} 最多 12 字符`)
+    aliases[key] = text
+  }
+  return aliases
+}
+
+function parseDisplayMode(value: unknown): ModelDisplay {
+  if (value === undefined) return "inline"
+  if (value === "inline" || value === "off") return value
+  fail("options.modelDisplay 必须为 inline 或 off")
+}
+
+/** Reads only the display keys. Ignores models, steps, and engineerInstructions. */
+export function parseCrewDisplay(input: unknown): CrewDisplayConfig {
+  // The TUI context always has an options record in production; a missing
+  // value is the same as no display keys, and must not take down the sidebar.
+  if (input == null) return { aliases: {}, display: "inline" }
+  if (!object(input)) fail("options 必须是对象")
+  return { aliases: parseAliases(input.modelAliases), display: parseDisplayMode(input.modelDisplay) }
+}
+
+/** Options entry: strip display keys, then keep parseCrewConfig's strict key set. */
+export function parseCrewOptions(input: unknown): { baseline: CrewConfig; display: CrewDisplayConfig } {
+  if (!object(input)) fail("options 必须是对象")
+  const { modelAliases, modelDisplay, ...rest } = input
+  return { baseline: parseCrewConfig(rest), display: parseCrewDisplay({ modelAliases, modelDisplay }) }
+}
+
 // --- Profile names -----------------------------------------------------------
 // Kept here (pure) so the TUI bundle can validate names without pulling node:fs.
 // The whitelist has no path separator, so `join(dir, name + ".json")` cannot escape.
