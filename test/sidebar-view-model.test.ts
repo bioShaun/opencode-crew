@@ -10,8 +10,19 @@ async function vm() {
 const MISSING = !existsSync(fileURLToPath(entry))
 const plain = (spans: any[]) => spans.map((s: any) => s.text).join("")
 
+/** Hard stall and step-budget warnings skip the model cell and the gap after it. */
+function expectDelegationWarning(row: any[]) {
+  expect(row[2].tone).toBe("muted")
+  expect(row[3].tone).toBe("muted")
+  expect(row.filter((_: any, i: number) => i !== 2 && i !== 3).every((s: any) => s.tone === "warning")).toBe(true)
+}
+
 const tok = (input: number, output: number, reasoning = 0, write = 0, read = 0) => ({ input, output, reasoning, cache: { read, write } })
-const session = (id: string, extra: any = {}) => ({ id, agent: "engineer", created: 1000, updated: 60_000_000, tokens: tok(10, 10), ...extra })
+const session = (id: string, extra: any = {}) => ({
+  id, agent: "engineer", created: 1000, updated: 60_000_000, tokens: tok(10, 10),
+  model: { id: "gpt-5", providerID: "openai" },
+  ...extra,
+})
 const assistant = (content: any[], extra: any = {}) => ({ type: "assistant", time: { created: 1 }, content, ...extra })
 const tool = (name: string, status: string, input: any = {}) => ({ type: "tool", name, state: { status, input }, time: { created: 1 } })
 const reasoning = (completed: number | undefined = 1) => ({ type: "reasoning", text: "…", time: { created: 1, completed } })
@@ -129,9 +140,112 @@ test("active state: nested running rows and running count", async () => {
   }))
   expect(view.delegations.runningCount).toBe(2)
   expect(view.delegations.rows.length).toBe(2)
-  expect(plain(view.delegations.rows[0])).toBe("engineer   command…             ~1/80")
-  expect(plain(view.delegations.rows[1])).toBe("  explorer read…                ~1/30")
+  expect(plain(view.delegations.rows[0])).toBe("engineer   gpt-5   command…     ~1/80")
+  expect(plain(view.delegations.rows[1])).toBe("  explorer gpt-5   read…        ~1/30")
   expect(view.alerts.length).toBe(0)
+})
+
+test("inline model column shows the alias between role and activity", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
+  const view = m.buildSidebar(input({
+    modelDisplay: "inline",
+    modelAliases: {
+      "deepseek/deepseek-v4.1-flash": "ds4.1",
+      "anthropic/claude-haiku-4-5": "h4-lite",
+    },
+    sessions: [
+      session("root", { agent: "root" }),
+      session("eng", {
+        created: 2000,
+        model: { id: "deepseek-v4.1-flash", providerID: "deepseek", variant: "xhigh" },
+      }),
+      session("exp", {
+        agent: "explorer",
+        created: 3000,
+        model: { id: "claude-haiku-4-5", providerID: "anthropic", variant: "low" },
+      }),
+    ],
+    statuses: { eng: "running", exp: "running" },
+    messages: {
+      eng: [...Array.from({ length: 40 }, () => assistant([])), assistant([tool("edit", "running")])],
+      exp: [...Array.from({ length: 7 }, () => assistant([])), assistant([tool("read", "running")])],
+    },
+  }))
+  expect(plain(view.delegations.rows[0])).toBe("engineer   ds4.1   edit…       ~41/80")
+  expect(plain(view.delegations.rows[1])).toBe("explorer   h4-lite read…        ~8/30")
+  for (const row of view.delegations.rows) {
+    expect(m.cells(plain(row))).toBe(37)
+    expect(row[2].tone).toBe("muted")
+    expect(row[3].tone).toBe("muted")
+  }
+  expect(plain(view.delegations.rows[0])).not.toContain("xhigh")
+  expect(plain(view.delegations.rows[1])).not.toContain("low")
+})
+
+test("an unaliased model id is truncated to 7 cells", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
+  const view = m.buildSidebar(input({
+    sessions: [
+      session("root", { agent: "root" }),
+      session("eng", {
+        created: 2000,
+        model: { id: "deepseek-v4.1-flash", providerID: "deepseek", variant: "xhigh" },
+      }),
+    ],
+    statuses: { eng: "running" },
+    messages: { eng: [assistant([tool("shell", "running")])] },
+  }))
+  const row = view.delegations.rows[0]
+  expect(plain(row)).toBe("engineer   deepse… command…     ~1/80")
+  expect(row[2].text).toBe("deepse…")
+  expect(m.cells(plain(row))).toBe(37)
+  expect(plain(row)).not.toContain("xhigh")
+})
+
+test("a missing model renders an em dash in a 37-cell row", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
+  const view = m.buildSidebar(input({
+    sessions: [
+      session("root", { agent: "root" }),
+      session("eng", { created: 2000, model: undefined }),
+    ],
+    statuses: { eng: "running" },
+    messages: { eng: [assistant([tool("shell", "running")])] },
+  }))
+  const row = view.delegations.rows[0]
+  expect(plain(row)).toBe("engineer   —       command…     ~1/80")
+  expect(m.cells(plain(row))).toBe(37)
+  expect(row[2].tone).toBe("faint")
+  expect(row[3].tone).toBe("faint")
+})
+
+test("modelDisplay off restores the 19-cell activity column", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
+  const view = m.buildSidebar(input({
+    modelDisplay: "off",
+    sessions: [
+      session("root", { agent: "root" }),
+      session("eng", { created: 2000 }),
+      session("exp", { agent: "explorer", parentID: "eng", created: 3000 }),
+    ],
+    statuses: { eng: "running", exp: "running" },
+    messages: {
+      eng: [assistant([tool("shell", "running")])],
+      exp: [assistant([tool("read", "running")])],
+    },
+  }))
+  const eng = view.delegations.rows[0]
+  const exp = view.delegations.rows[1]
+  expect(plain(eng)).toBe("engineer   command…             ~1/80")
+  expect(plain(exp)).toBe("  explorer read…                ~1/30")
+  expect(m.cells(eng.find((s: any) => String(s.text).includes("command")).text)).toBe(19)
+  expect(m.cells(exp.find((s: any) => String(s.text).includes("read")).text)).toBe(19)
+  expect(m.cells(plain(eng))).toBe(37)
+  expect(m.cells(plain(exp))).toBe(37)
 })
 
 test("idle state: delegations hidden, subagents still listed", async () => {
@@ -230,7 +344,7 @@ test("soft stall shows 无输出 in info; hard stall escalates the whole row to 
   }))
   const hardRow = hard.delegations.rows[0]
   expect(plain(hardRow)).toContain("无输出 16m")
-  expect(hardRow.every((s: any) => s.tone === "warning")).toBe(true)
+  expectDelegationWarning(hardRow)
 })
 
 test("stale host updated with recent message activity is not 无输出", async () => {
@@ -271,7 +385,7 @@ test("a delegation row warns at 80% of the step limit", async () => {
   }))
   const row = view.delegations.rows[0]
   expect(plain(row)).toContain("~27/30")
-  expect(row.every((s: any) => s.tone === "warning")).toBe(true)
+  expectDelegationWarning(row)
 })
 
 test("crew_task rows: two lines, report colors, check/next and budget warning", async () => {
@@ -367,7 +481,7 @@ test("anomaly state: warning rows in both Delegations and Subagents", async () =
   }))
   const expRow = view.delegations.rows[1]
   expect(plain(expRow)).toContain("~27/30")
-  expect(expRow.every((s: any) => s.tone === "warning")).toBe(true)
+  expectDelegationWarning(expRow)
   const sa = view.subagents!.rows.find((r: any[]) => plain(r).startsWith("explorer"))
   expect(sa.every((s: any) => s.tone === "warning")).toBe(true)
   expect(plain(view.subagents!.title)).toContain("3 sessions")
@@ -423,7 +537,7 @@ test("a stale running status is vetoed by the record's idle watermark", async ()
   }))
   expect(view.delegations.runningCount).toBe(1)
   expect(view.delegations.rows.length).toBe(1)
-  expect(plain(view.delegations.rows[0])).toBe("engineer   command…             ~1/80")
+  expect(plain(view.delegations.rows[0])).toBe("engineer   gpt-5   command…     ~1/80")
 })
 
 test("an idle-only record is hidden even with a stale running status", async () => {
@@ -449,7 +563,7 @@ test("status() still decides when the record has no execution watermarks", async
     messages: { eng: [assistant([tool("shell", "running")])] },
   }))
   expect(view.delegations.runningCount).toBe(1)
-  expect(plain(view.delegations.rows[0])).toBe("engineer   command…             ~1/80")
+  expect(plain(view.delegations.rows[0])).toBe("engineer   gpt-5   command…     ~1/80")
 })
 
 test("an authoritative running set overrides the watermarks in both directions", async () => {
@@ -470,7 +584,7 @@ test("an authoritative running set overrides the watermarks in both directions",
   }))
   expect(view.delegations.runningCount).toBe(1)
   expect(view.delegations.rows.length).toBe(1)
-  expect(plain(view.delegations.rows[0])).toBe("engineer   command…             ~1/80")
+  expect(plain(view.delegations.rows[0])).toBe("engineer   gpt-5   command…     ~1/80")
 })
 
 test("overflowing step counts keep delegation rows at 37 cells", async () => {

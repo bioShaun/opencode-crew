@@ -84,6 +84,9 @@ export interface ViewInput {
   known?: boolean
   /** Current calibration cadence used for the "可能滞后" threshold. */
   calibrationIntervalMs?: number
+  modelDisplay?: 'inline' | 'off'
+  /** provider/model → 展示别名；缺省表示只用截断 id */
+  modelAliases?: Readonly<Record<string, string>>
 }
 export interface AlertRow {
   spans: Span[]
@@ -267,6 +270,14 @@ const effectiveReport = (t: CrewTaskView): Exclude<ReportStatus, 'dropped'> =>
     ? t.report.status
     : t.observed?.outcome === 'failed' || t.observed?.outcome === 'interrupted' ? 'failed' : 'progress'
 
+const MODEL_WIDTH = 7
+const MODEL_GAP = 1
+const modelKey = (m: ModelRefView) => `${m.providerID}/${m.id}`
+const modelCell = (m: ModelRefView | undefined, aliases?: ViewInput['modelAliases']): string => {
+  if (!m) return '—'
+  return truncateCells(aliases?.[modelKey(m)] ?? m.id, MODEL_WIDTH)
+}
+
 function delegationRow(s: SessionView, depth: number, input: ViewInput): Span[] {
   const limit = input.limit(s.agent)
   const messages = input.messages(s.id)
@@ -284,14 +295,26 @@ function delegationRow(s: SessionView, depth: number, input: ViewInput): Span[] 
   const stepTone: Tone = warn ? 'warning' : 'faint'
   const step = `~${steps}/${limit || '—'}`
   const stepWidth = Math.min(12, Math.max(6, cells(step)))
-  const activityWidth = WIDTH - 10 - 1 - 1 - stepWidth
-  return [
+  const showModel = input.modelDisplay !== 'off'
+  const modelW = showModel ? MODEL_WIDTH + MODEL_GAP : 0
+  const activityWidth = WIDTH - 10 - 1 - 1 - stepWidth - modelW
+  const modelTone: Tone = s.model ? 'muted' : 'faint'
+  const spans: Span[] = [
     span(padEndCells(truncateCells(role, 10), 10), roleTone),
     span(' ', roleTone),
+  ]
+  if (showModel) {
+    spans.push(
+      span(padEndCells(modelCell(s.model, input.modelAliases), MODEL_WIDTH), modelTone),
+      span(' ', modelTone),
+    )
+  }
+  spans.push(
     span(padEndCells(truncateCells(activity, activityWidth), activityWidth), activityTone),
     span(' ', roleTone),
     span(padStartCells(truncateCells(step, stepWidth), stepWidth), stepTone),
-  ]
+  )
+  return spans
 }
 
 function taskRows(t: CrewTaskView, limit: number): Span[][] {
@@ -320,6 +343,7 @@ function taskRows(t: CrewTaskView, limit: number): Span[][] {
 }
 
 export function buildSidebar(input: ViewInput): SidebarView {
+  input = { ...input, modelDisplay: input.modelDisplay ?? 'inline' }
   const family = input.sessions.filter(s => s.id !== input.rootID)
   const byID = new Map(family.map(s => [s.id, s]))
   const childrenOf = new Map<string, SessionView[]>()
