@@ -22,12 +22,12 @@ HTML 可直接在浏览器打开，用 `?state=<name>` 或页面顶部切换栏�
 
 | 状态 | 演示内容 |
 | --- | --- |
-| `active`（默认） | 日常情况：engineer 运行中，下面嵌套一个 explorer；Subagents 4 个角色；无 `crew_task`，提醒区为空 |
+| `active`（默认） | 日常情况：engineer、explorer 并行运行；Subagents 4 个角色；无 `crew_task`，提醒区为空 |
 | `idle` | 无运行中的 delegation，Delegations 隐藏；Subagents 显示本次汇总；Todo 全部完成 |
 | `blocked` | 两个 `crew_task`（blocked、failed）和对应提醒，作为 `crew_task` 两行样式示例；engineer 因一次用满 `~80/80` 在 Subagents 中标黄 |
 | `stall` | 一个普通子代理无输出：5–15 分钟为软 stall（`无输出 Xm`，活动列 info，非整行 warning）；≥15 分钟硬 stall 才整行 warning |
-| `overflow` | 4 个运行中的子代理（含嵌套）、1 个 waiting 的 `crew_task`、1 条权限提醒、8 条 Todo；内容超高，`sidebar.content` 垂直滚动，标题和 footer 固定 |
-| `long` | 超长会话标题、任务 ID、自定义角色名（三层嵌套）、活动、check 命令、路径和分支名，验证省略号截断 |
+| `overflow` | 4 个运行中的子代理、1 个 waiting 的 `crew_task`、1 条权限提醒、8 条 Todo；内容超高，`sidebar.content` 垂直滚动，标题和 footer 固定 |
+| `long` | 超长会话标题、任务 ID、自定义角色名（合成缩进压力数据）、活动、check 命令、路径和分支名，验证省略号截断 |
 | `anomaly` | explorer 9 个子会话、640k tokens、$1.41，其中一次用满 `~30/30`；Delegations 中的 explorer 行和 Subagents 中的 explorer 行都为 warning |
 
 ## 宿主约束与参考
@@ -60,7 +60,7 @@ OpenCode v2.2.5 的原生侧栏结构为：
 
 原生缺、Crew 要补的：
 
-- 正在运行的 delegation 一直可见，包括后台运行和嵌套的子代理；
+- 正在运行的 delegation 一直可见，包括后台运行的子代理；
 - 步数预算（已用 / 上限）；
 - 每个子代理当前的活动和卡住提示；
 - 各角色本次的子会话数、`crew_task` 数、tokens 和费用，用来发现异常。
@@ -96,15 +96,15 @@ OpenCode v2.2.5 的原生侧栏结构为：
 
 只列当前 Root 会话族里正在运行的 delegation，外加 Root 拥有的 `crew_task` 会话。标题 `Delegations (N running)`：`Delegations` 粗体 text.base，括号部分 muted；N 为运行中的普通子代理数加 progress / waiting 的 `crew_task` 数。
 
-普通子代理每个占一行，三列：角色名 10 列、活动、右对齐的步数（通常 6 列，步数超长时最多扩到 12 列并压缩活动列），列间空 1 列，合计 37 列。嵌套的每层在角色名前多缩进 2 列（例如 engineer 派出的 explorer），缩进计入 10 列。`active` 状态：
+普通子代理每个占一行，三列：角色名 10 列、活动、右对齐的步数（通常 6 列，步数超长时最多扩到 12 列并压缩活动列），列间空 1 列，合计 37 列。嵌套为布局预留：每层在角色名前多缩进 2 列，缩进计入 10 列；但 Crew 的五个角色都 deny `subagent`（见 `agents/engineer.md`），实际不会产生嵌套会话，所有 delegation 都是 Root 的直接子会话。`active` 状态：
 
 ```text
 Delegations (2 running)
-engineer   Running command…    ~41/80
-  explorer Running read…        ~8/30
+engineer   command…            ~41/80
+explorer   read…                ~8/30
 ```
 
-- 活动文案照搬原生 `busyLabel`：思考中为 `Thinking…`；工具运行中为 `Running <noun>…`，工具输入仍在流式生成时为 `Preparing <noun>…`；noun 为工具名，`shell` 写作 `command`，`execute` 写作 `code`（如 `Running read…`、`Running edit…`、`Preparing write…`）。
+- 活动文案使用紧凑形式（侧栏只列运行中项，`Running` 前缀冗余）：思考中为 `thinking…`；工具运行中为 `<noun>…`，工具输入仍在流式生成时为 `prep <noun>…`；noun 为工具名，`shell` 写作 `command`，`execute` 写作 `code`（如 `read…`、`edit…`、`prep write…`）。主区域仍由宿主显示完整文案，两侧有意不同。
 - 步数写成 `~已用/上限`，因为已用步数是近似值（见“数据来源与口径”）。
 - 颜色：角色名 text.base，活动 info，步数 faint。
 - **软 / 硬 stall**：运行中且无确认输出 ≥5 分钟时，活动列改为 `无输出 Xm`，但保持 info（短时自愈不与硬失败同等醒目）。≥15 分钟或步数达到上限 80% 时，整行 warning：
@@ -118,7 +118,7 @@ engineer   无输出 16m          ~41/80   ← 硬 stall（整行 warning）
 
 ```text
 Delegations (1 running)
-reviewer   Running read…        ~6/30
+reviewer   read…                ~6/30
 ct_fixture             blocked ~17/80
 next 补充 ledger fixture
 ct_migrate              failed ~80/80
@@ -163,8 +163,8 @@ reviewer       1   52k+210k     $0.21
 
 ```text
 Delegations (2 running)
-engineer   Running edit…       ~33/80
-  explorer Running grep…       ~26/30
+engineer   edit…               ~33/80
+explorer   grep…               ~26/30
 
 Subagents (11 sessions · $2.00)
             sess  tok+cache      cost

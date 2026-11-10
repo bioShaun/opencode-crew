@@ -43,16 +43,16 @@ test("cells counts CJK as two columns and truncates with ellipsis", async () => 
   expect(m.padStartCells("~1/80", 6)).toBe(" ~1/80")
 })
 
-test("busyLabel mirrors the host: reasoning, running and streaming tools", async () => {
+test("busyLabel uses the compact sidebar form: noun only, prep for streaming", async () => {
   const m = await vm() as any
   if (MISSING) { expect(MISSING as boolean).toBe(false); return }
-  expect(m.busyLabel(reasoning(undefined))).toBe("Thinking…")
-  expect(m.busyLabel(tool("shell", "running"))).toBe("Running command…")
-  expect(m.busyLabel(tool("bash", "running"))).toBe("Running command…")
-  expect(m.busyLabel(tool("execute", "running"))).toBe("Running code…")
-  expect(m.busyLabel(tool("read", "running"))).toBe("Running read…")
-  expect(m.busyLabel(tool("write", "streaming"))).toBe("Preparing write…")
-  expect(m.busyLabel(tool("task", "running"))).toBe("Running subagent…")
+  expect(m.busyLabel(reasoning(undefined))).toBe("thinking…")
+  expect(m.busyLabel(tool("shell", "running"))).toBe("command…")
+  expect(m.busyLabel(tool("bash", "running"))).toBe("command…")
+  expect(m.busyLabel(tool("execute", "running"))).toBe("code…")
+  expect(m.busyLabel(tool("read", "running"))).toBe("read…")
+  expect(m.busyLabel(tool("write", "streaming"))).toBe("prep write…")
+  expect(m.busyLabel(tool("task", "running"))).toBe("subagent…")
 })
 
 test("sessionActivity picks the active part of the latest assistant message", async () => {
@@ -62,10 +62,10 @@ test("sessionActivity picks the active part of the latest assistant message", as
     assistant([reasoning()], { time: { created: 1, completed: 2 } }),
     assistant([tool("grep", "running")]),
   ]
-  expect(m.sessionActivity(msgs)).toBe("Running grep…")
-  expect(m.sessionActivity([assistant([text("done")], { time: { created: 1, completed: 2 } })])).toBe("Thinking…")
-  expect(m.sessionActivity([assistant([reasoning(undefined)])])).toBe("Thinking…")
-  expect(m.sessionActivity([])).toBe("Thinking…")
+  expect(m.sessionActivity(msgs)).toBe("grep…")
+  expect(m.sessionActivity([assistant([text("done")], { time: { created: 1, completed: 2 } })])).toBe("thinking…")
+  expect(m.sessionActivity([assistant([reasoning(undefined)])])).toBe("thinking…")
+  expect(m.sessionActivity([])).toBe("thinking…")
 })
 
 test("countSteps and tokenTotal follow the documented approximation", async () => {
@@ -129,8 +129,8 @@ test("active state: nested running rows and running count", async () => {
   }))
   expect(view.delegations.runningCount).toBe(2)
   expect(view.delegations.rows.length).toBe(2)
-  expect(plain(view.delegations.rows[0])).toBe("engineer   Running command…     ~1/80")
-  expect(plain(view.delegations.rows[1])).toBe("  explorer Running read…        ~1/30")
+  expect(plain(view.delegations.rows[0])).toBe("engineer   command…             ~1/80")
+  expect(plain(view.delegations.rows[1])).toBe("  explorer read…                ~1/30")
   expect(view.alerts.length).toBe(0)
 })
 
@@ -423,7 +423,7 @@ test("a stale running status is vetoed by the record's idle watermark", async ()
   }))
   expect(view.delegations.runningCount).toBe(1)
   expect(view.delegations.rows.length).toBe(1)
-  expect(plain(view.delegations.rows[0])).toBe("engineer   Running command…     ~1/80")
+  expect(plain(view.delegations.rows[0])).toBe("engineer   command…             ~1/80")
 })
 
 test("an idle-only record is hidden even with a stale running status", async () => {
@@ -449,7 +449,7 @@ test("status() still decides when the record has no execution watermarks", async
     messages: { eng: [assistant([tool("shell", "running")])] },
   }))
   expect(view.delegations.runningCount).toBe(1)
-  expect(plain(view.delegations.rows[0])).toBe("engineer   Running command…     ~1/80")
+  expect(plain(view.delegations.rows[0])).toBe("engineer   command…             ~1/80")
 })
 
 test("an authoritative running set overrides the watermarks in both directions", async () => {
@@ -470,7 +470,7 @@ test("an authoritative running set overrides the watermarks in both directions",
   }))
   expect(view.delegations.runningCount).toBe(1)
   expect(view.delegations.rows.length).toBe(1)
-  expect(plain(view.delegations.rows[0])).toBe("engineer   Running command…     ~1/80")
+  expect(plain(view.delegations.rows[0])).toBe("engineer   command…             ~1/80")
 })
 
 test("overflowing step counts keep delegation rows at 37 cells", async () => {

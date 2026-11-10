@@ -188,10 +188,10 @@ var padStartCells = (s, max) => " ".repeat(Math.max(0, max - cells(s))) + s;
 var canonicalToolName = (name) => name === "bash" ? "shell" : name === "task" ? "subagent" : name === "apply_patch" ? "patch" : name;
 function busyLabel(part) {
   if (part.type === "reasoning")
-    return "Thinking\u2026";
+    return "thinking\u2026";
   const name = canonicalToolName(part.name ?? "");
   const noun = name === "shell" ? "command" : name === "execute" ? "code" : name;
-  return `${part.state?.status === "streaming" ? "Preparing" : "Running"} ${noun}\u2026`;
+  return part.state?.status === "streaming" ? `prep ${noun}\u2026` : `${noun}\u2026`;
 }
 var isActive = (part, messageCompleted) => {
   if (part.type === "reasoning")
@@ -201,7 +201,7 @@ var isActive = (part, messageCompleted) => {
 function sessionActivity(messages) {
   const last = [...messages].reverse().find((m) => m.type === "assistant");
   const part = last ? [...last.content ?? []].reverse().find((p) => isActive(p, last.time?.completed !== undefined)) : undefined;
-  return part ? busyLabel(part) : "Thinking\u2026";
+  return part ? busyLabel(part) : "thinking\u2026";
 }
 var countSteps = (messages) => messages.filter((m) => m.type === "assistant").length;
 var messageStamp = (m) => Math.max(m.time?.created ?? 0, m.time?.streamed ?? 0, m.time?.completed ?? 0, ...(m.content ?? []).flatMap((p) => [p.time?.created ?? 0, p.time?.completed ?? 0]));

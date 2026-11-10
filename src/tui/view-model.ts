@@ -124,11 +124,17 @@ export const padStartCells = (s: string, max: number): string => ' '.repeat(Math
 export const canonicalToolName = (name: string): string =>
   name === 'bash' ? 'shell' : name === 'task' ? 'subagent' : name === 'apply_patch' ? 'patch' : name
 
+/**
+ * Compact activity label. Delegations only lists running sessions, so the
+ * "Running" verb is redundant and costs 8 of the 37 columns; only the
+ * streaming state keeps a marker ("prep") because it means the tool call
+ * arguments are still being generated.
+ */
 export function busyLabel(part: PartView): string {
-  if (part.type === 'reasoning') return 'Thinking…'
+  if (part.type === 'reasoning') return 'thinking…'
   const name = canonicalToolName(part.name ?? '')
   const noun = name === 'shell' ? 'command' : name === 'execute' ? 'code' : name
-  return `${part.state?.status === 'streaming' ? 'Preparing' : 'Running'} ${noun}…`
+  return part.state?.status === 'streaming' ? `prep ${noun}…` : `${noun}…`
 }
 
 const isActive = (part: PartView, messageCompleted: boolean): boolean => {
@@ -139,7 +145,7 @@ const isActive = (part: PartView, messageCompleted: boolean): boolean => {
 export function sessionActivity(messages: MessageView[]): string {
   const last = [...messages].reverse().find(m => m.type === 'assistant')
   const part = last ? [...(last.content ?? [])].reverse().find(p => isActive(p, last.time?.completed !== undefined)) : undefined
-  return part ? busyLabel(part) : 'Thinking…'
+  return part ? busyLabel(part) : 'thinking…'
 }
 
 // --- counting ---
