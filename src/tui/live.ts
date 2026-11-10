@@ -129,6 +129,7 @@ export function mergeSession(local: SessionView | undefined, remote: SessionView
     idle: remote.idle === undefined ? local.idle : Math.max(local.idle ?? 0, remote.idle),
     tokens: tokensOf(local.tokens, remote.tokens),
     cost: Math.max(local.cost ?? 0, remote.cost ?? 0),
+    model: remote.model ?? local.model,
   }
 }
 

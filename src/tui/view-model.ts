@@ -21,6 +21,7 @@ const REPORT_TONE: Record<Exclude<ReportStatus, 'dropped'>, Tone> = {
 }
 
 export interface TokenUsage { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+export interface ModelRefView { id: string; providerID: string; variant?: string }
 export interface SessionView {
   id: string
   parentID?: string
@@ -31,6 +32,7 @@ export interface SessionView {
   idle?: number
   tokens?: TokenUsage
   cost?: number
+  model?: ModelRefView
 }
 export interface CrewTaskView {
   taskID: string

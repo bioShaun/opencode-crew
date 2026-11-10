@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { LiveController, type LiveClock, type LiveEvent, type LiveFetch, type LiveSnapshot, type LiveStore } from "../src/tui/live"
+import { LiveController, mergeSession, type LiveClock, type LiveEvent, type LiveFetch, type LiveSnapshot, type LiveStore } from "../src/tui/live"
 import type { MessageView, SessionView } from "../src/tui/view-model"
 
 const session = (id: string, extra: Partial<SessionView> = {}): SessionView => ({
@@ -320,4 +320,16 @@ test("a failed active probe keeps the last successful calibration time", async (
   await h.clock.advance(15_500)
   expect(h.latest().calibratedAt).toBeGreaterThan(stamped)
   h.controller.dispose()
+})
+
+test("mergeSession keeps the local model when a remote usage update omits it", () => {
+  const local = session("child", { model: { id: "gpt-5", providerID: "openai", variant: "high" } })
+  const remote = session("child", { updated: 2_000, cost: 1.25 })
+  expect(mergeSession(local, remote).model).toEqual({ id: "gpt-5", providerID: "openai", variant: "high" })
+})
+
+test("mergeSession uses the remote model when the remote object includes one", () => {
+  const local = session("child", { model: { id: "gpt-5", providerID: "openai", variant: "high" } })
+  const remote = session("child", { model: { id: "claude-opus-4", providerID: "anthropic" } })
+  expect(mergeSession(local, remote).model).toEqual({ id: "claude-opus-4", providerID: "anthropic" })
 })

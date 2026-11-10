@@ -78,6 +78,7 @@ export function Sidebar(props: { sessionID: string }) {
         idle: s.time.idle,
         tokens: s.tokens,
         cost: s.cost,
+        model: s.model,
       }
       : undefined
   }
@@ -92,6 +93,7 @@ export function Sidebar(props: { sessionID: string }) {
     idle: info.time.idle,
     tokens: info.tokens,
     cost: info.cost,
+    model: info.model,
   })
 
   const storeMessages = (id: string): MessageView[] =>
