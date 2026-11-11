@@ -20,7 +20,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build": "bun run scripts/build.ts",
-    "prepack": "bun run build >&2"
+    "prepack": "test -f dist/index.js || bun run build >&2"
   },
   "dependencies": {
     "@opencode/plugin": "2.2.3"
