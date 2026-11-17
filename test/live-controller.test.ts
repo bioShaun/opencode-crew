@@ -333,3 +333,74 @@ test("mergeSession uses the remote model when the remote object includes one", (
   const remote = session("child", { model: { id: "claude-opus-4", providerID: "anthropic" } })
   expect(mergeSession(local, remote).model).toEqual({ id: "claude-opus-4", providerID: "anthropic" })
 })
+
+test("mergeSession keeps a larger cache.read when work tokens are unchanged", () => {
+  const local = session("child", { tokens: { input: 10, output: 10, reasoning: 0, cache: { read: 10, write: 0 } } })
+  const remote = session("child", { tokens: { input: 10, output: 10, reasoning: 0, cache: { read: 5000, write: 0 } } })
+  expect(mergeSession(local, remote).tokens?.cache?.read).toBe(5000)
+})
+
+test("a trailing drain pulls a session that starts while another pull is in flight", async () => {
+  let releaseA: ((messages: MessageView[]) => void) | undefined
+  const pulled: string[] = []
+  const h = harness({
+    family: ["a", "b"],
+    store: {
+      session: id => (id === "a" || id === "b" ? session(id, { parentID: "root" }) : undefined),
+    },
+    fetch: {
+      messages: id => {
+        pulled.push(id)
+        if (id === "a") return new Promise(resolve => { releaseA = resolve })
+        return Promise.resolve([message("mb", { time: { created: 2_000 } })])
+      },
+    },
+  })
+  h.controller.ingest({ type: "session.execution.started", data: { sessionID: "a" } })
+  await tick()
+  expect(releaseA).toBeDefined()
+  expect(pulled).toEqual(["a"])
+
+  h.controller.ingest({ type: "session.execution.started", data: { sessionID: "b" } })
+  await tick()
+  expect(h.latest().running.has("b")).toBe(true)
+  expect(pulled).toEqual(["a"])
+  expect(h.latest().views.get("b")?.messages ?? []).toEqual([])
+
+  releaseA?.([message("ma", { time: { created: 1_000 } })])
+  await tick()
+  expect(pulled).toContain("b")
+  expect(h.latest().views.get("b")?.messages[0]?.id).toBe("mb")
+  h.controller.dispose()
+})
+
+test("probe does not evict a running session when ownership lookup fails", async () => {
+  let family: string[] = []
+  let failLookup = false
+  const child = session("child", { parentID: "root" })
+  const clock = manualClock()
+  const snapshots: LiveSnapshot[] = []
+  const controller = new LiveController({
+    rootID: "root",
+    family: () => family,
+    store: { session: () => failLookup ? undefined : child, messages: () => [] },
+    fetch: {
+      active: async () => new Set(["child"]),
+      session: async () => failLookup ? undefined : child,
+      messages: async () => [],
+    },
+    clock,
+    onChange: snapshot => snapshots.push(snapshot),
+  })
+  const latest = () => snapshots[snapshots.length - 1]
+  controller.ingest({ type: "session.execution.started", data: { sessionID: "child" } })
+  await tick()
+  // First calibration confirms ownership via store/fetch (family is still empty).
+  await clock.advance(15_500)
+  expect(latest().running.has("child")).toBe(true)
+
+  failLookup = true
+  await clock.advance(15_500)
+  expect(latest().running.has("child")).toBe(true)
+  controller.dispose()
+})

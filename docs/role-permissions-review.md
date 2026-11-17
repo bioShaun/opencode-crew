@@ -4,13 +4,13 @@
 
 ## 1. 权限来源与合并语义
 
-角色权限只来自 `agents/<role>.md` frontmatter（profile 档不覆盖 permissions，见 `docs/crew-profiles.md` §1）。插件在 `agent.transform` 里按三种语义合并（`src/index.ts:47-69`）：
+角色权限只来自 `agents/<role>.md` frontmatter（profile 档不覆盖 permissions，见 `docs/crew-profiles.md` §1）。插件在 `agent.transform` 里按三种语义合并（`src/index.ts:57-70`）：
 
 | 角色 | frontmatter 策略 | 合并方式 | 效果 |
 |---|---|---|---|
 | root | `permissions: []` | 不添规则 | 完整继承宿主现有授权，插件不扩权 |
 | engineer | 三条 deny（`subagent` / `question` / `execute`） | 保留宿主规则 + 查重追加 | bash/edit 等能力由宿主授予；插件只保证不递归、不问人、不 Code Mode |
-| architect | deny-all + 只读白名单 | 整档替换，**另由代码追加**绝对 `plans/**` 写规则 | 最小权限，与宿主配置无关 |
+| architect | deny-all + 只读白名单 + frontmatter 相对路径 `plans/**` 写规则 | 整档替换，**代码再追加**绝对路径 `plans/**` | 最小权限，与宿主配置无关 |
 | explorer | deny-all + 只读白名单 | 整档替换 | 同上，无写权 |
 | reviewer | deny-all + 只读白名单 + 五条固定 git 命令 | 整档替换 | 同上，shell 仅固定字符串 |
 
@@ -18,7 +18,7 @@
 
 两点口径需要说清：
 
-- **architect 的 `plans/**` 写权不在 frontmatter 里。** `agents/architect.md` 只有 deny-all 与只读白名单，`edit` 规则是 `src/index.ts:64-68` 注入的绝对路径。改权限时只看 frontmatter 会漏掉它。
+- **architect 的 `plans/**` 写权分两处。** `agents/architect.md` frontmatter 已有相对路径 `edit: plans/**`；`src/index.ts:65-69` 再按查重追加一条绝对路径 `<cwd>/plans/**`，以便匹配绝对词法路径。改权限时只看 frontmatter 会漏掉绝对路径规则。
 - 官方文档明确「A custom subagent uses its own permissions, not a subset of its parent's permissions」，所以读角色的整档替换符合宿主语义，不是覆盖父会话。
 
 ## 2. 逐角色结论
@@ -36,7 +36,7 @@
 1. **读角色的 `external_directory: allow` 会盖掉用户自己的硬化配置。** 它本身不是异常授权（官方文档：`external_directory` 默认就是 allow，宿主内置 `explore` 也显式允许外部目录），真正的问题是合并顺序——官方文档明确「agent rules are appended after global rules」且「last matching rule wins」，所以只要用户全局设了 `external_directory: ask/deny`，crew 这三个角色都会静默放行。同类写法在 oh-my-openagent 已被用户投诉（issue #2194）。
 2. **webfetch 是外泄链上唯一能带出数据的动作，且只在 architect、explorer 两个角色开放。** reviewer 的 frontmatter 里没有 `webfetch`/`websearch`。恶意文件可诱导这两个角色把源码细节拼进 URL；`.env` 的 ask 只挡密钥文件，不挡源码里的秘密。
 3. **求值顺序与追加语义（已验证，非推断）。** 官方文档确认：规则按顺序合并、last match wins，agent 规则追加在全局规则之后；无规则匹配时为 `ask`；一次操作涉及多个资源时「任意 deny 即 deny，否则任意 ask 即 ask」。读角色「deny-all 在前、allow 在后」因此是文档化语义，而不是靠真机反推的隐性契约——但仍值得进回归清单，理由是防宿主改语义，而非防当前结论失效。
-4. **plans/ 绝对路径是词典匹配，非 symlink 隔离（低危）。** `src/index.ts:63` 注释已明确声明；plans/ 内放 symlink 理论上可写出界外。
+4. **plans/ 绝对路径是词典匹配，非 symlink 隔离（低危）。** `src/index.ts:65` 注释已明确声明；plans/ 内放 symlink 理论上可写出界外。
 
 ## 4. 建议（分档）
 
@@ -81,7 +81,7 @@
 ## 相关文件
 
 - `agents/root.md`、`agents/architect.md`、`agents/engineer.md`、`agents/explorer.md`、`agents/reviewer.md`（权限定义）
-- `src/index.ts:47-69`（合并语义、plans 绝对路径注入与幂等追加）
+- `src/index.ts:57-70`（合并语义、plans 绝对路径注入与幂等追加）
 - `docs/crew-profiles.md` §1、§9（permissions 不被 profile 覆盖；重载幂等）
 - `src/tui/view-model.ts:327`（permission 告警通道）
 
