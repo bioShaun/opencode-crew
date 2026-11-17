@@ -69,7 +69,7 @@ After installation, find the Crew plugin entry added by the command in your exis
 }
 ```
 
-Aliases and `modelDisplay` take effect only after the plugin is reloaded; they do not hot-update.
+Aliases and `modelDisplay` belong to plugin options only, not profile files; they stay in effect while a profile is active. They take effect only after the plugin is reloaded; they do not hot-update. `modelAliases` accepts at most 64 entries; keys are `provider/model` (no variant), and values are 1–12 characters.
 
 These models are placeholders to replace. Providers, credentials and model availability come from the target machine's configuration; the package contains no keys or concrete model defaults. Roles may be omitted from `models`: omission follows native OpenCode model inheritance, not the string `inherit`. Subagents inherit the parent session model; the primary session keeps its selected model. `/crew` explicitly selects the configured Root model, or retains the current session model if none is configured. `crew_task_start` refuses with `MODEL_NOT_CONFIGURED` before any ledger write or session create when neither `models.engineer` nor the calling Root session provides a model; a same-key replay of an existing record does not need the check.
 
@@ -116,7 +116,7 @@ A profile is a small JSON file that replaces the five roles' `models`, `steps` a
 }
 ```
 
-All three fields are optional, and `{}` is a valid profile. Values are placeholders: the package ships no profile files and no concrete provider or model defaults. Validation is the same one applied to plugin options, and a broken file is reported by name without blocking the other profiles or the plugin.
+All three fields are optional, and `{}` is a valid profile. Values are placeholders: the package ships no profile files and no concrete provider or model defaults. Profile files use the same `models` / `steps` / `engineerInstructions` rules as plugin options, but they do not accept `modelDisplay` or `modelAliases`. A broken file is reported by name without blocking the other profiles or the plugin.
 
 Commands (TUI only; there is no server-side command because a server command cannot report success or a broken file):
 

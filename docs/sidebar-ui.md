@@ -103,7 +103,7 @@ inline : 角色 10 + 空 1 + model 7 + 空 1 + 活动 11 + 空 1 + 步数 6 = 37
 off    : 角色 10 + 空 1 +              活动 19 + 空 1 + 步数 6 = 37
 ```
 
-模型列显示该会话的实际模型。别名键是 `provider/model`；未命中别名时截断 `model.id`。缺失显示 `—`，不回落 Crew 配置值。`modelDisplay` 设为 `off` 时去掉模型列，活动列回到 19，整行仍是 37。别名和 `modelDisplay` 要重载插件才生效，不加热更新。
+模型列显示该会话的实际模型。别名键是 `provider/model`（不含 variant），最多 64 项，值为 1–12 字符；未命中别名时截断 `model.id`。缺失显示 `—`，不回落 Crew 配置值。`modelDisplay` 设为 `off` 时去掉模型列，活动列回到 19，整行仍是 37。`modelDisplay` 与 `modelAliases` 只属于插件 options，不能写入配置档；档生效时这两项仍读 options。别名和 `modelDisplay` 要重载插件才生效，不加热更新。
 
 嵌套为布局预留：每层在角色名前多缩进 2 列，缩进计入 10 列；但 Crew 的五个角色都 deny `subagent`（见 `agents/engineer.md`），实际不会产生嵌套会话，所有 delegation 都是 Root 的直接子会话。`active` 状态（`inline`）：
 

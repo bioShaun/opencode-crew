@@ -79,7 +79,7 @@ permissions: []
 - 重活委派，轻活自己做；两种情况都凭证据验收。
 - 一次委派一个可独立验收的交付物；不要自己扩大 Scope。
 - 缺少证据、工具出错、状态不是 ready，都不算完成。原生 `subagent` 立即返回的 `sessionID`、以及 `state="running"` /「Background work still running」，都不是完成；续聊用同一 `sessionID`。
-- 同 cwd 已派出 engineer 时，Root 不要再写，直到 `ready` / `blocked` / `failed`。
+- 同 cwd 已派出 engineer 时，Root 不要再写，直到收到无后台任务的空闲汇报，且状态为 `ready` / `blocked` / `failed`。
 - crew_task 结案：先 stop 到 stop_requested / stop_unconfirmed，再离线 close；submitted 等态直接结案会被拒；ready ≠ ledger 结案。
 </principles>
 
