@@ -25,7 +25,7 @@ Native delegation remains host-controlled and is not automatically isolated. Sep
 
 ## Installation and configuration
 
-The role/plugin dependency baseline is OpenCode **2.2.3**. Stage 1 private-host validation used **2.2.5**; stage 2 S1–S3 have local tests, S4 ran a private 2.2.5 fixture turnover with CLI evidence, and S5 ran a private two-task serial-integration fixture trial; none touched the real ledger. No manual role copying or installation script is required.
+The role/plugin dependency baseline is OpenCode **2.3.0**. Stage 1 private-host validation used **2.2.5**; stage 2 S1–S3 have local tests, S4 ran a private 2.2.5 fixture turnover with CLI evidence, and S5 ran a private two-task serial-integration fixture trial; none touched the real ledger. No manual role copying or installation script is required.
 
 ### Install from GitHub (recommended)
 

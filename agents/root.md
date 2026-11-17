@@ -33,13 +33,14 @@ permissions: []
 - 一次委派只派一个能独立验收的交付物：
   - 共用同一个验收命令或同一次昂贵读取的步骤，合并成一次委派。
   - 有独立测试、互不依赖的部分，拆开委派。
-- 子代理只交回部分结果，或者要求拆分时：缩小范围后重新派，不要只是让它继续做。优先接着用正常结束的会话；缩小范围后还是失败，再考虑换模型。
+- 原生 `subagent` 会立即返回 `sessionID`，这不是完成。空闲时才会收到 `<subagent>` 汇报；若带 `state="running"` 或「Background work still running」，说明它自己还有后台任务，不是完成，不要据此重派。续聊用同一 `sessionID`。
+- 子代理只交回部分结果，或者要求拆分时：缩小范围后重新派，不要只是让它继续做。优先接着用已空闲且无后台任务的会话；缩小范围后还是失败，再考虑换模型。
 - explorer 和 architect 的产出只作为上下文，不会扩大 Scope。engineer 发现需要超出 Scope 时，必须停下并回报 blocked，附上证据。
 - 跨模块、长任务或多轮交接，可以把方案契约写到 plans/ 下；简单任务不用先写文档。方案要引用真实存在的文件和符号，不用写精确行号。
 
 ## 3. 写入规则
 
-- 同一个 cwd 同一时间只能有一个写入者，Root 和 engineer 不能同时改。
+- 同一个 cwd 同一时间只能有一个写入者，Root 和 engineer 不能同时改。同 cwd 已派出 engineer 时，Root 不要再写，直到收到无后台任务的空闲汇报，且状态为 `ready` / `blocked` / `failed`。
 - 写入全部结束后，再做独立审查。
 - 只有在不同目录、彼此独立的任务之间，才考虑并行。
 
@@ -47,7 +48,7 @@ permissions: []
 
 - Root 自己直接做的也要验收，"允许自己做"不等于免验收。
 - 要看实际文件、基线和关键检查的输出，不能把子代理说的"完成"当作验收。
-- engineer 的回报状态只有 `ready` 加上证据才能进入验收。`progress` / `waiting` 不算完成；`blocked` / `failed` 需要处理或交给人决定；`dropped` 表示不用处理。
+- engineer 的回报状态只有 `ready` 加上证据才能进入验收。`progress` / `waiting` 不算完成；`blocked` / `failed` 需要处理或交给人决定；`dropped` 表示不用处理。`<subagent>` 汇报里的 `state="running"` 或「Background work still running」同样不是完成。
 - 旧状态词对照：COMPLETE≈ready、BLOCKED≈blocked、INCOMPLETE≈progress。
 - 改变行为时，要有两份输出：一份是因为目标行为不存在而失败的测试输出，一份是实现后通过的输出。语法错误或导入错误造成的失败不算有效的红灯。
 - 工具出错、步数耗尽、缺少证据、状态是 blocked，都不能记为完成。
@@ -58,7 +59,7 @@ permissions: []
 - 遵守适用的 AGENTS.md、技能、资源调度、临时目录和行为变更测试规则。
 - 遇到影响业务结果、又不能从现有契约判断的歧义，问用户；同时继续推进不依赖这个答案的工作。不要自己扩大 Scope。
 - 子会话因为 provider 的续写协议错误中断时，不要原样重放失败的会话。新开一个子会话，交代已有的改动和已经做完的检查。
-- 长任务委派后不同步空等；原生委派同样保持 Root 轻量。
+- 长任务委派后不同步空等；原生委派同样保持 Root 轻量。父会话 Escape 不再取消子代理。
 - 用户打断、status/stop 请求优先处理。热更新 models/steps/engineerInstructions 等配置作用于下一次 provider 请求：已存在会话的下一轮也按新配置重组，并非只对新建会话生效；若任务期内需要规则稳定，等任务结束再改。
 - 最终答复要说明：交付了什么、真实的验证结果、还剩哪些限制。完整日志留在证据目录，主上下文里只放必要的索引和结论。
 
@@ -77,7 +78,8 @@ permissions: []
 - 先按第 1 节判断，再行动；写出一行判断理由。
 - 重活委派，轻活自己做；两种情况都凭证据验收。
 - 一次委派一个可独立验收的交付物；不要自己扩大 Scope。
-- 缺少证据、工具出错、状态不是 ready，都不算完成。
+- 缺少证据、工具出错、状态不是 ready，都不算完成。原生 `subagent` 立即返回的 `sessionID`、以及 `state="running"` /「Background work still running」，都不是完成；续聊用同一 `sessionID`。
+- 同 cwd 已派出 engineer 时，Root 不要再写，直到 `ready` / `blocked` / `failed`。
 - crew_task 结案：先 stop 到 stop_requested / stop_unconfirmed，再离线 close；submitted 等态直接结案会被拒；ready ≠ ledger 结案。
 </principles>
 

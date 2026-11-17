@@ -8,8 +8,8 @@ OpenCode 会话页右侧在没有 Todo、MCP 或其他扩展内容时较空。Cr
 
 基线：
 
-- Crew Server 插件：`@opencode/plugin` 2.2.3。
-- 宿主参考实现：OpenCode v2.2.5。
+- Crew Server 插件：`@opencode/plugin` 2.3.0。
+- 宿主参考实现：OpenCode v2.3.0。
 - 原型中的角色、任务、步数、tokens、费用和时间均为示意数据，不代表真实宿主状态。
 
 ## 原型文件
@@ -32,7 +32,7 @@ HTML 可直接在浏览器打开，用 `?state=<name>` 或页面顶部切换栏�
 
 ## 宿主约束与参考
 
-OpenCode v2.2.5 的原生侧栏结构为：
+OpenCode v2.3.0 的原生侧栏结构为：
 
 1. 会话标题；
 2. 可垂直滚动的 `sidebar.content`；
@@ -40,22 +40,22 @@ OpenCode v2.2.5 的原生侧栏结构为：
 
 参考实现：
 
-- [会话侧栏](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/routes/session/sidebar.tsx)
-- [原生 Todo](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/feature-plugins/sidebar/todo.tsx) / [Todo 条目](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/component/todo-item.tsx)
-- [原生 Context](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/feature-plugins/sidebar/context.tsx)
-- [原生 footer](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/feature-plugins/sidebar/footer.tsx) / [路径截断](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/ui/file-path.tsx)
-- [原生 MCP 列表](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/feature-plugins/sidebar/mcp.tsx)
+- [会话侧栏](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/routes/session/sidebar.tsx)
+- [原生 Todo](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/feature-plugins/sidebar/todo.tsx) / [Todo 条目](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/component/todo-item.tsx)
+- [原生 Context](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/feature-plugins/sidebar/context.tsx)
+- [原生 footer](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/feature-plugins/sidebar/footer.tsx) / [路径截断](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/ui/file-path.tsx)
+- [原生 MCP 列表](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/feature-plugins/sidebar/mcp.tsx)
 
 侧栏宽 42 列，上下内边距各 1 行、左右各 2 列；`sidebar.content` 内部再留 1 列给滚动条，可用宽度 37 列，区块之间空 1 行。实现时使用宿主主题和 OpenTUI 布局，HTML 原型只用 `ch` 和行高模拟这套字符网格。
 
 ## 原生已覆盖与 Crew 补充
 
-主区域原生已经显示的内容，侧栏不再重复（均在 v2.2.5 `packages/tui/src/routes/session/` 下）：
+主区域原生已经显示的内容，侧栏不再重复（均在 v2.3.0 `packages/tui/src/routes/session/` 下）：
 
-- Root 会话把整个会话族的权限请求和表单汇总，在输入框位置弹出：[`index.tsx` 203–220](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/routes/session/index.tsx#L203-L220)、[1602–1607](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/routes/session/index.tsx#L1602-L1607)；
+- Root 会话把整个会话族的权限请求和表单汇总，在输入框位置弹出：[`index.tsx` 209–222](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/routes/session/index.tsx#L209-L222)、[1619–1636](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/routes/session/index.tsx#L1619-L1636)；
 - 子代理完成、失败、取消时有通知行：`index.tsx` 中的 `SessionNoticeMessageV2`；
-- 运行中的子代理在工具行显示 busyLabel 和活动摘要：[`activity-summary.ts`](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/routes/session/activity-summary.ts)；
-- 输入框的 Subagents 页签默认收起、最多 5 行：[`composer/subagents-tab.tsx`](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/tui/src/routes/session/composer/subagents-tab.tsx)；
+- 运行中的子代理在工具行显示 busyLabel 和活动摘要：[`activity-summary.ts`](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/routes/session/activity-summary.ts)；
+- 输入框的 Subagents 页签默认收起、最多 5 行：[`composer/subagents-tab.tsx`](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/routes/session/composer/subagents-tab.tsx)；
 - 每轮回复末尾显示 agent、模型和耗时：`index.tsx` 中的 `AssistantFooter`。
 
 原生缺、Crew 要补的：
@@ -214,7 +214,7 @@ explorer       9       640k     $1.41
 | --- | --- | --- |
 | 会话族、agent、嵌套关系 | 宿主 `data.session.family` + 事件；`client.session.list({ parentID })` 补齐；`active()` 校准；`session.get` 补 parentID | Delegations 的 running 由 `/active` 快照校准：有运行中成员时每 15s，空闲时每 60s 只探测 active；`session.created` / `session.execution.*` 事件立即更新，没有事件的成员由校准发现。宿主的 `family` 缓存不保证包含本轮新派出的嵌套子会话，因此未知 session 只做一次 `session.get` 归属核对并缓存。冷启动后宿主 family 缓存可能为空，此时用 `client.session.list({ parentID, order: "desc", limit: 200 })` 拉 Root 的直接子会话（最多 4 次指数退避重试，`server.connected` 时再拉一次），避免 Subagents 整表消失。`agent.list` 抛错时退回空列表。快照首次返回前退回 `time.busy`/`idle` 水位，再退回 `status` |
 | 步数上限 | `data.location.agent` 的 `AgentInfo.steps` | 来自 `agents/*.md` 的 `steps` 和配置 `options.steps`，由 [`src/index.ts:55`](../src/index.ts#L55) 写入；当前 architect 40、engineer 80、explorer 30、reviewer 30 |
-| 已用步数 | 运行中会话 `client.message.list({ type: "assistant", limit: 100 })` | OpenCode 按 runner 的逻辑 step 计数（[`runner/llm.ts`](https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/session/runner/llm.ts)），重试、压缩、截断续写会让一个 step 对应多条消息，TUI 只能用子会话 assistant 消息数近似，显示为 `~N/M`；同一会话跨轮复用时消息数继续累计，因此可能长期超过单轮上限；80% 与用满的判定也基于该近似值 |
+| 已用步数 | 运行中会话 `client.message.list({ type: "assistant", limit: 100 })` | OpenCode 按 runner 的逻辑 step 计数（[`runner/llm.ts`](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/core/src/session/runner/llm.ts)），重试、压缩、截断续写会让一个 step 对应多条消息，TUI 只能用子会话 assistant 消息数近似，显示为 `~N/M`；同一会话跨轮复用时消息数继续累计，因此可能长期超过单轮上限；80% 与用满的判定也基于该近似值 |
 | 子会话数 | 会话族里的 `SessionInfo.agent` | 按会话去重，不数工具调用；标题的 N 为各角色合计。`crew_task` 的 tokens / cost 并入 engineer，但不计入子会话数 |
 | tokens | `SessionInfo.tokens`；`crew_task` 快照的消息 tokens | Subagents 显示 `工作 + cache.read`；工作 token = input + output + reasoning + cache.write，缺失的消息跳过；异常阈值只用工作 token |
 | 费用 | `data.session.cost(childID)`；运行中会话用 `SessionInfo.cost` | 只算该子会话；传 Root ID 时会累加会话族中已知的会话，因此 Context 的 `$ spent` 不低于 Subagents 合计 |
