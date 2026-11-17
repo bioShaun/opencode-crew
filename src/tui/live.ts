@@ -100,8 +100,14 @@ const totalTokens = (s: SessionView | undefined): number => {
   return t ? (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + (t.cache?.write ?? 0) : 0
 }
 
-const tokensOf = (a?: SessionView["tokens"], b?: SessionView["tokens"]) =>
-  totalTokens({ id: "", created: 0, updated: 0, tokens: b }) > totalTokens({ id: "", created: 0, updated: 0, tokens: a }) ? b : a
+const tokensOf = (a?: SessionView["tokens"], b?: SessionView["tokens"]) => {
+  if (!b) return a
+  if (!a) return b
+  const pick = totalTokens({ id: "", created: 0, updated: 0, tokens: b }) > totalTokens({ id: "", created: 0, updated: 0, tokens: a }) ? b : a
+  const read = Math.max(a.cache?.read ?? 0, b.cache?.read ?? 0)
+  if ((pick.cache?.read ?? 0) >= read) return pick
+  return { ...pick, cache: { write: pick.cache?.write ?? 0, read } }
+}
 
 /** Union by id; a later stamp replaces in place, older duplicates are dropped. */
 export function mergeMessages(base: MessageView[], incoming: MessageView[]): MessageView[] {
@@ -178,6 +184,7 @@ export class LiveController {
   private calibrationDue = 0
   private draining = false
   private trailing = false
+  private trailingForce = false
 
   constructor(private readonly options: LiveOptions) {
     this.clock = options.clock ?? realClock
@@ -205,6 +212,7 @@ export class LiveController {
     this.activeKnown = false
     this.lastCalibratedAt = 0
     this.trailing = false
+    this.trailingForce = false
     this.rootID = rootID
     this.emit()
     this.refreshNow()
@@ -281,6 +289,9 @@ export class LiveController {
       const belongs = await this.belongs(id)
       if (this.disposed) return false
       this.resolving.delete(id)
+      // A lookup miss is not proof the session is foreign: do not cache a
+      // negative, so a later event or probe can retry.
+      if (belongs === undefined) return false
       if (!belongs) {
         this.member.set(id, false)
         this.awaiting.delete(id)
@@ -297,8 +308,10 @@ export class LiveController {
     return check
   }
 
-  private async belongs(id: string): Promise<boolean> {
+  /** true / false / undefined when store and fetch both miss (or fetch fails). */
+  private async belongs(id: string): Promise<boolean | undefined> {
     if (id === this.rootID) return true
+    if (this.member.get(id) === true) return true
     const host = this.options.family()
     if (host.includes(id)) return true
     let current = id
@@ -307,7 +320,7 @@ export class LiveController {
       const known = this.options.store.session(current)
       const info = known ?? await this.options.fetch.session(current)
       if (this.disposed) return false
-      if (!info) return false
+      if (!info) return undefined
       if (host.includes(info.id)) return true
       if (!info.parentID) return false
       current = info.parentID
@@ -473,10 +486,21 @@ export class LiveController {
     if (this.disposed) return false
     this.activeKnown = true
     const next = new Set<string>()
-    for (const id of ids) if (await this.belongs(id)) next.add(id)
+    const unknown = new Set<string>()
+    for (const id of ids) {
+      const result = await this.belongs(id)
+      if (result) {
+        next.add(id)
+        if (id !== this.rootID) this.member.set(id, true)
+      } else if (result === undefined) {
+        unknown.add(id)
+      }
+    }
     if (this.disposed) return false
     for (const id of [...this.running]) {
-      if (next.has(id)) continue
+      // Still in the active set, but ownership could not be confirmed
+      // (cold-start empty family + session.get miss): keep it running.
+      if (next.has(id) || unknown.has(id)) continue
       this.running.delete(id)
       if (id === this.rootID) continue
       // A missed terminal event still needs its final values.
@@ -501,20 +525,26 @@ export class LiveController {
 
   private async drain(force: boolean): Promise<void> {
     if (this.disposed) return
-    if (this.draining) { this.trailing = true; return }
+    if (this.draining) {
+      this.trailing = true
+      if (force) this.trailingForce = true
+      return
+    }
     this.draining = true
     try {
-      const ids = [...new Set([...this.dirty, ...this.finalPending])]
-      for (let index = 0; index < ids.length; index += this.concurrency) {
-        await Promise.all(ids.slice(index, index + this.concurrency).map(id => this.pull(id, force)))
-        if (this.disposed) return
-      }
+      do {
+        const useForce = force || this.trailingForce
+        this.trailing = false
+        this.trailingForce = false
+        const ids = [...new Set([...this.dirty, ...this.finalPending])]
+        for (let index = 0; index < ids.length; index += this.concurrency) {
+          await Promise.all(ids.slice(index, index + this.concurrency).map(id => this.pull(id, useForce)))
+          if (this.disposed) return
+        }
+        force = useForce
+      } while (this.trailing)
     } finally {
       this.draining = false
-    }
-    if (this.trailing) {
-      this.trailing = false
-      if (!this.disposed) { this.emit(); this.arm() }
     }
   }
 

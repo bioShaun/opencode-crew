@@ -343,6 +343,30 @@ test("alerts come from crew_task permissions, waiting, blocked and failed", asyn
   expect(waiting.spans.find((s: any) => s.text === "waiting").tone).toBe("warning")
 })
 
+test("alerts include observed failed or interrupted when report is missing", async () => {
+  const m = await vm() as any
+  if (MISSING) { expect(MISSING as boolean).toBe(false); return }
+  const view = m.buildSidebar(input({
+    sessions: [session("root", { agent: "root" })],
+    tasks: [
+      task({ taskID: "ct_crash", sessionID: "s-fail", observed: { outcome: "failed" } }),
+      task({ taskID: "ct_stop", sessionID: "s-int", observed: { outcome: "interrupted" } }),
+      task({ taskID: "ct_ok", sessionID: "s-ok", observed: { outcome: "succeeded" } }),
+    ],
+  }))
+  const rows = view.alerts.map((a: any) => plain(a.spans))
+  expect(rows.some((r: string) => /^! ct_crash +failed 查看失败日志$/.test(r))).toBe(true)
+  expect(rows.some((r: string) => /^! ct_stop +failed 查看失败日志$/.test(r))).toBe(true)
+  expect(rows.some((r: string) => r.includes("ct_ok"))).toBe(false)
+  expect(view.alerts.map((a: any) => a.kind)).toEqual(["failed", "failed"])
+  const crash = view.alerts.find((a: any) => plain(a.spans).includes("ct_crash"))
+  expect(crash.sessionID).toBe("s-fail")
+  expect(crash.spans.find((s: any) => s.text === "failed").tone).toBe("error")
+  // Delegations still surface the same effective failed status.
+  const delegationText = view.delegations.rows.map((r: any) => plain(r)).join("\n")
+  expect(delegationText).toContain("failed")
+})
+
 test("anomaly state: warning rows in both Delegations and Subagents", async () => {
   const m = await vm() as any
   if (MISSING) { expect(MISSING as boolean).toBe(false); return }
