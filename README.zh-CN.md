@@ -69,7 +69,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 }
 ```
 
-别名和 `modelDisplay` 要重载插件才生效，不会热更新。
+别名和 `modelDisplay` 只属于插件 options，不能写入配置档；档生效时这两项仍沿用 options 中的值。要重载插件才生效，不会热更新。`modelAliases` 最多 64 项，键为 `provider/model`（不含 variant），值为 1–12 字符。
 
 以上是待替换的占位模型，provider、凭证和模型可用性由目标机配置提供，包内不包含密钥或具体模型默认值。`models` 可省略部分角色；省略表示遵循 OpenCode 原生模型继承规则，不是字符串 `inherit`。子代理继承父会话模型；主会话保持其已选模型。`/crew` 会显式选择已配置的 Root 模型，未配置则保留当前会话模型。当 `models.engineer` 和调用方 Root 会话都拿不出模型时，`crew_task_start` 在写 ledger 或创建会话之前以 `MODEL_NOT_CONFIGURED` 拒派；同 key 重放已有记录不做该检查。
 
@@ -116,7 +116,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 }
 ```
 
-三个字段都可选，`{}` 是合法档。示例只用占位符：包内不提供任何档文件，也不含真实 provider 或模型默认值。校验规则与插件 options 完全相同；单个档损坏只按档名报错，不影响其他档，也不阻止插件加载。
+三个字段都可选，`{}` 是合法档。示例只用占位符：包内不提供任何档文件，也不含真实 provider 或模型默认值。档文件按与插件 options 相同的规则校验 `models` / `steps` / `engineerInstructions`，但不接受 `modelDisplay` 或 `modelAliases`。单个档损坏只按档名报错，不影响其他档，也不阻止插件加载。
 
 命令（仅 TUI 侧注册；server 命令没有 UI 输出通道，无法回报成功或损坏原因）：
 

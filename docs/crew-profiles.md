@@ -47,7 +47,7 @@
 ```
 
 - 三个字段都是可选的，`{}` 是合法档（效果 = 全部回落 Markdown / 宿主默认）。
-- 只支持 `models` / `steps` / `engineerInstructions`；出现未知 key 直接判非法（与 options 校验同一条规则）。
+- 只支持 `models` / `steps` / `engineerInstructions`；出现未知 key 直接判非法。插件 options 额外允许的 `modelDisplay` / `modelAliases` 不能写进档文件；档生效时侧栏仍读 options 里的这两项。
 - 只读同目录下的 `*.json`（扩展名大小写不敏感），跳过 `.` 开头的隐藏文件与临时文件；其他扩展名忽略。
 - 单档损坏只影响该档：错误进入 `list` 的「错误」列表，其他档照常可用，插件照常加载。
 - 单个档读入后超过 1MB 判为非法，错误消息给出实际字符数。
