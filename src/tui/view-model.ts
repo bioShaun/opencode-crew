@@ -21,6 +21,7 @@ const REPORT_TONE: Record<Exclude<ReportStatus, 'dropped'>, Tone> = {
 }
 
 export interface TokenUsage { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+export interface ModelRefView { id: string; providerID: string; variant?: string }
 export interface SessionView {
   id: string
   parentID?: string
@@ -31,6 +32,7 @@ export interface SessionView {
   idle?: number
   tokens?: TokenUsage
   cost?: number
+  model?: ModelRefView
 }
 export interface CrewTaskView {
   taskID: string
@@ -82,6 +84,9 @@ export interface ViewInput {
   known?: boolean
   /** Current calibration cadence used for the "可能滞后" threshold. */
   calibrationIntervalMs?: number
+  modelDisplay?: 'inline' | 'off'
+  /** provider/model → 展示别名；缺省表示只用截断 id */
+  modelAliases?: Readonly<Record<string, string>>
 }
 export interface AlertRow {
   spans: Span[]
@@ -124,11 +129,17 @@ export const padStartCells = (s: string, max: number): string => ' '.repeat(Math
 export const canonicalToolName = (name: string): string =>
   name === 'bash' ? 'shell' : name === 'task' ? 'subagent' : name === 'apply_patch' ? 'patch' : name
 
+/**
+ * Compact activity label. Delegations only lists running sessions, so the
+ * "Running" verb is redundant and costs 8 of the 37 columns; only the
+ * streaming state keeps a marker ("prep") because it means the tool call
+ * arguments are still being generated.
+ */
 export function busyLabel(part: PartView): string {
-  if (part.type === 'reasoning') return 'Thinking…'
+  if (part.type === 'reasoning') return 'thinking…'
   const name = canonicalToolName(part.name ?? '')
   const noun = name === 'shell' ? 'command' : name === 'execute' ? 'code' : name
-  return `${part.state?.status === 'streaming' ? 'Preparing' : 'Running'} ${noun}…`
+  return part.state?.status === 'streaming' ? `prep ${noun}…` : `${noun}…`
 }
 
 const isActive = (part: PartView, messageCompleted: boolean): boolean => {
@@ -139,7 +150,7 @@ const isActive = (part: PartView, messageCompleted: boolean): boolean => {
 export function sessionActivity(messages: MessageView[]): string {
   const last = [...messages].reverse().find(m => m.type === 'assistant')
   const part = last ? [...(last.content ?? [])].reverse().find(p => isActive(p, last.time?.completed !== undefined)) : undefined
-  return part ? busyLabel(part) : 'Thinking…'
+  return part ? busyLabel(part) : 'thinking…'
 }
 
 // --- counting ---
@@ -259,6 +270,14 @@ const effectiveReport = (t: CrewTaskView): Exclude<ReportStatus, 'dropped'> =>
     ? t.report.status
     : t.observed?.outcome === 'failed' || t.observed?.outcome === 'interrupted' ? 'failed' : 'progress'
 
+const MODEL_WIDTH = 7
+const MODEL_GAP = 1
+const modelKey = (m: ModelRefView) => `${m.providerID}/${m.id}`
+const modelCell = (m: ModelRefView | undefined, aliases?: ViewInput['modelAliases']): string => {
+  if (!m) return '—'
+  return truncateCells(aliases?.[modelKey(m)] ?? m.id, MODEL_WIDTH)
+}
+
 function delegationRow(s: SessionView, depth: number, input: ViewInput): Span[] {
   const limit = input.limit(s.agent)
   const messages = input.messages(s.id)
@@ -276,14 +295,26 @@ function delegationRow(s: SessionView, depth: number, input: ViewInput): Span[] 
   const stepTone: Tone = warn ? 'warning' : 'faint'
   const step = `~${steps}/${limit || '—'}`
   const stepWidth = Math.min(12, Math.max(6, cells(step)))
-  const activityWidth = WIDTH - 10 - 1 - 1 - stepWidth
-  return [
+  const showModel = input.modelDisplay !== 'off'
+  const modelW = showModel ? MODEL_WIDTH + MODEL_GAP : 0
+  const activityWidth = WIDTH - 10 - 1 - 1 - stepWidth - modelW
+  const modelTone: Tone = s.model ? 'muted' : 'faint'
+  const spans: Span[] = [
     span(padEndCells(truncateCells(role, 10), 10), roleTone),
     span(' ', roleTone),
+  ]
+  if (showModel) {
+    spans.push(
+      span(padEndCells(modelCell(s.model, input.modelAliases), MODEL_WIDTH), modelTone),
+      span(' ', modelTone),
+    )
+  }
+  spans.push(
     span(padEndCells(truncateCells(activity, activityWidth), activityWidth), activityTone),
     span(' ', roleTone),
     span(padStartCells(truncateCells(step, stepWidth), stepWidth), stepTone),
-  ]
+  )
+  return spans
 }
 
 function taskRows(t: CrewTaskView, limit: number): Span[][] {
@@ -312,6 +343,7 @@ function taskRows(t: CrewTaskView, limit: number): Span[][] {
 }
 
 export function buildSidebar(input: ViewInput): SidebarView {
+  input = { ...input, modelDisplay: input.modelDisplay ?? 'inline' }
   const family = input.sessions.filter(s => s.id !== input.rootID)
   const byID = new Map(family.map(s => [s.id, s]))
   const childrenOf = new Map<string, SessionView[]>()

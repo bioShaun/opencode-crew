@@ -1,6 +1,7 @@
 /* @jsxImportSource @opentui/solid */
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { usePlugin } from "@opencode/plugin/tui"
+import { parseCrewDisplay } from "../config"
 import { crewTasks, parseTasksOutput } from "../snapshot"
 import {
   buildSidebar,
@@ -78,6 +79,7 @@ export function Sidebar(props: { sessionID: string }) {
         idle: s.time.idle,
         tokens: s.tokens,
         cost: s.cost,
+        model: s.model,
       }
       : undefined
   }
@@ -92,6 +94,7 @@ export function Sidebar(props: { sessionID: string }) {
     idle: info.time.idle,
     tokens: info.tokens,
     cost: info.cost,
+    model: info.model,
   })
 
   const storeMessages = (id: string): MessageView[] =>
@@ -198,6 +201,7 @@ export function Sidebar(props: { sessionID: string }) {
   createEffect(() => hydrate())
 
   const statusOf = (id: string) => attempt(() => context.data.session.status(id), "idle" as const)
+  const display = createMemo(() => parseCrewDisplay(context.options))
   const view = createMemo<SidebarView>(() => {
     const rootID = rootOf(props.sessionID)
     const snapshot = live()
@@ -234,6 +238,8 @@ export function Sidebar(props: { sessionID: string }) {
       known: snapshot.known,
       calibratedAt: snapshot.calibratedAt,
       calibrationIntervalMs: snapshot.calibrationIntervalMs,
+      modelDisplay: display().display,
+      modelAliases: display().aliases,
     })
   })
 

@@ -8317,6 +8317,55 @@ function parseCrewConfig(input, label = optionsLabel) {
   }
   return { models, steps, engineerInstructions: instructions(input.engineerInstructions, label) };
 }
+var ALIAS_KEY = /^[^\s/]+\/[^\s/]+$/;
+var CONTROL = /[\u0000-\u001f\u007f]/;
+function parseAliases(value) {
+  if (value === undefined)
+    return {};
+  const field = "options.modelAliases";
+  if (!object4(value))
+    fail3(`${field} \u5FC5\u987B\u662F\u5BF9\u8C61`);
+  const entries = Object.entries(value);
+  if (entries.length > 64)
+    fail3(`${field} \u6700\u591A 64 \u9879`);
+  const aliases = {};
+  for (const [key, raw] of entries) {
+    if (!ALIAS_KEY.test(key))
+      fail3(`${field} \u7684\u952E "${key}" \u5FC5\u987B\u4E3A provider/model`);
+    const item = `${field}.${key}`;
+    if (typeof raw !== "string")
+      fail3(`${item} \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
+    const text = raw.trim();
+    if (!text)
+      fail3(`${item} \u4E0D\u80FD\u4E3A\u7A7A`);
+    if (CONTROL.test(raw))
+      fail3(`${item} \u4E0D\u80FD\u5305\u542B\u63A7\u5236\u5B57\u7B26`);
+    if (text.length > 12)
+      fail3(`${item} \u6700\u591A 12 \u5B57\u7B26`);
+    aliases[key] = text;
+  }
+  return aliases;
+}
+function parseDisplayMode(value) {
+  if (value === undefined)
+    return "inline";
+  if (value === "inline" || value === "off")
+    return value;
+  fail3("options.modelDisplay \u5FC5\u987B\u4E3A inline \u6216 off");
+}
+function parseCrewDisplay(input) {
+  if (input == null)
+    return { aliases: {}, display: "inline" };
+  if (!object4(input))
+    fail3("options \u5FC5\u987B\u662F\u5BF9\u8C61");
+  return { aliases: parseAliases(input.modelAliases), display: parseDisplayMode(input.modelDisplay) };
+}
+function parseCrewOptions(input) {
+  if (!object4(input))
+    fail3("options \u5FC5\u987B\u662F\u5BF9\u8C61");
+  const { modelAliases, modelDisplay, ...rest } = input;
+  return { baseline: parseCrewConfig(rest), display: parseCrewDisplay({ modelAliases, modelDisplay }) };
+}
 var PROFILE_NAME_MAX = 64;
 var PROFILE_NAME_PATTERN = /^(?!\.)(?=.*[a-z0-9])[a-z0-9._-]{1,64}$/;
 function isProfileName(name) {
@@ -8832,7 +8881,7 @@ function loadRole(id) {
 var src_default = Plugin.define({
   id: "opencode-crew",
   async setup(ctx) {
-    const baseline = parseCrewConfig(ctx.options ?? {});
+    const { baseline } = parseCrewOptions(ctx.options ?? {});
     const profiles = createCrewProfiles({
       baseline,
       reload: async () => {

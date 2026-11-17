@@ -322,6 +322,18 @@ test("a failed active probe keeps the last successful calibration time", async (
   h.controller.dispose()
 })
 
+test("mergeSession keeps the local model when a remote usage update omits it", () => {
+  const local = session("child", { model: { id: "gpt-5", providerID: "openai", variant: "high" } })
+  const remote = session("child", { updated: 2_000, cost: 1.25 })
+  expect(mergeSession(local, remote).model).toEqual({ id: "gpt-5", providerID: "openai", variant: "high" })
+})
+
+test("mergeSession uses the remote model when the remote object includes one", () => {
+  const local = session("child", { model: { id: "gpt-5", providerID: "openai", variant: "high" } })
+  const remote = session("child", { model: { id: "claude-opus-4", providerID: "anthropic" } })
+  expect(mergeSession(local, remote).model).toEqual({ id: "claude-opus-4", providerID: "anthropic" })
+})
+
 test("mergeSession keeps a larger cache.read when work tokens are unchanged", () => {
   const local = session("child", { tokens: { input: 10, output: 10, reasoning: 0, cache: { read: 10, write: 0 } } })
   const remote = session("child", { tokens: { input: 10, output: 10, reasoning: 0, cache: { read: 5000, write: 0 } } })

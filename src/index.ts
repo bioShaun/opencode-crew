@@ -5,7 +5,7 @@ import { parse } from "yaml"
 import { registerTasks } from "./tasks"
 import { registerTaskSnapshot } from "./tasks-snapshot"
 import { composeRoleSystem, splitRoleBody, type RoleAppendices } from "./model-family"
-import { IDS, fail, object, parseCrewConfig, type RoleID } from "./config"
+import { IDS, fail, object, parseCrewOptions, type RoleID } from "./config"
 import { createCrewProfiles } from "./profile-state"
 import { registerProfileRpc } from "./profile-rpc"
 
@@ -32,7 +32,7 @@ export default Plugin.define({
   id: "opencode-crew",
   async setup(ctx) {
     // Validate every input before registering anything; prompts/policies exist only in Markdown.
-    const baseline = parseCrewConfig(ctx.options ?? {})
+    const { baseline } = parseCrewOptions(ctx.options ?? {})
     // Profiles are an optional overlay: a broken profile or pointer must never block
     // plugin load, otherwise the only self-rescue command (`/crew-profile off`) is gone.
     const profiles = createCrewProfiles({
