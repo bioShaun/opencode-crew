@@ -23,10 +23,10 @@
     "prepack": "bun run build >&2"
   },
   "dependencies": {
-    "@opencode/plugin": "2.2.3"
+    "@opencode/plugin": "2.3.0"
   },
   "peerDependencies": {
-    "@opencode/theme": "2.2.3",
+    "@opencode/theme": "2.3.0",
     "@opentui/core": ">=0.8.0",
     "@opentui/solid": ">=0.8.0",
     "solid-js": ">=1.9.0"
@@ -46,9 +46,9 @@
     }
   },
   "devDependencies": {
-    "@opencode/theme": "2.2.3",
-    "@opentui/core": "0.8.0",
-    "@opentui/solid": "0.8.0",
+    "@opencode/theme": "2.3.0",
+    "@opentui/core": "0.8.4",
+    "@opentui/solid": "0.8.4",
     "@types/bun": "^1.4.4",
     "solid-js": "1.9.17",
     "yaml": "^2.8.1"
