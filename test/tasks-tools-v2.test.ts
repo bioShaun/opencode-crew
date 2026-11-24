@@ -33,7 +33,7 @@ async function fixture(options: any = {}) {
   const ctx: any = {
     options, location: { directory: dir }, agent: { transform: async (fn: any) => fn({ update: (_: any, f: any) => f({ permissions: [] }) }) },
     command: { transform: async (fn: any) => fn({ add: () => {} }) }, tool: { transform: async (fn: any) => fn({ add: (t: any) => tools.set(t.name, t) }) },
-    permission: { assert: async (x: any) => { calls.push(['assert', x]); if (controls.deny === x.action) throw Error('permission denied') } },
+    permission: { hook: async () => ({ dispose: async () => {} }), assert: async (x: any) => { calls.push(['assert', x]); if (controls.deny === x.action) throw Error('permission denied') } },
     session: {
       hook: async (name: string, fn: any) => { hooks.set(name, fn); return { dispose: async () => {} } },
       get: async ({ sessionID }: any) => { if (controls.getError === sessionID) throw Error('secret host body'); const s = sessions.get(sessionID); if (!s) throw Error('secret host body'); return s },

@@ -8,7 +8,7 @@ import { WORK } from './workdir'
 
 test('registers exactly the three stage-1 task tools', async () => {
  const tools: any[]=[]
- const ctx: any={options:{},location:{directory:process.cwd()},agent:{transform:async (fn:any)=>fn({update:(_:any,f:any)=>f({permissions:[]})})},command:{transform:async (fn:any)=>fn({add:()=>{}})},tool:{transform:async (fn:any)=>fn({add:(tool:any)=>tools.push(tool)})},session:{hook:async()=>({dispose:async()=>{}})}}
+ const ctx: any={options:{},location:{directory:process.cwd()},agent:{transform:async (fn:any)=>fn({update:(_:any,f:any)=>f({permissions:[]})})},command:{transform:async (fn:any)=>fn({add:()=>{}})},tool:{transform:async (fn:any)=>fn({add:(tool:any)=>tools.push(tool)})},permission:{hook:async()=>({dispose:async()=>{}})},session:{hook:async()=>({dispose:async()=>{}})}}
  await plugin.setup(ctx)
  expect(tools.map(x=>x.name).sort()).toEqual(['crew_task_start','crew_task_status','crew_task_stop'])
 })
@@ -20,7 +20,7 @@ async function fixture(options:any={}) {
  const dir=realpathSync(primary), wt=realpathSync(target), tools=new Map<string,any>(), hooks=new Map<string,any>(), sessions=new Map<string,any>(), calls:any[]=[]
  const owner:any={id:'owner',agent:'root',location:{directory:dir},model:{providerID:'owner',id:'model'}}; sessions.set('owner',owner)
  const controls:any={}
- const ctx:any={options,location:{directory:dir},agent:{transform:async(fn:any)=>fn({update:(_:any,f:any)=>f({permissions:[]})})},command:{transform:async(fn:any)=>fn({add:()=>{}})},tool:{transform:async(fn:any)=>fn({add:(t:any)=>tools.set(t.name,t)})},permission:{assert:async(x:any)=>{calls.push(['assert',x]);if(controls.deny===x.action) throw Error('permission denied')}},session:{
+ const ctx:any={options,location:{directory:dir},agent:{transform:async(fn:any)=>fn({update:(_:any,f:any)=>f({permissions:[]})})},command:{transform:async(fn:any)=>fn({add:()=>{}})},tool:{transform:async(fn:any)=>fn({add:(t:any)=>tools.set(t.name,t)})},permission:{hook:async()=>({dispose:async()=>{}}),assert:async(x:any)=>{calls.push(['assert',x]);if(controls.deny===x.action) throw Error('permission denied')}},session:{
   hook:async(name:string,fn:any)=>{hooks.set(name,fn);return {dispose:async()=>{}}},get:async({sessionID}:any)=>{if(controls.getError===sessionID)throw Error('secret host body');const s=sessions.get(sessionID);if(!s)throw Error('secret host body');return s},
   create:async(x:any)=>{calls.push(['create',x]);const id=calls.filter(c=>c[0]==='create').length===1?'child':'child2';const s={id,...x,time:{created:1,updated:1}};sessions.set(id,s);if(controls.createLost)throw Error('secret host body');return s},
   prompt:async(x:any)=>{calls.push(['prompt',x]);if(controls.promptLost)throw Error('secret host body')},interrupt:async(x:any)=>{calls.push(['interrupt',x]);if(controls.interruptLost)throw Error('secret host body');return {interrupted:true}},

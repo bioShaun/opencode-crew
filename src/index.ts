@@ -8,6 +8,7 @@ import { composeRoleSystem, splitRoleBody, type RoleAppendices } from "./model-f
 import { IDS, fail, object, parseCrewOptions, type RoleID } from "./config"
 import { createCrewProfiles } from "./profile-state"
 import { registerProfileRpc } from "./profile-rpc"
+import { appendBlock, guard, hostBlock, type Policies } from "./role-guard"
 
 type Rule = { action: string; resource: string; effect: "allow" | "ask" | "deny" }
 type Role = { description: string; mode: "primary" | "subagent"; steps?: number; permissions: Rule[]; system: string }
@@ -43,6 +44,13 @@ export default Plugin.define({
       },
     })
     const roles = Object.fromEntries(IDS.map(id => [id, loadRole(id)])) as Record<RoleID, LoadedRole>
+    const policies: Policies = {
+      architect: [...roles.architect.permissions, { action: "edit", resource: resolve(ctx.location.directory, "plans") + "/**", effect: "allow" }],
+      explorer: roles.explorer.permissions,
+      reviewer: roles.reviewer.permissions,
+    }
+    if (typeof ctx.permission?.hook !== "function") throw new Error("宿主未提供 permission.hook")
+    await ctx.permission.hook("evaluate", guard(policies, sessionID => ctx.session.get({ sessionID })))
     await ctx.agent.transform(editor => {
       // Read inside the callback: switching a profile must apply on the next transform.
       const config = profiles.config()
@@ -61,13 +69,8 @@ export default Plugin.define({
             existing.action === rule.action && existing.resource === rule.resource && existing.effect === rule.effect))
           agent.permissions = [...agent.permissions, ...extra.map(rule => ({ ...rule }))]
         }
-        else if (id !== "root" || role.permissions.length > 0) agent.permissions = role.permissions.map(rule => ({ ...rule }))
-        // Match absolute lexical tool paths too; this is not symlink isolation.
-        if (id === "architect") {
-          const resource = resolve(ctx.location.directory, "plans") + "/**"
-          const present = agent.permissions.some(rule => rule.action === "edit" && rule.resource === resource && rule.effect === "allow")
-          if (!present) agent.permissions.push({ action: "edit", resource, effect: "allow" })
-        }
+        else if (id === "architect" || id === "explorer" || id === "reviewer") agent.permissions = appendBlock(agent.permissions, hostBlock(policies[id]))
+        else if (role.permissions.length > 0) agent.permissions = role.permissions.map(rule => ({ ...rule }))
       })
     })
     await ctx.command.transform(editor => editor.add({
