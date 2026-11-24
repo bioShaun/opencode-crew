@@ -34,6 +34,14 @@ const models = { root: "example/root#high", engineer: "example/worker#medium", r
 function roleBody(id: string) {
   return readFileSync(new URL(`../agents/${id}.md`, import.meta.url), "utf8").split(/^---\s*$/m).slice(2).join("---").trim()
 }
+test("root judges background state from the structured subagent state, not from quoted text", () => {
+  const lines = roleBody("root").split("\n").filter(line => line.includes("Background work still running") || line.includes('state="running"') || line.includes("`state` 属性"))
+  expect(lines.length).toBeGreaterThan(0)
+  for (const line of lines) {
+    expect(line).not.toMatch(/state="running"`?\s*(或|\/)\s*「Background work still running」/)
+    expect(line).toMatch(/正文|引用/)
+  }
+})
 function effect(agent: any, action: string, resource = "*") {
   // Exact resources + '*' suffice for these test cases; not a replacement for the host evaluator.
   return agent.permissions.filter((p: any) => (p.action === action || p.action === "*") && (p.resource === resource || p.resource === "*")).at(-1)?.effect
