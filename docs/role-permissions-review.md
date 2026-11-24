@@ -1,6 +1,32 @@
 # 角色权限评审意见
 
-2026-11-09 评审，**仅为意见**。依据：当前工作区 `agents/*.md` frontmatter、`src/index.ts` 的权限合并逻辑，以及 OpenCode V2 官方权限文档。评审后第 1、3、4 条已实施；第 2 条经评估决定暂不收紧，作为已知风险保留（见 §4）。
+## 当前状态：已实施，自动权限求值验证通过，R0 待端到端/TUI
+
+用户已选择保留 `external_directory` 继承目标，并决定身份无法识别时非 external 动作 deny，不再是待选业务决策。`src/role-guard.ts` 与 `src/index.ts` 已实现：保留宿主前缀，过滤会匹配 external 的角色 action，追加已知动作显式 deny 和角色白名单，完整连续块已存在时不重复；Markdown 原 deny-all 保留供 guard 使用。external 完全由宿主裁决，其他 action 按每个资源的局部 last match 与宿主取严；显式身份优先，缺失时使用 session 身份。不是所有全局规则都无条件继承。
+
+S1 红灯 33 pass / 60 fail，S2 同 93 项全通过；全量 439 pass / 0 fail，typecheck 通过，独立源码 review ready。S0 四例装配成功，最终全局规则位于尾部且 reload 稳定，仅证明装配而非权限行为。S3 隔离源码副本构建的 SHA-256 为 `841d3bf78add12304ce3b31ac6e6dc2d4ab4dfabdd97af0274ef047c67259e61`：G0 28 条、G1–G4 120 条真实 `permission.assert` 均符合预期，后者每行 initial/reload 重复；pending ask 已验证事件、list/get、reject 和清空，但不是 TUI 验证。证据索引：`/project/tmp/opencode-crew-read-policy-s1/{summary.md,red.log}`、`/project/tmp/opencode-crew-read-policy-s2/{s2-green.log,full-green.log}`、`/project/tmp/opencode-crew-read-policy-s3/{g0-assert,matrix}/summary.md`。
+
+**R0 仍 blocked，R1/R2 未执行，issue #10 未实现。** 六格外部 read 端到端通过：三个角色在无全局 external 规则时读取成功，在全局 external deny 时均被拒绝；该 G0 仍有其他动作全局 deny。证据：`/project/tmp/opencode-crew-read-policy-s3/tool-smoke/sol-attempt/summary.md`。全局 external ask 与敏感 read ask 的 TUI 客户端确认未验，write/shell 等 A1/A2 真实工具覆盖不足。assert 证明权限求值，不证明工具调用路径；初轮构造失败也不能算真实工具通过。当前源码和隔离构建已验不等于主仓库 `dist` 已部署：其故意未更新，共享服务未重启。hook 注册必须成功；v2.3.0 受控 setup 失败测试中，hook 和 transform 注册成功后主动抛错，注册未在后续装配/reload 生效，正常 observer 继续运行。失败 transform 在首次 registry 前未执行，不证明已执行副作用回滚或所有 setup 失败安全；证据见 `/project/tmp/opencode-crew-read-policy-s3/setup-cleanup/summary.md`。后续插件可再次改变 effect，不经过 permission hook 的路径不在保证范围，`plans/` 词法匹配不是 symlink 沙箱。具体补测见 [宿主清单](role-permissions-host-checks.md)。
+
+## 2026-11-17 初轮 R0 复审（历史，blocked）
+
+**R0 未通过（reject），R1/R2 停止且未执行；issue #10 尚不能开始实现。** 真机 R0 共 27 项：14 通过、1 失败、11 构造失败、1 待 TUI；reviewer 的五条固定 git 例外仅测了 1 条。证据目录：`/project/tmp/opencode-crew-issue-10/evidence/`，见 `summary.md`、`a3-default.log`、`a3-deny.log`、`batch.sh` 和 `pass-audit.log`。独立 reviewer 因自身 `external_directory` deny 无法直接读取该目录，并未独立复跑；Root 已补做原始证据验收。
+
+`a3-default.log` 显示 architect 实际 read `/project/tmp/opencode-crew-issue-10/outside/value.txt`，工具结构化返回 `Permission denied: external_directory`。默认和全局 deny 两种情况同样被拒绝，不能证明全局 deny 得到继承；ask 未测。11 项构造失败是模型未调用目标工具，不能作为权限拒绝证据。
+
+下文保留 2026-11-09 历史评审，但其「删除显式 `external_directory` 即可继承、默认行为不变」的论证被本轮证据推翻，不可作为当前有效修复方案。初轮时三个读角色先有 `action: *`、`resource: *`、`effect: deny`，后有 read 等白名单，无显式 `external_directory`；当时 `src/index.ts` 整档替换权限。官方 V2 规则为 last match wins，agent 规则在全局之后，action `*` 匹配 `external_directory`，该检查先于 read；默认 base allow 因而被后续 agent deny-all 覆盖。当时的 inherit 测试只排除显式规则，并未断言通配 deny 的有效结果。没有旧宿主同规则对照，不能归因为 v2.3.0 宿主回归。
+
+初轮当时列出的选项（现已选择 1，见顶部）：
+
+1. 保留默认允许且尊重全局 ask/deny，重新设计权限表达或合并。
+2. 接受读角色默认 fail-closed，并修改契约。
+3. 暂缓修复，仅保持 blocked。
+
+加回固定 allow 会覆盖用户 ask/deny，不作为修绿方案。初轮未改行为；后续实施与验证状态见顶部。
+
+## 2026-11-09 历史评审
+
+以下整节为 **2026-11-09 历史快照，不是现行合并语义或建议**；特别是整档替换表与“删除规则即可继承”的结论已被上方复审和后续实现取代。第 2 条 webfetch 风险仍保留。
 
 ## 1. 权限来源与合并语义
 
@@ -76,12 +102,12 @@
 - plans/ symlink 词典匹配：低危且已声明，不值得加 realpath 解析的复杂度。
 - architect/explorer 的 `webfetch` 不加白名单：见 §4 第 2 条的决定与残余风险。
 
-**如果只选一件做，选第 1 条——但按「删除规则」而不是「改成 ask」实施。**
+**历史建议（已撤回）：只删除规则不足以实现继承；现行实现见顶部。**
 
 ## 相关文件
 
 - `agents/root.md`、`agents/architect.md`、`agents/engineer.md`、`agents/explorer.md`、`agents/reviewer.md`（权限定义）
-- `src/index.ts:57-70`（合并语义、plans 绝对路径注入与幂等追加）
+- `src/index.ts`、`src/role-guard.ts`（现行合并、guard 与 plans 绝对路径注入）
 - `docs/crew-profiles.md` §1、§9（permissions 不被 profile 覆盖；重载幂等）
 - `src/tui/view-model.ts:327`（permission 告警通道）
 

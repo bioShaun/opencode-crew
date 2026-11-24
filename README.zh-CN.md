@@ -177,9 +177,11 @@ CLI 的 stdout 只输出一个机器 JSON 对象，stderr 只输出简短中文�
 
 Root 的 Markdown 权限列表为空时，Crew 保留宿主提供的 Root 权限，不添加通配放行，也不绕过已有 ask/deny 规则；列表非空时则替换该权限列表。会话及其他宿主策略仍然生效。
 
-Engineer 则按原顺序保留宿主提供的权限规则，并在末尾追加其 Markdown 规则：禁止 `subagent`、`question` 和 `execute`。其他已有宿主 allow/ask/deny 规则仍然生效；Crew 不添加通配放行。Architect、explorer 和 reviewer 继续使用严格的替换策略。
+Engineer 按原顺序保留宿主规则，并追加 Markdown 中对 `subagent`、`question`、`execute` 的 deny。Architect、explorer 和 reviewer 保留宿主前缀并追加过滤后的角色块，不再整档替换。Markdown 的 deny-all 仍是 guard 的局部策略；宿主块过滤会匹配 `external_directory` 的 action 模式，在角色白名单之前为已知动作显式 deny；完整连续块已存在时不重复追加。
 
-三个严格角色允许技能，方便读取常规参考资料；读取 `.env`、`.env.*` 仍需询问，`.env.example` 放行。它们不再自带 `external_directory` 规则：宿主默认仍是允许，但会尊重用户自己的全局 ask/deny（agent 规则追加在最后，且 last match wins）。这不授予外部编辑或 shell 权限。architect 与 explorer 仍开放不加限制的 `webfetch`/`websearch`（已知风险，见 [`docs/role-permissions-review.md`](docs/role-permissions-review.md)）。除上表列出的规则外，其他操作仍禁止。OpenCode 的路径权限不是防符号链接的沙箱：`plans/` 内的符号链接可能破坏 architect 的预期写入边界，别名也可能隐藏敏感文件名。不能依靠这些角色规则隔离不可信的文件系统布局。
+`external_directory` 完全由宿主裁决：已测默认允许，并尊重用户全局 ask/deny。其他动作并非无条件继承所有全局规则：guard 对每个资源按局部策略最后匹配求值，再与宿主结果取更严；显式角色身份优先，缺失时回退会话身份，无法识别时非 external 动作 deny。三个角色允许 skill；局部策略对 `.env`、`.env.*` 读取为 ask，对 `.env.example` 为 allow，宿主仍可更严。architect 与 explorer 仍开放不加限制的 `webfetch`/`websearch`（已知风险）。权限 hook 必须注册成功；v2.3.0 受控测试中 hook 与 transform 注册后主动失败，二者未在后续装配和 reload 生效，但不证明已执行副作用的回滚或所有 setup 失败均安全（证据：`/project/tmp/opencode-crew-read-policy-s3/setup-cleanup/summary.md`）。后续插件可再次修改 effect，不经过 permission hook 的路径不在保证范围内；`plans/` 是词法匹配而非防符号链接沙箱，不应用于隔离不可信文件系统布局。
+
+源码实现的自动权限求值与六格外部 read 工具端到端已通过，但 **R0 仍 blocked**：真实 write/shell 等 A1/A2 工具覆盖不足，TUI external 和敏感 read ask 确认未完成。验收仅使用隔离构建，主仓库 `dist` 故意未更新、未部署，也未重启共享服务；证据与后续步骤见[宿主清单](docs/role-permissions-host-checks.md)。
 
 不是固定流水线。Root 已掌握上下文，剩余修改和必要验证明确、局部，且无需进一步调查、设计测试或独立复核时可直做；否则优先委派。长任务才按需使用 `plans/`。同一 cwd 一次只能有一个写入者；直做不免验收。
 

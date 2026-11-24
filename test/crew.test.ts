@@ -12,7 +12,7 @@ async function plugin() {
 }
 function fixture(options: any = {}, rootPermissions: any[] = [], seeds: Record<string, any[]> = {}) {
   const agents = new Map<string, any>([["root", { id: "root", permissions: rootPermissions }], ...Object.entries(seeds).map(([id, permissions]) => [id, { id, permissions }] as [string, any])])
-  const commands: any[] = [], calls: any[] = []
+  const commands: any[] = [], calls: any[] = [], hooks: any[] = []
   const ctx: any = {
     options, location: { directory: fileURLToPath(new URL("..", import.meta.url)) },
     agent: { transform: async (fn: any) => fn({
@@ -21,6 +21,7 @@ function fixture(options: any = {}, rootPermissions: any[] = [], seeds: Record<s
     }), reload: async () => calls.push("reload") },
     command: { transform: async (fn: any) => fn({ add: (c: any) => commands.push(c) }) },
     tool: { transform: async (fn: any) => fn({ add: () => {} }) },
+    permission: { hook: async (_name: string, cb: any) => { hooks.push(cb); return { dispose: async () => {} } } },
     session: {
       hook: async () => ({ dispose: async () => {} }),
       switchAgent: async (a: any) => calls.push(["agent", a]),
@@ -28,8 +29,20 @@ function fixture(options: any = {}, rootPermissions: any[] = [], seeds: Record<s
       prompt: async (a: any) => calls.push(["prompt", a]),
     },
   }
-  return { ctx, agents, commands, calls }
+  return { ctx, agents, commands, calls, hooks }
 }
+test("invalid explicit identity fails closed without consulting session", async () => {
+  const f = fixture(); let calls = 0
+  f.ctx.session.get = async () => { calls++; return { agent: "engineer" } }
+  await (await plugin()).setup(f.ctx)
+  for (const agent of [null, 42, "", "   "]) {
+    const event: any = { agent, sessionID: "ses_test", action: "edit", resources: ["src/a"], effect: "allow" }
+    for (const hook of f.hooks) await hook(event)
+    expect(event.effect).toBe("deny")
+    expect(event.message).toBeTruthy()
+  }
+  expect(calls).toBe(0)
+})
 const models = { root: "example/root#high", engineer: "example/worker#medium", reviewer: "other/review", explorer: "fast/search" }
 function roleBody(id: string) {
   return readFileSync(new URL(`../agents/${id}.md`, import.meta.url), "utf8").split(/^---\s*$/m).slice(2).join("---").trim()
@@ -166,7 +179,7 @@ test("engineer retains ordered host defaults and custom rules before Crew denies
   expect(effect(a, "read", "*.env")).toBe("ask")
   for (const action of ["subagent", "question", "execute"]) expect(effect(a, action)).toBe("deny")
 })
-test("strict roles still replace seeded host permissions", async () => {
+test("strict roles preserve seeded host permissions before role block", async () => {
   const host = [{ action: "*", resource: "*", effect: "allow" }]
   const f = fixture({}, [], { architect: structuredClone(host), explorer: structuredClone(host), reviewer: structuredClone(host) })
   await (await plugin()).setup(f.ctx)
@@ -174,7 +187,7 @@ test("strict roles still replace seeded host permissions", async () => {
     const a = f.agents.get(id)
     expect(effect(a, "execute")).toBe("deny")
     expect(effect(a, "subagent")).toBe("deny")
-    expect(a.permissions[0]).not.toEqual(host[0])
+    expect(a.permissions.slice(0, host.length)).toEqual(host)
   }
 })
 
@@ -205,7 +218,7 @@ test('strict write and fixed shell rules enforce whole-value wildcard boundaries
   for (const path of ['src/a.ts', '/outside/plans/a.md', `${location}/src/a.ts`]) expect(wildcardEffect(architect, 'edit', path)).toBe('deny')
   expect(wildcardEffect(explorer, 'edit', 'plans/a.md')).toBe('deny')
   expect(wildcardEffect(explorer, 'shell', 'git status')).toBe('deny')
-  for (const rule of reviewer.permissions.filter((r: any) => r.action === 'shell')) {
+  for (const rule of reviewer.permissions.filter((r: any) => r.action === 'shell' && r.effect === 'allow')) {
     expect(wildcardEffect(reviewer, 'shell', rule.resource)).toBe('allow')
     expect(wildcardEffect(reviewer, 'shell', rule.resource + ' --help')).toBe('deny')
   }

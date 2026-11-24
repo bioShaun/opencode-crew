@@ -23,6 +23,7 @@ async function registration(options: any = {}) {
     agent: { transform: async (fn: any) => fn({ update: (id: string, f: any) => { const a = agents.get(id) ?? { id, permissions: [] }; f(a); agents.set(id, a) } }) },
     command: { transform: async (fn: any) => fn({ add: () => {} }) },
     tool: { transform: async (fn: any) => fn({ add: (t: any) => tools.set(t.name, t) }) },
+    permission: { hook: async () => ({ dispose: async () => {} }) },
     session: { hook: async () => ({ dispose: async () => {} }) },
   }
   await plugin.setup(ctx)
@@ -46,7 +47,7 @@ async function fixture(options: any = {}) {
     agent: { transform: async (fn: any) => fn({ update: (id: string, f: any) => { const a = agents.get(id) ?? { id, permissions: [] }; f(a); agents.set(id, a) } }) },
     command: { transform: async (fn: any) => fn({ add: () => {} }) },
     tool: { transform: async (fn: any) => fn({ add: (t: any) => tools.set(t.name, t) }) },
-    permission: { assert: async (x: any) => { calls.push(['assert', x]); if (controls.deny === x.action) throw Error('permission denied') } },
+    permission: { hook: async () => ({ dispose: async () => {} }), assert: async (x: any) => { calls.push(['assert', x]); if (controls.deny === x.action) throw Error('permission denied') } },
     session: {
       hook: async (name: string, fn: any) => { hooks.set(name, fn); return { dispose: async () => {} } },
       get: async ({ sessionID }: any) => { if (controls.getError === sessionID) throw Error('secret host body'); const s = sessions.get(sessionID); if (!s) throw Error('secret host body'); return s },
