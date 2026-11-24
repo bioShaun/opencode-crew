@@ -3,11 +3,13 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { parse } from "yaml"
 import { registerTasks } from "./tasks"
+import { registerReviewGate } from "./review-gate-host"
 import { registerTaskSnapshot } from "./tasks-snapshot"
 import { composeRoleSystem, splitRoleBody, type RoleAppendices } from "./model-family"
 import { IDS, fail, object, parseCrewOptions, type RoleID } from "./config"
 import { createCrewProfiles } from "./profile-state"
 import { registerProfileRpc } from "./profile-rpc"
+import { registerDisplayRpc } from "./display-rpc"
 import { appendBlock, guard, hostBlock, type Policies } from "./role-guard"
 
 type Rule = { action: string; resource: string; effect: "allow" | "ask" | "deny" }
@@ -33,7 +35,7 @@ export default Plugin.define({
   id: "opencode-crew",
   async setup(ctx) {
     // Validate every input before registering anything; prompts/policies exist only in Markdown.
-    const { baseline } = parseCrewOptions(ctx.options ?? {})
+    const { baseline, reviewGate, display } = parseCrewOptions(ctx.options ?? {})
     // Profiles are an optional overlay: a broken profile or pointer must never block
     // plugin load, otherwise the only self-rescue command (`/crew-profile off`) is gone.
     const profiles = createCrewProfiles({
@@ -86,7 +88,9 @@ export default Plugin.define({
     }))
     // A getter, not a snapshot: the next launch must use the currently active profile.
     await registerTasks(ctx, () => profiles.config().models.engineer)
+    await registerReviewGate(ctx, reviewGate)
     await registerProfileRpc(ctx, profiles)
+    await registerDisplayRpc(ctx, display)
     await registerTaskSnapshot(ctx)
   },
 })

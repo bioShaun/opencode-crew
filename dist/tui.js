@@ -11,7 +11,7 @@ import { setProp as _$setProp6 } from "@opentui/solid";
 import { createElement as _$createElement6 } from "@opentui/solid";
 import { memo as _$memo2 } from "@opentui/solid";
 import { createComponent as _$createComponent6 } from "@opentui/solid";
-import { createSignal as createSignal3, ErrorBoundary, onCleanup as onCleanup2, onMount, Show as Show3 } from "solid-js";
+import { createSignal as createSignal3, ErrorBoundary, onCleanup as onCleanup2, onMount as onMount2, Show as Show3 } from "solid-js";
 
 // src/tui/sidebar.tsx
 import { insert as _$insert5 } from "@opentui/solid";
@@ -19,7 +19,7 @@ import { memo as _$memo } from "@opentui/solid";
 import { setProp as _$setProp5 } from "@opentui/solid";
 import { createElement as _$createElement5 } from "@opentui/solid";
 import { createComponent as _$createComponent5 } from "@opentui/solid";
-import { createEffect, createMemo, createSignal as createSignal2, For as For5, on, onCleanup, Show as Show2 } from "solid-js";
+import { createEffect, createMemo, createSignal as createSignal2, For as For5, on, onCleanup, onMount, Show as Show2 } from "solid-js";
 import { usePlugin as usePlugin2 } from "@opencode/plugin/tui";
 
 // src/config.ts
@@ -76,6 +76,53 @@ function parseCrewDisplay(input) {
 var PROFILE_NAME_PATTERN = /^(?!\.)(?=.*[a-z0-9])[a-z0-9._-]{1,64}$/;
 function isProfileName(name) {
   return typeof name === "string" && PROFILE_NAME_PATTERN.test(name);
+}
+
+// src/display-rpc.ts
+var crewDisplay = {
+  id: "opencode-crew-display",
+  methods: {
+    get: {
+      input: { type: "object", properties: {}, additionalProperties: false },
+      output: {
+        type: "object",
+        properties: {
+          aliases: { type: "object", additionalProperties: { type: "string" } },
+          display: { type: "string", enum: ["inline", "off"] }
+        },
+        required: ["aliases", "display"],
+        additionalProperties: false
+      }
+    }
+  },
+  events: {}
+};
+var control = /\p{Cc}/u;
+var isDisplayView = (value) => object(value) && object(value.aliases);
+function parseDisplayView(value) {
+  if (!isDisplayView(value))
+    return parseCrewDisplay(undefined);
+  const aliases = {};
+  let count = 0;
+  for (const [key, raw] of Object.entries(value.aliases)) {
+    if (typeof raw !== "string" || control.test(key) || control.test(raw))
+      continue;
+    try {
+      aliases[key] = parseCrewDisplay({ modelAliases: { [key]: raw } }).aliases[key];
+      if (++count === 64)
+        break;
+    } catch {}
+  }
+  return { aliases, display: value.display === "off" ? "off" : "inline" };
+}
+function resolveDisplay(rpcValue, options) {
+  if (isDisplayView(rpcValue))
+    return parseDisplayView(rpcValue);
+  try {
+    return parseCrewDisplay(options);
+  } catch {
+    return parseCrewDisplay(undefined);
+  }
 }
 
 // src/snapshot.ts
@@ -1448,7 +1495,22 @@ function Sidebar(props) {
   }));
   createEffect(() => hydrate());
   const statusOf = (id) => attempt(() => context.data.session.status(id), "idle");
-  const display = createMemo(() => parseCrewDisplay(context.options));
+  const [rpcDisplay, setRpcDisplay] = createSignal2();
+  onMount(async () => {
+    let disposed = false;
+    onCleanup(() => {
+      disposed = true;
+    });
+    try {
+      const options = context.location ? {
+        location: context.location
+      } : undefined;
+      const view = await context.client.rpc(crewDisplay).get({}, options);
+      if (!disposed)
+        setRpcDisplay(() => view);
+    } catch {}
+  });
+  const display = createMemo(() => resolveDisplay(rpcDisplay(), context.options));
   const view = createMemo(() => {
     const rootID = rootOf(props.sessionID);
     const snapshot = live();
@@ -1620,7 +1682,7 @@ function SessionRecovery(props) {
     }));
   } catch {}
   function Healthy() {
-    onMount(() => {
+    onMount2(() => {
       setFailed(false);
       const timer = props.clock.schedule(() => {
         if (!disposed)
@@ -1705,7 +1767,7 @@ function SessionRecovery(props) {
 
 // src/tui/profile-footer.tsx
 import { createComponent as _$createComponent7 } from "@opentui/solid";
-import { Show as Show4, createMemo as createMemo2, onCleanup as onCleanup3, onMount as onMount2 } from "solid-js";
+import { Show as Show4, createMemo as createMemo2, onCleanup as onCleanup3, onMount as onMount3 } from "solid-js";
 import { usePlugin as usePlugin3 } from "@opencode/plugin/tui";
 
 // src/tui/profile-menu.ts
@@ -2091,7 +2153,7 @@ function ProfileFooter() {
       draft.at = Date.now();
     });
   };
-  onMount2(() => {
+  onMount3(() => {
     refresh();
   });
   const timer = setInterval(() => {

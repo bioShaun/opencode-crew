@@ -31,4 +31,9 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
-      - run: bun run build
+      # dist is committed and shipped to users, so a stale dist would silently
+      # install old code. Compare a fresh out-of-tree build against it.
+      # The build script deliberately avoids npm lifecycle names such as
+      # "build"/"prepare": pacote runs a git preparation step for those, which
+      # re-executes the OpenCode binary and fails on compiled builds.
+      - run: rm -rf build-check && CREW_BUILD_OUTDIR=build-check bun run compile && diff -r dist build-check

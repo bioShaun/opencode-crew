@@ -21,6 +21,10 @@ export function appendBlock(prefix: Rule[], block: Rule[]): Rule[] {
   return exists ? prefix : [...prefix, ...block.map(rule => ({ ...rule }))]
 }
 
+export function engineerDispatchDenied(action: string, resources: readonly string[], agent: string): boolean {
+  return action === "subagent" && resources.includes("engineer") && agent !== "root"
+}
+
 export function guard(policies: Policies, getSession: (sessionID: PermissionEvaluation["sessionID"]) => Promise<{ agent?: unknown } | undefined>) {
   return async (event: PermissionEvaluation) => {
     if (event.action === "external_directory") return
@@ -28,6 +32,11 @@ export function guard(policies: Policies, getSession: (sessionID: PermissionEval
       let agent: unknown = event.agent
       if (agent === undefined) agent = (await getSession(event.sessionID))?.agent
       if (typeof agent !== "string" || !agent.trim()) throw new Error("unknown agent")
+      if (engineerDispatchDenied(event.action, event.resources, agent)) {
+        event.effect = "deny"
+        event.message = `Crew：engineer 只能由 Root 派发（调用者：${agent}）。请用 /crew 切到 Root，或改派 explorer / architect / reviewer。`
+        return
+      }
       if (!(agent === "architect" || agent === "explorer" || agent === "reviewer")) return
       const policy = policies[agent]
       const resources = event.resources.length ? event.resources : ["*"]

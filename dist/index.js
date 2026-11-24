@@ -6947,7 +6947,7 @@ var require_public_api = __commonJS(function(exports) {
 // src/index.ts
 import { Plugin } from "@opencode/plugin";
 import { readFileSync as readFileSync3 } from "fs";
-import { resolve as resolve4 } from "path";
+import { resolve as resolve6 } from "path";
 
 // node_modules/yaml/dist/index.js
 var composer = require_composer();
@@ -8066,6 +8066,887 @@ ${REPORT_STATUS_PROMPT_HINT}`;
   });
 }
 
+// src/review-gate-host.ts
+import { createHash as createHash4 } from "crypto";
+import { lstatSync as lstatSync5 } from "fs";
+import { join as join3 } from "path";
+
+// src/review-gate.ts
+function globToRegExp(glob) {
+  let pattern = "^";
+  for (let i = 0;i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "?")
+      pattern += "[^/]";
+    else if (c !== "*")
+      pattern += c.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+    else if (glob[i + 1] !== "*")
+      pattern += "[^/]*";
+    else {
+      const atSegmentStart = i === 0 || glob[i - 1] === "/";
+      while (glob[i + 1] === "*")
+        i++;
+      if (atSegmentStart && glob[i + 1] === "/") {
+        pattern += "(?:[^/]+/)*";
+        i++;
+      } else
+        pattern += "[\\s\\S]*";
+    }
+  }
+  return new RegExp(pattern + "$", "u");
+}
+var unique = (paths) => [...new Set(paths)];
+function evaluateGate(changes, cfg) {
+  const reasons = [];
+  const match = (globs) => {
+    const regexps = globs.map(globToRegExp);
+    return (path) => regexps.some((re) => re.test(path));
+  };
+  const paths = unique(changes.files.map((file) => file.path));
+  const ignore = match(cfg.ignoreGlobs);
+  const counted = paths.filter((path) => !ignore(path));
+  if (counted.length > cfg.maxFiles) {
+    reasons.push({ rule: "fileCount", detail: `${counted.length} \u4E2A\u6587\u4EF6\uFF0C\u8D85\u8FC7\u9608\u503C ${cfg.maxFiles}`, paths: counted });
+  }
+  const test = match(cfg.testGlobs);
+  const deletedTests = unique(changes.files.filter((file) => file.type === "deleted" && test(file.path)).map((file) => file.path));
+  if (deletedTests.length)
+    reasons.push({ rule: "deletedTest", detail: `\u5220\u9664\u6216\u79FB\u8D70\u4E86 ${deletedTests.length} \u4E2A\u6D4B\u8BD5\u6587\u4EF6`, paths: deletedTests });
+  const sensitive = paths.filter(match(cfg.sensitiveGlobs));
+  if (sensitive.length)
+    reasons.push({ rule: "sensitivePath", detail: `\u6539\u52A8\u6D89\u53CA ${sensitive.length} \u4E2A\u654F\u611F\u8DEF\u5F84`, paths: sensitive });
+  if (changes.planRef && cfg.planMinFiles > 0 && counted.length >= cfg.planMinFiles) {
+    reasons.push({ rule: "planMultiFile", detail: `\u4EFB\u52A1\u5F15\u7528 plans/ \u65B9\u6848\uFF0C\u4E14\u6539\u52A8\u4E86 ${counted.length} \u4E2A\u6587\u4EF6`, paths: counted });
+  }
+  if (changes.source === "task" && (changes.outsideScope ?? 0) > 0) {
+    reasons.push({ rule: "outsideScope", detail: `${changes.outsideScope} \u4E2A\u8DEF\u5F84\u8D85\u51FA\u4EFB\u52A1 Scope` });
+  }
+  if (!changes.complete)
+    reasons.push({ rule: "incomplete", detail: "\u6539\u52A8\u6E05\u5355\u4E0D\u5B8C\u6574" });
+  return { hit: reasons.length > 0, reasons };
+}
+function gateFingerprint(changes) {
+  const rows = changes.files.map(({ path, type, token }) => `${path}\x00${type}\x00${token ?? ""}`).sort();
+  return Bun.CryptoHasher.hash("sha256", (changes.head ?? "") + rows.join(`
+`), "hex").slice(0, 16);
+}
+function escapeText(value) {
+  return value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, (c) => `\\u${c.codePointAt(0).toString(16).padStart(4, "0")}`);
+}
+function renderReminder(changes, verdict) {
+  const paths = unique(verdict.reasons.flatMap((reason) => reason.paths ?? []));
+  const count = new Set(changes.files.map((file) => file.path)).size;
+  return [
+    "[crew-review-gate] \u672C\u8F6E\u6539\u52A8\u547D\u4E2D\u5BA1\u67E5\u95E8\u7981\uFF1A",
+    ...verdict.reasons.map((reason) => `- ${escapeText(reason.rule)}\uFF1A${escapeText(reason.detail)}`),
+    `\u6539\u52A8\u76EE\u5F55\uFF1A${escapeText(changes.dir)}\uFF08${count} \u4E2A\u6587\u4EF6${changes.taskID ? `\uFF1B${escapeText(changes.taskID)}` : ""}\uFF09`,
+    ...changes.degraded ? ["\u57FA\u7EBF\u7F3A\u5931\uFF0C\u542B\u65E2\u6709\u6539\u52A8\u3002"] : [],
+    ...paths.length ? [`\u547D\u4E2D\u8DEF\u5F84\uFF1A${paths.slice(0, 10).map(escapeText).join("\u3001")}${paths.length > 10 ? `\uFF08\u53E6\u6709 ${paths.length - 10} \u6761\uFF09` : ""}`] : [],
+    "\u8BF7\u4E8C\u9009\u4E00\uFF1A",
+    "1. \u6D3E reviewer\uFF1B\u4EFB\u52A1\u5305\u5199\u660E Goal/Scope/Acceptance\u3001plans/ \u65B9\u6848\u3001\u6539\u52A8\u76EE\u5F55\u548C engineer \u8BC1\u636E\u4F4D\u7F6E\uFF1B",
+    "2. \u56DE\u590D\u4E2D\u5199\u4E00\u884C `Review-Skip: <\u5177\u4F53\u7406\u7531>`\u3002",
+    "\u8FD9\u662F\u63D0\u9192\uFF0C\u4E0D\u6539\u53D8 crew_task \u7684 stop \u2192 close \u987A\u5E8F\uFF0C\u4E5F\u4E0D\u8868\u793A\u5DF2\u9A8C\u6536\u3002"
+  ].join(`
+`);
+}
+function extractReviewSkip(text) {
+  for (const match of text.matchAll(/(?:^|\n)[ \t]*Review-Skip:[ \t]*(\S[^\r\n]*)/g)) {
+    const reason = match[1].trimEnd();
+    if (reason.length >= 10)
+      return reason;
+  }
+  return;
+}
+
+// src/review-gate-git.ts
+import { spawnSync as spawnSync2 } from "child_process";
+import { lstatSync as lstatSync3 } from "fs";
+import { resolve as resolve3 } from "path";
+var recordKey = ({ path, type }) => `${path}\x00${type}`;
+var conflicts = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
+var oid = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+var deletedToken = "deleted";
+function records2(text) {
+  if (!text)
+    return [];
+  if (!text.endsWith("\x00"))
+    throw new Error("incomplete git output");
+  return text.slice(0, -1).split("\x00");
+}
+function gitPath(path) {
+  if (!path || path.split("/").some((p) => !p || p === "." || p === ".."))
+    throw new Error("invalid git path");
+  return path;
+}
+function statusFiles(text) {
+  const entries = records2(text), files = [];
+  for (let i = 0;i < entries.length; i++) {
+    const entry = entries[i], xy = entry.slice(0, 2), path = gitPath(entry.slice(3));
+    if (entry[2] !== " ")
+      throw new Error("invalid status record");
+    if (xy.includes("R")) {
+      files.push({ path: gitPath(entries[++i]), type: "deleted" }, { path, type: "renamed" });
+      continue;
+    }
+    if (xy.includes("C"))
+      gitPath(entries[++i]);
+    const type = conflicts.has(xy) ? "unknown" : xy.includes("D") ? "deleted" : xy === "??" || /[AC]/.test(xy) ? "added" : /[MT]/.test(xy) ? "modified" : "unknown";
+    files.push({ path, type });
+  }
+  return files;
+}
+function driftFiles(text) {
+  const fields = records2(text), files = [];
+  if (fields.length % 2)
+    throw new Error("invalid name-status records");
+  for (let i = 0;i < fields.length; i += 2) {
+    const code = fields[i];
+    const type = code === "D" ? "deleted" : code === "A" ? "added" : /^[MT]/.test(code) ? "modified" : "unknown";
+    files.push({ path: gitPath(fields[i + 1]), type });
+  }
+  return files;
+}
+function collectNativeChanges(dir, { baseline, timeoutMs = 3000 } = {}) {
+  const unavailable = { source: "native", dir, files: [], status: "unavailable", complete: false };
+  try {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || baseline && !oid.test(baseline.head))
+      return unavailable;
+    const started = performance.now();
+    const remaining = () => {
+      const ms = timeoutMs - (performance.now() - started);
+      if (ms <= 0)
+        throw new Error("git observation timed out");
+      return Math.ceil(ms);
+    };
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+    env.GIT_OPTIONAL_LOCKS = "0";
+    const git = (cwd, ...args) => {
+      const result = spawnSync2("git", ["-c", "core.fsmonitor=false", ...args], {
+        cwd,
+        env,
+        timeout: remaining(),
+        maxBuffer: 1024 * 1024
+      });
+      if (result.error || result.status !== 0 || result.signal)
+        throw new Error("git observation failed");
+      remaining();
+      return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(result.stdout);
+    };
+    const top = git(dir, "rev-parse", "--show-toplevel").replace(/\n$/, "");
+    const readHead = () => git(dir, "rev-parse", "--verify", "HEAD").trim();
+    const head = readHead();
+    if (!oid.test(head))
+      return unavailable;
+    const readStatus = () => git(dir, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--renames");
+    const status = readStatus();
+    const dirty = statusFiles(status);
+    const drift = baseline && baseline.head !== head ? driftFiles(git(top, "diff", "--name-status", "-z", "--no-renames", "--no-relative", `${baseline.head}..${head}`, "--")) : [];
+    let complete = true, latestChangeAt;
+    const deleted = new Set(dirty.filter((file) => file.type === "deleted").map((file) => file.path));
+    const stats = new Map;
+    const stat = (path) => {
+      remaining();
+      try {
+        const { size, mtimeMs } = lstatSync3(resolve3(top, path));
+        return { token: `${size}:${mtimeMs}`, mtimeMs };
+      } catch (error) {
+        if (deleted.has(path) && error.code === "ENOENT")
+          return { token: deletedToken };
+        complete = false;
+        return { token: "unreadable" };
+      }
+    };
+    const materialize = (file) => {
+      if (file.type === "deleted")
+        return { token: deletedToken };
+      if (!stats.has(file.path))
+        stats.set(file.path, stat(file.path));
+      return stats.get(file.path);
+    };
+    const snapshot = { head, files: new Map(dirty.map((file) => [recordKey(file), materialize(file).token])) };
+    const observed = new Map;
+    const add = (file, compareBaseline) => {
+      const { token, mtimeMs } = materialize(file);
+      const key = recordKey(file);
+      if (compareBaseline && baseline?.files.get(key) === token)
+        return;
+      observed.set(key, { ...file, token });
+      if (mtimeMs !== undefined)
+        latestChangeAt = Math.max(latestChangeAt ?? -Infinity, mtimeMs);
+    };
+    for (const file of dirty)
+      add(file, true);
+    for (const file of drift)
+      add(file, false);
+    if (readStatus() !== status)
+      complete = false;
+    for (const [path, old] of stats)
+      if (stat(path).token !== old.token)
+        complete = false;
+    if (readHead() !== head)
+      complete = false;
+    return { source: "native", dir, status: "available", head, files: [...observed.values()], snapshot, complete, latestChangeAt, degraded: !baseline };
+  } catch {
+    return unavailable;
+  }
+}
+function snapshotNative(dir, options) {
+  const changes = collectNativeChanges(dir, options);
+  return changes.status === "available" && changes.complete ? changes.snapshot : undefined;
+}
+function fromReviewListing(dir, listing) {
+  return {
+    source: "task",
+    dir,
+    taskID: listing.taskID,
+    head: listing.head?.to ?? listing.head?.from ?? listing.baseline,
+    outsideScope: listing.counts.outsideScope,
+    complete: listing.completeness === "complete",
+    completeness: listing.completeness,
+    files: listing.entries.filter((entry) => entry.status !== "excluded").map((entry) => {
+      const change = entry.changeType;
+      const type = change === "untracked" ? "added" : change === "added" || change === "modified" || change === "deleted" || change === "renamed" ? change : "unknown";
+      return { path: entry.path, type, token: entry.sha256 ?? entry.status };
+    })
+  };
+}
+
+// src/tasks-review.ts
+import { spawnSync as spawnSync3 } from "child_process";
+import { constants as constants2, closeSync as closeSync2, fstatSync as fstatSync2, lstatSync as lstatSync4, openSync as openSync2, readSync, realpathSync as realpathSync5 } from "fs";
+import { createHash as createHash3 } from "crypto";
+import { isAbsolute as isAbsolute4, relative as relative2, resolve as resolve4, sep as sep2 } from "path";
+var defaults = { maxPaths: 512, maxFileBytes: 2 * 1024 * 1024, maxTotalBytes: 16 * 1024 * 1024, timeoutMs: 5000 };
+var fail3 = (code) => {
+  throw new TaskRegistryError(code);
+};
+var contains2 = (a, b) => {
+  const r = relative2(a, b);
+  return !r || r !== ".." && !r.startsWith(".." + sep2) && !isAbsolute4(r);
+};
+function reviewTask(request) {
+  if (!request || typeof request !== "object" || Array.isArray(request))
+    return fail3("INVALID_INPUT");
+  const start = Date.now(), observedFrom = new Date().toISOString();
+  const limits = { ...defaults, ...request.limits };
+  if (!request || typeof request.taskID !== "string" || !request.taskID || request.periodID !== undefined && typeof request.periodID !== "string" || Object.keys(limits).some((k) => !(k in defaults)) || Object.values(limits).some((n) => !Number.isSafeInteger(n) || n <= 0))
+    return fail3("INVALID_INPUT");
+  const scope = normalizeScopeLexical(request.scope);
+  const counts = { tracked: 0, staged: 0, unstaged: 0, untracked: 0, deleted: 0, renamed: 0, binary: 0, unknown: 0, excluded: 0, outsideScope: 0 };
+  const entries = [];
+  const failures = [];
+  const warnings = [];
+  let completeness = "complete", total = 0;
+  let headFrom = null, headTo = null;
+  const preflightTimeout = () => ({ v: 1, taskID: request.taskID, ...request.periodID === undefined ? {} : { periodID: request.periodID }, baseline: request.baseline, observedFrom, observedTo: new Date().toISOString(), head: null, completeness: "incomplete", counts, entries, failures: [{ code: "REVIEW_LIMIT_EXCEEDED", count: 1 }], warnings, limits });
+  let project;
+  try {
+    project = inspectProject(request.primaryDirectory);
+  } catch (error) {
+    if (Date.now() - start > limits.timeoutMs)
+      return preflightTimeout();
+    throw error;
+  }
+  if (Date.now() - start > limits.timeoutMs)
+    return preflightTimeout();
+  let root;
+  try {
+    if (!isAbsolute4(request.directory))
+      return fail3("PROJECT_MISMATCH");
+    root = realpathSync5(request.directory);
+  } catch {
+    return fail3("PROJECT_MISMATCH");
+  }
+  if (contains2(project.primaryDirectory, root) || contains2(root, project.primaryDirectory) || contains2(resolve4(project.commonDir, "opencode-crew-stage1"), root) || contains2(root, resolve4(project.commonDir, "opencode-crew-stage1")))
+    return fail3("PROJECT_MISMATCH");
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+  env.GIT_OPTIONAL_LOCKS = "0";
+  const timeout = Symbol("timeout");
+  function failure(code, changed = false) {
+    const f = failures.find((x) => x.code === code);
+    if (f)
+      f.count++;
+    else
+      failures.push({ code, count: 1 });
+    if (code === "REVIEW_LIMIT_EXCEEDED")
+      completeness = "incomplete";
+    else if (completeness !== "changed" && !failures.some((x) => x.code === "REVIEW_LIMIT_EXCEEDED"))
+      completeness = changed ? "changed" : "incomplete";
+  }
+  function git(cwd, args, code = "HOST_ERROR") {
+    const remaining = limits.timeoutMs - (Date.now() - start);
+    if (remaining <= 0)
+      throw timeout;
+    const r = spawnSync3("git", ["-c", "core.fsmonitor=false", ...args], { cwd, env, encoding: "utf8", timeout: remaining, maxBuffer: 1024 * 1024 });
+    if (r.error || r.status !== 0 || r.signal) {
+      if (["ETIMEDOUT", "ENOBUFS"].includes(r.error?.code ?? "") || Date.now() - start >= limits.timeoutMs)
+        throw timeout;
+      return fail3(code);
+    }
+    return r.stdout;
+  }
+  try {
+    let tracked = function(path) {
+      if (!trackedPaths.has(path)) {
+        trackedPaths.add(path);
+        counts.tracked++;
+      }
+    }, add = function(path, type, source) {
+      if (entries.length >= limits.maxPaths || Date.now() - start >= limits.timeoutMs) {
+        failure("REVIEW_LIMIT_EXCEEDED");
+        return;
+      }
+      const key = path + "\x00" + source + "\x00" + type;
+      if (!path.includes("\uFFFD")) {
+        if (entryKeys.has(key))
+          return;
+        entryKeys.add(key);
+      }
+      if (!scope.some((s) => s.endsWith("/") ? path.startsWith(s) : path === s) && !outsidePaths.has(path)) {
+        outsidePaths.add(path);
+        counts.outsideScope++;
+      }
+      const e = { path, changeType: type, source, status: "unreadable" };
+      entries.push(e);
+      if (path.includes("\uFFFD")) {
+        e.status = "refused";
+        failure("REVIEW_REFUSED");
+        if (!warnings.includes("\u5B58\u5728\u65E0\u6CD5\u6309 UTF-8 \u8868\u793A\u7684\u8DEF\u5F84\uFF0C\u5DF2\u4FDD\u5B88\u62D2\u7EDD"))
+          warnings.push("\u5B58\u5728\u65E0\u6CD5\u6309 UTF-8 \u8868\u793A\u7684\u8DEF\u5F84\uFF0C\u5DF2\u4FDD\u5B88\u62D2\u7EDD");
+        return;
+      }
+      if (type === "deleted") {
+        e.status = "missing";
+        return;
+      }
+      const parts = path.split("/");
+      if (!path || isAbsolute4(path) || parts.some((p) => !p || p === "." || p === "..")) {
+        e.status = "refused";
+        failure("REVIEW_REFUSED");
+        return;
+      }
+      if (parts.some((p) => [".git", ".env", ".ssh", ".gnupg", "node_modules", ".cache", ".venv", ".opencode", "secrets"].includes(p) || p.startsWith(".env.") && p !== ".env.example") || /\.(?:sqlite|sqlite3|db|db-wal|db-shm|pem|key)$/i.test(parts[parts.length - 1])) {
+        e.status = "excluded";
+        counts.excluded++;
+        return;
+      }
+      let fd = -1;
+      try {
+        let p = root;
+        for (let i = 0;i < parts.length; i++) {
+          p = resolve4(p, parts[i]);
+          const st = lstatSync4(p);
+          if (st.isSymbolicLink() || i < parts.length - 1 && !st.isDirectory()) {
+            e.status = "refused";
+            failure("REVIEW_REFUSED");
+            return;
+          }
+          if (i === parts.length - 1 && !st.isFile()) {
+            e.status = "refused";
+            failure("REVIEW_REFUSED");
+            return;
+          }
+        }
+        const actual = realpathSync5(p);
+        if (actual !== resolve4(root, ...parts)) {
+          e.status = "refused";
+          failure("REVIEW_REFUSED");
+          return;
+        }
+        const before = lstatSync4(p);
+        if (before.size > limits.maxFileBytes || total + before.size > limits.maxTotalBytes) {
+          failure("REVIEW_LIMIT_EXCEEDED");
+          return;
+        }
+        fd = openSync2(p, constants2.O_RDONLY | constants2.O_NOFOLLOW | constants2.O_NONBLOCK);
+        const opened = fstatSync2(fd);
+        if (realpathSync5(p) !== actual) {
+          e.status = "refused";
+          failure("REVIEW_REFUSED");
+          return;
+        }
+        if (before.ino !== opened.ino || before.dev !== opened.dev || before.size !== opened.size || before.mtimeMs !== opened.mtimeMs) {
+          e.status = "changed";
+          failure("REVIEW_CHANGED", true);
+          return;
+        }
+        const hash = createHash3("sha256");
+        const buf = Buffer.alloc(Math.min(65536, Math.max(1, before.size)));
+        let n, bytes = 0, binary = false;
+        while ((n = readSync(fd, buf, 0, buf.length, null)) > 0) {
+          total += n;
+          if (Date.now() - start > limits.timeoutMs || bytes + n > limits.maxFileBytes || total > limits.maxTotalBytes) {
+            failure("REVIEW_LIMIT_EXCEEDED");
+            return;
+          }
+          if (bytes < 8000 && buf.subarray(0, Math.min(n, 8000 - bytes)).includes(0))
+            binary = true;
+          hash.update(buf.subarray(0, n));
+          bytes += n;
+        }
+        const after = fstatSync2(fd), last = lstatSync4(p);
+        if (after.ino !== opened.ino || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || last.ino !== opened.ino || last.dev !== opened.dev || last.size !== opened.size || last.mtimeMs !== opened.mtimeMs) {
+          e.status = "changed";
+          failure("REVIEW_CHANGED", true);
+          return;
+        }
+        e.status = "hashed";
+        e.bytes = bytes;
+        e.sha256 = hash.digest("hex");
+        if (binary && type !== "unknown") {
+          e.changeType = "binary";
+          counts.binary++;
+        }
+      } catch (err) {
+        if (err.code === "ENOENT") {
+          e.status = "missing";
+          if (type !== "deleted")
+            failure("REVIEW_MISSING");
+        } else {
+          e.status = "unreadable";
+          failure("REVIEW_UNREADABLE");
+        }
+      } finally {
+        if (fd !== -1)
+          closeSync2(fd);
+      }
+    };
+    const list = git(project.primaryDirectory, ["worktree", "list", "--porcelain", "-z"], "PROJECT_MISMATCH").split("\x00\x00");
+    if (!list.some((x) => x.split("\x00")[0] === `worktree ${root}` && !x.split("\x00").includes("bare")))
+      return fail3("PROJECT_MISMATCH");
+    try {
+      if (realpathSync5(git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"], "PROJECT_MISMATCH").trimEnd()) !== project.commonDir || realpathSync5(git(root, ["rev-parse", "--show-toplevel"], "PROJECT_MISMATCH").trimEnd()) !== root)
+        return fail3("PROJECT_MISMATCH");
+    } catch (e) {
+      if (e === timeout)
+        throw e;
+      return fail3("PROJECT_MISMATCH");
+    }
+    const format = git(root, ["rev-parse", "--show-object-format"]).trim(), len = format === "sha1" ? 40 : format === "sha256" ? 64 : 0;
+    if (typeof request.baseline !== "string" || !len || !new RegExp(`^[0-9a-f]{${len}}$`).test(request.baseline) || git(root, ["rev-parse", "--verify", `${request.baseline}^{commit}`], "BASELINE_MISMATCH").trim() !== request.baseline)
+      return fail3("BASELINE_MISMATCH");
+    git(root, ["cat-file", "-e", `${request.baseline}^{commit}`], "BASELINE_MISMATCH");
+    headFrom = git(root, ["rev-parse", "HEAD"]).trim();
+    const raw = git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).split("\x00");
+    const ancestor = spawnSync3("git", ["-c", "core.fsmonitor=false", "merge-base", "--is-ancestor", request.baseline, headFrom], { cwd: root, env, timeout: Math.max(1, limits.timeoutMs - (Date.now() - start)), maxBuffer: 1024 * 1024 });
+    if (ancestor.status === 1)
+      warnings.push("BASELINE_NOT_ANCESTOR: baseline \u4E0D\u5728 HEAD \u7956\u5148\u94FE\u4E0A");
+    else if (ancestor.status !== 0 || ancestor.error || ancestor.signal) {
+      if (Date.now() - start >= limits.timeoutMs) {
+        failures.push({ code: "REVIEW_LIMIT_EXCEEDED", count: 1 });
+        completeness = "incomplete";
+      } else
+        return fail3("HOST_ERROR");
+    }
+    const trackedPaths = new Set, outsidePaths = new Set, entryKeys = new Set;
+    const added = (path, type, source) => {
+      const before = entries.length;
+      add(path, type, source);
+      return entries.length > before;
+    };
+    let stopped = false;
+    for (let i = 0;i < raw.length && raw[i]; i++) {
+      if (entries.length >= limits.maxPaths || Date.now() - start >= limits.timeoutMs) {
+        failure("REVIEW_LIMIT_EXCEEDED");
+        stopped = true;
+        break;
+      }
+      const record = raw[i], xy = record.slice(0, 2), path = record.slice(3);
+      if (xy === "??") {
+        counts.untracked++;
+        add(path, "untracked", "worktree");
+        continue;
+      }
+      if (xy[0] !== " ")
+        counts.staged++;
+      if (xy[1] !== " ")
+        counts.unstaged++;
+      const source = xy[1] !== " " ? "worktree" : "index";
+      if (xy.includes("R")) {
+        const old = raw[++i];
+        counts.renamed++;
+        counts.deleted++;
+        if (added(old, "deleted", source))
+          tracked(old);
+        if (entries.length >= limits.maxPaths || Date.now() - start >= limits.timeoutMs) {
+          failure("REVIEW_LIMIT_EXCEEDED");
+          stopped = true;
+          break;
+        }
+        if (added(path, "renamed", source))
+          tracked(path);
+      } else {
+        const type = ["DD", "AU", "UD", "UA", "DU", "AA", "UU"].includes(xy) ? "unknown" : xy.includes("D") ? "deleted" : xy.includes("A") ? "added" : /[MT]/.test(xy) ? "modified" : "unknown";
+        if (type === "unknown")
+          counts.unknown++;
+        if (type === "deleted")
+          counts.deleted++;
+        if (added(path, type, source))
+          tracked(path);
+      }
+    }
+    const drift = stopped ? [] : git(root, ["diff", "--name-status", "-z", "--no-renames", `${request.baseline}..${headFrom}`]).split("\x00");
+    for (let i = 0;i < drift.length && drift[i]; i += 2) {
+      if (entries.length >= limits.maxPaths || Date.now() - start >= limits.timeoutMs) {
+        failure("REVIEW_LIMIT_EXCEEDED");
+        break;
+      }
+      const type = drift[i][0] === "D" ? "deleted" : drift[i][0] === "A" ? "added" : drift[i][0] === "M" ? "modified" : "unknown";
+      if (type === "deleted")
+        counts.deleted++;
+      if (type === "unknown")
+        counts.unknown++;
+      if (added(drift[i + 1], type, "head"))
+        tracked(drift[i + 1]);
+    }
+    headTo = git(root, ["rev-parse", "HEAD"]).trim();
+    if (headFrom !== null && headTo !== null && headFrom !== headTo)
+      failure("REVIEW_CHANGED", true);
+  } catch (e) {
+    if (e !== timeout)
+      throw e;
+    failure("REVIEW_LIMIT_EXCEEDED");
+  }
+  entries.sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)));
+  for (const e of entries)
+    e.path = e.path.replace(/[\x00-\x1f\x7f-\x9f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+  if (counts.outsideScope)
+    warnings.push(`\u6709 ${counts.outsideScope} \u4E2A\u8DEF\u5F84\u5728 scope \u5916`);
+  if (counts.renamed)
+    warnings.push("rename \u6309\u65E7\u8DEF\u5F84 deleted \u548C\u65B0\u8DEF\u5F84 renamed \u8BA1\u6570");
+  const head = headFrom === null && headTo === null ? null : { from: headFrom, to: headTo, drifted: headFrom === null || headTo === null ? null : headFrom !== request.baseline || headTo !== request.baseline };
+  return { v: 1, taskID: request.taskID, ...request.periodID === undefined ? {} : { periodID: request.periodID }, baseline: request.baseline, observedFrom, observedTo: new Date().toISOString(), head, completeness, counts, entries, failures, warnings, limits };
+}
+
+// src/review-gate-host.ts
+var planReference = /\bplans\/[\w.\/-]+\.md\b/;
+var isRoot = (session) => session.agent === "root" && !session.parentID;
+var errorCode2 = (error) => error instanceof TaskRegistryError ? error.code : "HOST_ERROR";
+var changeKey = (change, fingerprint) => `${change.taskID ?? "native"}:${fingerprint}`;
+var eligibleReviewers = (data) => data.filter((child) => child.agent === "reviewer" && child.outcome !== "failed" && child.outcome !== "interrupted");
+function coverageTime({ dir, files }) {
+  let latest;
+  for (const { path, type } of files) {
+    if (type === "deleted")
+      continue;
+    try {
+      const { mtimeMs } = lstatSync5(join3(dir, path));
+      latest = latest === undefined ? mtimeMs : Math.max(latest, mtimeMs);
+    } catch {
+      return;
+    }
+  }
+  return latest;
+}
+async function listRootChildren(ctx, parentID) {
+  const data = [], seen = new Set;
+  let cursor;
+  for (let page = 0;page < 20; page++) {
+    const result = await ctx.session.list({ parentID, limit: 200, ...cursor ? { cursor } : {} });
+    data.push(...result.data);
+    cursor = result.cursor?.next ?? undefined;
+    if (!cursor)
+      return { data, complete: true };
+    if (seen.has(cursor))
+      break;
+    seen.add(cursor);
+  }
+  return { data, complete: false };
+}
+function messageText(message) {
+  if (typeof message?.text === "string")
+    return message.text;
+  return message?.content?.flatMap((part) => part.type === "text" && typeof part.text === "string" ? [part.text] : []).join(`
+`) ?? "";
+}
+async function readNativePlan(ctx, native, cfg, listChildren) {
+  if (native.status !== "available" || cfg.planMinFiles <= 0 || native.files.length < cfg.planMinFiles)
+    return;
+  for (const child of (await listChildren()).data) {
+    if (child.agent !== "engineer")
+      continue;
+    const messages = await ctx.session.context({ sessionID: child.id });
+    const text = messageText(messages.find((message) => message.type === "user"));
+    if (planReference.test(Buffer.from(text.slice(0, 8192)).subarray(0, 8192).toString("utf8"))) {
+      native.planRef = true;
+      return;
+    }
+  }
+}
+function matchesTask(session, task, commonDir) {
+  const binding = session.metadata?.crewTask;
+  if (!binding || typeof binding !== "object" || Array.isArray(binding))
+    return false;
+  const expected = {
+    namespace: "opencode-crew-stage1",
+    taskID: task.taskID,
+    requestDigest: task.requestDigest,
+    ownerSessionID: task.ownerSessionID,
+    project: createHash4("sha256").update(commonDir).digest("hex")
+  };
+  return session.id === task.sessionID && session.agent === "engineer" && session.location?.directory === task.input.directory && Object.entries(expected).every(([key, value]) => binding[key] === value);
+}
+async function collectTasks(ctx, dir, rootID) {
+  const tasks = [];
+  try {
+    const project = inspectProject(dir);
+    if (dir !== project.primaryDirectory)
+      throw new TaskRegistryError("PROJECT_MISMATCH");
+    for (const { record, periodID } of new Ledger(project).active(rootID)) {
+      const { taskID } = record;
+      const unavailable = (code) => tasks.push({ taskID, status: "unavailable", error: { code } });
+      if (!record.sessionID) {
+        unavailable("SESSION_UNBOUND");
+        continue;
+      }
+      try {
+        const session = await ctx.session.get({ sessionID: record.sessionID });
+        if (!matchesTask(session, record, project.commonDir)) {
+          unavailable("SESSION_MISMATCH");
+          continue;
+        }
+        const { busy, idle } = session.time;
+        if (busy !== undefined && !(idle !== undefined && idle >= busy)) {
+          tasks.push({ taskID, status: "busy" });
+          continue;
+        }
+        const { directory, baseline, scope, goal, acceptance, check } = record.input;
+        const listing = reviewTask({
+          primaryDirectory: project.primaryDirectory,
+          directory,
+          taskID,
+          baseline,
+          scope,
+          periodID,
+          limits: { timeoutMs: 3000 }
+        });
+        const change = fromReviewListing(directory, listing);
+        change.planRef = [goal, acceptance, check].some((text) => planReference.test(text));
+        tasks.push({ taskID, status: "available", change });
+      } catch (error) {
+        unavailable(errorCode2(error));
+      }
+    }
+  } catch (error) {
+    return { tasks, projectError: errorCode2(error) };
+  }
+  return { tasks };
+}
+var noVerdict = () => ({ files: [], verdict: { hit: false, reasons: [] } });
+function jsonSafe(value) {
+  if (Array.isArray(value))
+    return value.map((item) => jsonSafe(item));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, item] of Object.entries(value))
+      if (item !== undefined)
+        out[key] = jsonSafe(item);
+    return out;
+  }
+  return value;
+}
+function describeChange(change, cfg, state, latestReviewer, reviewerListComplete) {
+  const fingerprint = gateFingerprint(change);
+  const key = changeKey(change, fingerprint);
+  const observation = state?.fingerprints.get(key);
+  const latestChangeAt = coverageTime(change) ?? observation?.firstSeenAt;
+  const covered = latestChangeAt !== undefined && latestReviewer !== undefined && latestReviewer >= latestChangeAt;
+  const reviewerCovered = covered ? true : latestChangeAt !== undefined && reviewerListComplete ? false : undefined;
+  const files = change.files.map(({ path, type }) => ({ path, type }));
+  return {
+    head: change.head,
+    complete: change.complete,
+    degraded: change.degraded ?? false,
+    files,
+    fileCount: new Set(files.map((file) => file.path)).size,
+    verdict: evaluateGate(change, cfg),
+    fingerprint,
+    latestChangeAt,
+    reviewerCovered,
+    acked: state?.acked.has(key) ?? false,
+    reminders: observation?.reminders ?? 0
+  };
+}
+async function registerReviewGate(ctx, cfg) {
+  if (cfg.mode === "off")
+    return;
+  const states = new Map;
+  const hooks = { idle: false, prompt: false };
+  function stateFor(sessionID) {
+    let state = states.get(sessionID);
+    if (!state) {
+      state = { promptSeen: false, reminders: 0, acked: new Set, fingerprints: new Map, checking: false };
+      states.set(sessionID, state);
+    }
+    return state;
+  }
+  try {
+    await ctx.session.hook("experimental.idle", async ({ sessionID, background }) => {
+      try {
+        if (!isRoot(await ctx.session.get({ sessionID })) || background.length > 0)
+          return;
+        const state = stateFor(sessionID);
+        if (state.checking)
+          return;
+        state.checking = true;
+        try {
+          const dir = ctx.location.directory;
+          const native = collectNativeChanges(dir, { baseline: state.baseline });
+          const { tasks } = await collectTasks(ctx, dir, sessionID);
+          let children;
+          const listChildren = () => children ??= listRootChildren(ctx, sessionID);
+          await readNativePlan(ctx, native, cfg, listChildren);
+          const changes = tasks.flatMap((task) => task.status === "available" ? [task.change] : []);
+          if (native.status === "available")
+            changes.unshift(native);
+          const observedAt = Date.now();
+          const hits = changes.flatMap((change) => {
+            const verdict = evaluateGate(change, cfg);
+            if (!verdict.hit)
+              return [];
+            const fingerprint = gateFingerprint(change);
+            const key = changeKey(change, fingerprint);
+            if (state.acked.has(key))
+              return [];
+            let observation = state.fingerprints.get(key);
+            if (!observation) {
+              observation = { firstSeenAt: observedAt, reminders: 0 };
+              state.fingerprints.set(key, observation);
+            }
+            return [{ change, verdict, fingerprint, key, observation }];
+          });
+          if (!hits.length && !state.pending)
+            return;
+          const acknowledge = (key, change) => {
+            state.acked.add(key);
+            if (state.pending?.key === key)
+              state.pending = undefined;
+            if (change === native && native.status === "available" && native.complete) {
+              state.baseline = native.snapshot;
+              state.promptSeen = true;
+            }
+          };
+          const messages = await ctx.session.context({ sessionID });
+          const assistant = messages.findLast((message) => message.type === "assistant");
+          let skipped;
+          if (state.pending && assistant && assistant.id !== state.pending.after && extractReviewSkip(messageText(assistant))) {
+            skipped = state.pending.key;
+            acknowledge(skipped, hits.find((hit) => hit.key === skipped)?.change);
+          }
+          if (hits.every((hit) => hit.key === skipped))
+            return;
+          const { data, complete } = await listChildren();
+          const reviewers = eligibleReviewers(data);
+          let notified = false;
+          for (const { change, verdict, fingerprint, key, observation } of hits) {
+            if (key === skipped)
+              continue;
+            const latestChangeAt = coverageTime(change) ?? observation.firstSeenAt;
+            if (reviewers.some((child) => child.time.created >= latestChangeAt)) {
+              acknowledge(key, change);
+              continue;
+            }
+            if (!complete || notified)
+              continue;
+            if (cfg.mode === "remind" && (state.lastFingerprint === key || observation.reminders > 0 || state.reminders >= 5 * cfg.maxReminders))
+              continue;
+            if (cfg.mode === "enforce" && observation.reminders >= cfg.maxReminders)
+              continue;
+            await ctx.session.synthetic({
+              sessionID,
+              text: renderReminder(change, verdict),
+              description: "crew review gate",
+              delivery: "queue",
+              metadata: { crewReviewGate: { fingerprint, rule: verdict.reasons.map((reason) => reason.rule) } }
+            });
+            state.pending = { key, after: assistant?.id };
+            state.lastFingerprint = key;
+            state.reminders++;
+            observation.reminders++;
+            notified = true;
+          }
+        } finally {
+          state.checking = false;
+        }
+      } catch {}
+    });
+    hooks.idle = true;
+  } catch {}
+  if (hooks.idle)
+    try {
+      await ctx.session.hook("prompt", async ({ sessionID }) => {
+        try {
+          if (states.get(sessionID)?.promptSeen || !isRoot(await ctx.session.get({ sessionID })))
+            return;
+          const state = stateFor(sessionID);
+          if (state.promptSeen)
+            return;
+          state.promptSeen = true;
+          state.baseline = snapshotNative(ctx.location.directory);
+        } catch {}
+      });
+      hooks.prompt = true;
+    } catch {}
+  try {
+    await ctx.tool.transform((editor) => editor.add({
+      name: "crew_review_gate",
+      input: { type: "object", properties: {}, additionalProperties: false },
+      output: { type: "object", additionalProperties: true },
+      description: "\u4EC5 Root \u4F7F\u7528\u3002\u5F53\u6000\u7591\u5BA1\u67E5\u95E8\u7981\u6CA1\u6709\u63D0\u9192\u3001\u6216\u60F3\u67E5\u67D0\u6761\u89C4\u5219\u4E3A\u4F55\u547D\u4E2D\u65F6\u8C03\u7528\uFF08\u8F93\u5165 {}\uFF09\u3002\u53EA\u8BFB\uFF0C\u4E0D\u63A8\u8FDB\u57FA\u7EBF\u3001\u4E0D\u786E\u8BA4\u8DF3\u8FC7\u3001\u4E0D\u6D88\u8017\u63D0\u9192\u6B21\u6570\u3001\u4E0D\u53D1\u9001\u6D88\u606F\u3002\u8FD4\u56DE mode/config/sessionID\u3001baseline/hook \u72B6\u6001\u3001native \u53CA active tasks \u7684\u72B6\u6001\u3001\u6539\u52A8\u8DEF\u5F84\u548C\u7C7B\u578B\u3001verdict\u3001fingerprint\u3001\u8986\u76D6\u65F6\u95F4\u548C reviewerCovered\u3001reviewers \u6458\u8981\u3001state \u63D0\u9192/\u5F85\u786E\u8BA4/\u5DF2\u786E\u8BA4\u8BA1\u6570\u53CA notes/error.code\u3002unavailable/busy \u8868\u793A\u672A\u8BC4\u4F30\uFF1B\u8986\u76D6\u4FE1\u606F\u7F3A\u5931\u8868\u793A\u65E0\u6CD5\u5224\u5B9A\u3002",
+      async execute(_input, tc) {
+        const failure = (code, message) => ({ output: { error: { code, message } }, content: message });
+        try {
+          const { agent, sessionID } = tc;
+          if (agent !== "root")
+            throw new TaskRegistryError("FORBIDDEN_CALLER");
+          const owner = await ctx.session.get({ sessionID });
+          if (owner.id !== sessionID || !isRoot(owner))
+            throw new TaskRegistryError("FORBIDDEN_CALLER");
+          const state = states.get(sessionID);
+          const baseline = state?.baseline;
+          const dir = ctx.location.directory;
+          const native = collectNativeChanges(dir, { baseline });
+          const { tasks, projectError } = await collectTasks(ctx, dir, sessionID);
+          const children = await listRootChildren(ctx, sessionID);
+          await readNativePlan(ctx, native, cfg, () => Promise.resolve(children));
+          const reviewers = eligibleReviewers(children.data);
+          const latestCreatedAt = reviewers.length ? Math.max(...reviewers.map((child) => child.time.created)) : undefined;
+          const describe = (change) => describeChange(change, cfg, state, latestCreatedAt, children.complete);
+          const notes = [];
+          if (!hooks.idle)
+            notes.push("IDLE_HOOK_UNAVAILABLE\uFF1A\u4E0D\u4F1A\u81EA\u52A8\u63D0\u9192\uFF0C\u53EF\u624B\u52A8\u8BCA\u65AD\u3002");
+          else if (!hooks.prompt)
+            notes.push("PROMPT_HOOK_UNAVAILABLE\uFF1A\u672A\u6CE8\u518C\u57FA\u7EBF\u91C7\u96C6\u3002");
+          if (native.status === "unavailable")
+            notes.push("NATIVE_UNAVAILABLE\uFF1A\u65E0\u6CD5\u91C7\u96C6\u539F\u751F\u6539\u52A8\u3002");
+          else if (!baseline)
+            notes.push("BASELINE_MISSING\uFF1A\u57FA\u7EBF\u7F3A\u5931\uFF0C\u542B\u65E2\u6709\u6539\u52A8\u3002");
+          if (projectError)
+            notes.push(`${projectError}\uFF1A\u5DE5\u4F5C\u533A\u4E0D\u662F\u53EF\u68C0\u67E5\u7684\u4E3B worktree\uFF0C\u6216\u4EFB\u52A1\u8D26\u672C\u4E0D\u53EF\u7528\u3002`);
+          if (!children.complete)
+            notes.push("REVIEWER_LIST_INCOMPLETE\uFF1A\u5B50\u4F1A\u8BDD\u5217\u8868\u4E0D\u5B8C\u6574\uFF1B\u7F3A\u5C11\u6B63\u5411\u8986\u76D6\u8BC1\u636E\u65F6\u4E0D\u81EA\u52A8\u63D0\u9192\u3002");
+          const { mode, ...config } = cfg;
+          return { output: jsonSafe({
+            mode,
+            config,
+            sessionID,
+            baseline: { present: baseline !== undefined },
+            hooks: { ...hooks },
+            native: { status: native.status, ...native.status === "available" ? describe(native) : noVerdict() },
+            tasks: tasks.map((task) => task.status === "available" ? { taskID: task.taskID, status: task.status, outsideScope: task.change.outsideScope, ...describe(task.change) } : { ...task, ...noVerdict() }),
+            reviewers: { count: reviewers.length, latestCreatedAt, complete: children.complete },
+            state: { reminders: state?.reminders ?? 0, pending: state?.pending?.key, acked: state?.acked.size ?? 0, lastFingerprint: state?.lastFingerprint },
+            notes
+          }) };
+        } catch (error) {
+          const code = errorCode2(error);
+          return failure(code, code === "FORBIDDEN_CALLER" ? "\u53EA\u80FD\u7531 Root \u4F1A\u8BDD\u8C03\u7528\u5BA1\u67E5\u95E8\u7981\u8BCA\u65AD\u3002" : "\u5BA1\u67E5\u95E8\u7981\u8BCA\u65AD\u4E0D\u53EF\u7528\uFF1B\u672A\u6539\u53D8\u4EFB\u4F55\u95E8\u7981\u72B6\u6001\u3002");
+        }
+      }
+    }));
+  } catch {}
+}
+
 // src/snapshot.ts
 var taskSchema = {
   type: "object",
@@ -8256,7 +9137,7 @@ function profileLabel(name) {
     path: (field) => `\u6863 "${name}" \u7684 ${field}`
   };
 }
-function fail3(message) {
+function fail4(message) {
   throw new Error(`[opencode-crew] ${message}`);
 }
 function object4(value) {
@@ -8267,48 +9148,48 @@ function instructions(value, label) {
   if (value === undefined)
     return [];
   if (!Array.isArray(value))
-    fail3(`${field} \u5FC5\u987B\u662F\u5B57\u7B26\u4E32\u6570\u7EC4`);
+    fail4(`${field} \u5FC5\u987B\u662F\u5B57\u7B26\u4E32\u6570\u7EC4`);
   if (value.length > 32)
-    fail3(`${field} \u6700\u591A 32 \u9879`);
+    fail4(`${field} \u6700\u591A 32 \u9879`);
   let total = 0;
   const out = value.map((item, index) => {
     if (typeof item !== "string")
-      fail3(`${field}[${index}] \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
+      fail4(`${field}[${index}] \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
     if (/[\r\n]/.test(item))
-      fail3(`${field}[${index}] \u4E0D\u80FD\u5305\u542B\u6362\u884C`);
+      fail4(`${field}[${index}] \u4E0D\u80FD\u5305\u542B\u6362\u884C`);
     const text = item.trim();
     if (!text)
-      fail3(`${field}[${index}] \u4E0D\u80FD\u4E3A\u7A7A`);
+      fail4(`${field}[${index}] \u4E0D\u80FD\u4E3A\u7A7A`);
     if (text.length > 2000)
-      fail3(`${field}[${index}] \u6700\u591A 2000 \u5B57\u7B26`);
+      fail4(`${field}[${index}] \u6700\u591A 2000 \u5B57\u7B26`);
     total += text.length;
     return text;
   });
   if (total > 8000)
-    fail3(`${field} \u603B\u957F\u5EA6\u6700\u591A 8000 \u5B57\u7B26`);
+    fail4(`${field} \u603B\u957F\u5EA6\u6700\u591A 8000 \u5B57\u7B26`);
   return out;
 }
 function parseCrewConfig(input, label = optionsLabel) {
   if (!object4(input))
-    fail3(`${label.subject} \u5FC5\u987B\u662F\u5BF9\u8C61`);
+    fail4(`${label.subject} \u5FC5\u987B\u662F\u5BF9\u8C61`);
   for (const key of Object.keys(input))
     if (!["models", "steps", "engineerInstructions"].includes(key))
-      fail3(`\u672A\u77E5 ${label.path(key)}`);
+      fail4(`\u672A\u77E5 ${label.path(key)}`);
   const models = {}, steps = {};
   for (const field of ["models", "steps"]) {
     const map = input[field] ?? {};
     if (!object4(map))
-      fail3(`${label.path(field)} \u5FC5\u987B\u662F\u89D2\u8272\u6620\u5C04`);
+      fail4(`${label.path(field)} \u5FC5\u987B\u662F\u89D2\u8272\u6620\u5C04`);
     for (const [id, value] of Object.entries(map)) {
       if (!IDS.includes(id))
-        fail3(`\u672A\u77E5\u89D2\u8272 ${label.path(field)}.${id}`);
+        fail4(`\u672A\u77E5\u89D2\u8272 ${label.path(field)}.${id}`);
       if (field === "steps") {
         if (!Number.isSafeInteger(value) || value <= 0)
-          fail3(`${label.path("steps")}.${id} \u5FC5\u987B\u4E3A\u6B63\u6574\u6570`);
+          fail4(`${label.path("steps")}.${id} \u5FC5\u987B\u4E3A\u6B63\u6574\u6570`);
         steps[id] = value;
       } else {
         if (typeof value !== "string" || !/^[^\s/#]+\/[^\s#]+(?:#[^\s#]+)?$/.test(value)) {
-          fail3(`${label.path("models")}.${id} \u5FC5\u987B\u4E3A provider/model[#variant]\uFF1B\u7701\u7565\u5373\u53EF\u7EE7\u627F\u4F1A\u8BDD\u6A21\u578B`);
+          fail4(`${label.path("models")}.${id} \u5FC5\u987B\u4E3A provider/model[#variant]\uFF1B\u7701\u7565\u5373\u53EF\u7EE7\u627F\u4F1A\u8BDD\u6A21\u578B`);
         }
         const [left, variant] = value.split("#"), slash = left.indexOf("/");
         models[id] = { providerID: left.slice(0, slash), id: left.slice(slash + 1), ...variant ? { variant } : {} };
@@ -8324,24 +9205,24 @@ function parseAliases(value) {
     return {};
   const field = "options.modelAliases";
   if (!object4(value))
-    fail3(`${field} \u5FC5\u987B\u662F\u5BF9\u8C61`);
+    fail4(`${field} \u5FC5\u987B\u662F\u5BF9\u8C61`);
   const entries = Object.entries(value);
   if (entries.length > 64)
-    fail3(`${field} \u6700\u591A 64 \u9879`);
+    fail4(`${field} \u6700\u591A 64 \u9879`);
   const aliases = {};
   for (const [key, raw] of entries) {
     if (!ALIAS_KEY.test(key))
-      fail3(`${field} \u7684\u952E "${key}" \u5FC5\u987B\u4E3A provider/model`);
+      fail4(`${field} \u7684\u952E "${key}" \u5FC5\u987B\u4E3A provider/model`);
     const item = `${field}.${key}`;
     if (typeof raw !== "string")
-      fail3(`${item} \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
+      fail4(`${item} \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
     const text = raw.trim();
     if (!text)
-      fail3(`${item} \u4E0D\u80FD\u4E3A\u7A7A`);
+      fail4(`${item} \u4E0D\u80FD\u4E3A\u7A7A`);
     if (CONTROL.test(raw))
-      fail3(`${item} \u4E0D\u80FD\u5305\u542B\u63A7\u5236\u5B57\u7B26`);
+      fail4(`${item} \u4E0D\u80FD\u5305\u542B\u63A7\u5236\u5B57\u7B26`);
     if (text.length > 12)
-      fail3(`${item} \u6700\u591A 12 \u5B57\u7B26`);
+      fail4(`${item} \u6700\u591A 12 \u5B57\u7B26`);
     aliases[key] = text;
   }
   return aliases;
@@ -8351,20 +9232,83 @@ function parseDisplayMode(value) {
     return "inline";
   if (value === "inline" || value === "off")
     return value;
-  fail3("options.modelDisplay \u5FC5\u987B\u4E3A inline \u6216 off");
+  fail4("options.modelDisplay \u5FC5\u987B\u4E3A inline \u6216 off");
 }
 function parseCrewDisplay(input) {
   if (input == null)
     return { aliases: {}, display: "inline" };
   if (!object4(input))
-    fail3("options \u5FC5\u987B\u662F\u5BF9\u8C61");
+    fail4("options \u5FC5\u987B\u662F\u5BF9\u8C61");
   return { aliases: parseAliases(input.modelAliases), display: parseDisplayMode(input.modelDisplay) };
+}
+var defaultReviewGate = {
+  mode: "off",
+  maxFiles: 5,
+  planMinFiles: 2,
+  maxReminders: 2,
+  testGlobs: ["test/**", "tests/**", "**/*.test.*", "**/*.spec.*", "**/__tests__/**"],
+  sensitiveGlobs: ["**/AGENTS.md"],
+  ignoreGlobs: ["plans/**", "dist/**", "**/*.lock", "bun.lock"]
+};
+function reviewGlobs(raw, key, defaults) {
+  if (raw === undefined)
+    return [...defaults];
+  const field = `options.reviewGate.${key}`;
+  if (!Array.isArray(raw))
+    fail4(`${field} \u5FC5\u987B\u662F\u5B57\u7B26\u4E32\u6570\u7EC4`);
+  if (raw.length > 64)
+    fail4(`${field} \u6700\u591A 64 \u9879`);
+  return Array.from(raw, (item, index) => {
+    const path = `${field}[${index}]`;
+    if (typeof item !== "string")
+      fail4(`${path} \u5FC5\u987B\u4E3A\u5B57\u7B26\u4E32`);
+    if (/\p{Cc}/u.test(item))
+      fail4(`${path} \u4E0D\u80FD\u5305\u542B\u63A7\u5236\u5B57\u7B26`);
+    const glob = item.trim();
+    if (!glob)
+      fail4(`${path} \u4E0D\u80FD\u4E3A\u7A7A`);
+    if (glob.length > 200)
+      fail4(`${path} \u6700\u591A 200 \u5B57\u7B26`);
+    if (glob.startsWith("/"))
+      fail4(`${path} \u4E0D\u80FD\u4EE5 / \u5F00\u5934`);
+    if (glob.split("/").includes(".."))
+      fail4(`${path} \u4E0D\u80FD\u5305\u542B .. \u8DEF\u5F84\u6BB5`);
+    return glob;
+  });
+}
+function parseReviewGate(value = {}) {
+  if (!object4(value))
+    fail4("options.reviewGate \u5FC5\u987B\u662F\u5BF9\u8C61");
+  for (const key of Object.keys(value)) {
+    if (!Object.hasOwn(defaultReviewGate, key))
+      fail4(`\u672A\u77E5 options.reviewGate.${key}`);
+  }
+  const { mode = defaultReviewGate.mode } = value;
+  if (mode !== "off" && mode !== "remind" && mode !== "enforce")
+    fail4("options.reviewGate.mode \u5FC5\u987B\u4E3A off\u3001remind \u6216 enforce");
+  const integer = (key, min, max) => {
+    const raw = value[key];
+    if (raw === undefined)
+      return defaultReviewGate[key];
+    if (typeof raw !== "number" || !Number.isInteger(raw) || raw < min || raw > max)
+      fail4(`options.reviewGate.${key} \u5FC5\u987B\u4E3A ${min}..${max} \u7684\u6574\u6570`);
+    return raw;
+  };
+  return {
+    mode,
+    maxFiles: integer("maxFiles", 1, 1000),
+    planMinFiles: integer("planMinFiles", 0, 1000),
+    maxReminders: integer("maxReminders", 1, 5),
+    testGlobs: reviewGlobs(value.testGlobs, "testGlobs", defaultReviewGate.testGlobs),
+    sensitiveGlobs: reviewGlobs(value.sensitiveGlobs, "sensitiveGlobs", defaultReviewGate.sensitiveGlobs),
+    ignoreGlobs: reviewGlobs(value.ignoreGlobs, "ignoreGlobs", defaultReviewGate.ignoreGlobs)
+  };
 }
 function parseCrewOptions(input) {
   if (!object4(input))
-    fail3("options \u5FC5\u987B\u662F\u5BF9\u8C61");
-  const { modelAliases, modelDisplay, ...rest } = input;
-  return { baseline: parseCrewConfig(rest), display: parseCrewDisplay({ modelAliases, modelDisplay }) };
+    fail4("options \u5FC5\u987B\u662F\u5BF9\u8C61");
+  const { modelAliases, modelDisplay, reviewGate, ...rest } = input;
+  return { baseline: parseCrewConfig(rest), display: parseCrewDisplay({ modelAliases, modelDisplay }), reviewGate: parseReviewGate(reviewGate) };
 }
 var PROFILE_NAME_MAX = 64;
 var PROFILE_NAME_PATTERN = /^(?!\.)(?=.*[a-z0-9])[a-z0-9._-]{1,64}$/;
@@ -8376,13 +9320,13 @@ function profileNameError(name) {
 }
 function assertProfileName(name) {
   if (!isProfileName(name))
-    fail3(profileNameError(name));
+    fail4(profileNameError(name));
 }
 
 // src/profiles.ts
 import { existsSync, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, renameSync as renameSync2, unlinkSync as unlinkSync2, writeFileSync as writeFileSync2 } from "fs";
 import { homedir } from "os";
-import { join as join3 } from "path";
+import { join as join4 } from "path";
 var nodeProfileFs = {
   existsSync: (path) => existsSync(path),
   readFileSync: (path, encoding) => readFileSync2(path, encoding),
@@ -8400,8 +9344,8 @@ function profileDirs(env = process.env) {
     const dir = configured.trim();
     return dir ? [{ dir, source: "user" }] : [];
   }
-  const base = env.XDG_CONFIG_HOME?.trim() || join3(homedir(), ".config");
-  return [{ dir: join3(base, "opencode", "crew-profiles"), source: "user" }];
+  const base = env.XDG_CONFIG_HOME?.trim() || join4(homedir(), ".config");
+  return [{ dir: join4(base, "opencode", "crew-profiles"), source: "user" }];
 }
 var message = (error) => error instanceof Error ? error.message : String(error);
 var safeExists = (fs, path) => {
@@ -8434,7 +9378,7 @@ function loadProfiles(deps = {}) {
       const match = /^(.+)\.json$/i.exec(file);
       if (!match)
         continue;
-      const name = match[1], path = join3(root.dir, file);
+      const name = match[1], path = join4(root.dir, file);
       if (!isProfileName(name)) {
         errors.push({ kind: "invalid-name", name, path, message: `[opencode-crew] \u6863\u540D "${name}" \u4E0D\u5408\u6CD5\uFF08\u53EA\u5141\u8BB8\u5C0F\u5199\u5B57\u6BCD a-z\u3001\u6570\u5B57 0-9 \u4E0E . _ -\uFF0C\u6700\u591A ${PROFILE_NAME_MAX} \u5B57\u7B26\uFF09` });
         continue;
@@ -8483,7 +9427,7 @@ function readActive(deps = {}) {
   const dir = activeDir(deps);
   if (!dir)
     return { name: null, path: "", raw: null, error: null };
-  const path = join3(dir, ACTIVE_FILE);
+  const path = join4(dir, ACTIVE_FILE);
   if (!safeExists(fs, path))
     return { name: null, path, raw: null, error: null };
   let raw;
@@ -8508,9 +9452,9 @@ function writeActive(name, deps = {}) {
   if (!dir) {
     if (name === null)
       return;
-    fail3("\u6CA1\u6709\u53EF\u7528\u7684\u6863\u76EE\u5F55\uFF0C\u65E0\u6CD5\u4FDD\u5B58 active \u6307\u9488");
+    fail4("\u6CA1\u6709\u53EF\u7528\u7684\u6863\u76EE\u5F55\uFF0C\u65E0\u6CD5\u4FDD\u5B58 active \u6307\u9488");
   }
-  const target = join3(dir, ACTIVE_FILE);
+  const target = join4(dir, ACTIVE_FILE);
   if (name === null) {
     try {
       fs.unlinkSync(target);
@@ -8524,7 +9468,7 @@ function writeActive(name, deps = {}) {
     fs.mkdirSync(dir, { recursive: true, mode: 448 });
   } catch {}
   const unique = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
-  const temp = join3(dir, `.${name}.${unique}.tmp`);
+  const temp = join4(dir, `.${name}.${unique}.tmp`);
   try {
     fs.writeFileSync(temp, `${name}
 `, { flag: "wx", mode: 384 });
@@ -8549,7 +9493,7 @@ var signature = (config) => JSON.stringify({
   engineerInstructions: config.engineerInstructions
 });
 var sameConfig = (a, b) => signature(a) === signature(b);
-function resolve3(baseline, fs, dirs) {
+function resolve5(baseline, fs, dirs) {
   const deps = fs ? { fs, dirs } : { dirs };
   let set;
   try {
@@ -8582,7 +9526,7 @@ function createCrewProfiles(deps) {
   const readDeps = (dirs) => deps.fs ? { fs: deps.fs, dirs } : { dirs };
   const info = () => {
     try {
-      return resolve3(deps.baseline, deps.fs, roots());
+      return resolve5(deps.baseline, deps.fs, roots());
     } catch (error) {
       return fallback(deps.baseline, `\u8BFB\u53D6\u6863\u76EE\u5F55\u5931\u8D25\uFF1A${message2(error)}`);
     }
@@ -8857,31 +9801,116 @@ async function registerProfileRpc(ctx, profiles) {
   } catch {}
 }
 
+// src/display-rpc.ts
+var crewDisplay = {
+  id: "opencode-crew-display",
+  methods: {
+    get: {
+      input: { type: "object", properties: {}, additionalProperties: false },
+      output: {
+        type: "object",
+        properties: {
+          aliases: { type: "object", additionalProperties: { type: "string" } },
+          display: { type: "string", enum: ["inline", "off"] }
+        },
+        required: ["aliases", "display"],
+        additionalProperties: false
+      }
+    }
+  },
+  events: {}
+};
+async function registerDisplayRpc(ctx, display) {
+  const domain = ctx.rpc;
+  if (!domain || typeof domain.register !== "function")
+    return;
+  try {
+    await domain.register(crewDisplay, {
+      async get() {
+        return { aliases: { ...display.aliases }, display: display.display };
+      }
+    });
+  } catch {}
+}
+
+// src/role-guard.ts
+function matches2(pattern, value) {
+  return new RegExp("^" + pattern.split("").map((c) => c === "*" ? ".*" : c === "?" ? "." : c.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")).join("") + "$", "s").test(value);
+}
+var severity = { allow: 0, ask: 1, deny: 2 };
+var same = (a, b) => a.action === b.action && a.resource === b.resource && a.effect === b.effect;
+function hostBlock(policy) {
+  const actions = new Set(["shell", "edit", "execute", "subagent", "question", "webfetch", "websearch", ...policy.map((r) => r.action).filter((a) => !a.includes("*") && !a.includes("?") && a !== "external_directory")]);
+  return [...[...actions].map((action) => ({ action, resource: "*", effect: "deny" })), ...policy.filter((r) => !matches2(r.action, "external_directory"))];
+}
+function appendBlock(prefix, block) {
+  const exists = prefix.some((_, i) => i + block.length <= prefix.length && block.every((rule, j) => same(rule, prefix[i + j])));
+  return exists ? prefix : [...prefix, ...block.map((rule) => ({ ...rule }))];
+}
+function engineerDispatchDenied(action, resources, agent) {
+  return action === "subagent" && resources.includes("engineer") && agent !== "root";
+}
+function guard(policies, getSession) {
+  return async (event) => {
+    if (event.action === "external_directory")
+      return;
+    try {
+      let agent = event.agent;
+      if (agent === undefined)
+        agent = (await getSession(event.sessionID))?.agent;
+      if (typeof agent !== "string" || !agent.trim())
+        throw new Error("unknown agent");
+      if (engineerDispatchDenied(event.action, event.resources, agent)) {
+        event.effect = "deny";
+        event.message = `Crew\uFF1Aengineer \u53EA\u80FD\u7531 Root \u6D3E\u53D1\uFF08\u8C03\u7528\u8005\uFF1A${agent}\uFF09\u3002\u8BF7\u7528 /crew \u5207\u5230 Root\uFF0C\u6216\u6539\u6D3E explorer / architect / reviewer\u3002`;
+        return;
+      }
+      if (!(agent === "architect" || agent === "explorer" || agent === "reviewer"))
+        return;
+      const policy = policies[agent];
+      const resources = event.resources.length ? event.resources : ["*"];
+      let effect = event.effect;
+      for (const resource of resources) {
+        const local = policy.filter((rule) => matches2(rule.action, event.action) && matches2(rule.resource, resource)).at(-1)?.effect ?? "deny";
+        if (severity[local] > severity[effect])
+          effect = local;
+      }
+      if (effect !== event.effect) {
+        event.effect = effect;
+        event.message = "Crew \u89D2\u8272\u5C40\u90E8\u6743\u9650\u9650\u5236";
+      }
+    } catch {
+      event.effect = "deny";
+      event.message = "Crew \u65E0\u6CD5\u8BC6\u522B\u8C03\u7528\u89D2\u8272\u6216\u6C42\u503C\u6743\u9650";
+    }
+  };
+}
+
 // src/index.ts
 function loadRole(id) {
   const text = readFileSync3(new URL(`../agents/${id}.md`, import.meta.url), "utf8");
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]+)$/.exec(text);
   if (!match)
-    fail3(`agents/${id}.md \u7F3A\u5C11 frontmatter \u6216\u6B63\u6587`);
+    fail4(`agents/${id}.md \u7F3A\u5C11 frontmatter \u6216\u6B63\u6587`);
   const meta = $parse(match[1]);
   if (!object4(meta))
-    fail3(`agents/${id}.md \u5143\u6570\u636E\u5FC5\u987B\u662F\u5BF9\u8C61`);
+    fail4(`agents/${id}.md \u5143\u6570\u636E\u5FC5\u987B\u662F\u5BF9\u8C61`);
   for (const key of Object.keys(meta))
     if (!["description", "mode", "steps", "permissions"].includes(key))
-      fail3(`agents/${id}.md \u4E0D\u652F\u6301 ${key}\uFF1B\u6A21\u578B\u8BF7\u5199 options.models`);
+      fail4(`agents/${id}.md \u4E0D\u652F\u6301 ${key}\uFF1B\u6A21\u578B\u8BF7\u5199 options.models`);
   if (typeof meta.description !== "string" || !meta.description.trim() || meta.mode !== (id === "root" ? "primary" : "subagent"))
-    fail3(`agents/${id}.md \u7684 description/mode \u65E0\u6548`);
+    fail4(`agents/${id}.md \u7684 description/mode \u65E0\u6548`);
   if (meta.steps !== undefined && (!Number.isSafeInteger(meta.steps) || meta.steps <= 0))
-    fail3(`agents/${id}.md steps \u65E0\u6548`);
+    fail4(`agents/${id}.md steps \u65E0\u6548`);
   if (!Array.isArray(meta.permissions) || !meta.permissions.every((r) => object4(r) && typeof r.action === "string" && typeof r.resource === "string" && ["allow", "ask", "deny"].includes(String(r.effect))))
-    fail3(`agents/${id}.md permissions \u65E0\u6548`);
+    fail4(`agents/${id}.md permissions \u65E0\u6548`);
   const { base, gpt, claude } = splitRoleBody(match[2].trim());
   return { ...meta, system: base, appendices: { gpt, claude } };
 }
 var src_default = Plugin.define({
   id: "opencode-crew",
   async setup(ctx) {
-    const { baseline } = parseCrewOptions(ctx.options ?? {});
+    const { baseline, reviewGate, display } = parseCrewOptions(ctx.options ?? {});
     const profiles = createCrewProfiles({
       baseline,
       reload: async () => {
@@ -8891,6 +9920,14 @@ var src_default = Plugin.define({
       }
     });
     const roles = Object.fromEntries(IDS.map((id) => [id, loadRole(id)]));
+    const policies = {
+      architect: [...roles.architect.permissions, { action: "edit", resource: resolve6(ctx.location.directory, "plans") + "/**", effect: "allow" }],
+      explorer: roles.explorer.permissions,
+      reviewer: roles.reviewer.permissions
+    };
+    if (typeof ctx.permission?.hook !== "function")
+      throw new Error("\u5BBF\u4E3B\u672A\u63D0\u4F9B permission.hook");
+    await ctx.permission.hook("evaluate", guard(policies, (sessionID) => ctx.session.get({ sessionID })));
     await ctx.agent.transform((editor) => {
       const config = profiles.config();
       for (const id of IDS)
@@ -8905,14 +9942,10 @@ var src_default = Plugin.define({
           if (id === "engineer") {
             const extra = role.permissions.filter((rule) => !agent.permissions.some((existing) => existing.action === rule.action && existing.resource === rule.resource && existing.effect === rule.effect));
             agent.permissions = [...agent.permissions, ...extra.map((rule) => ({ ...rule }))];
-          } else if (id !== "root" || role.permissions.length > 0)
+          } else if (id === "architect" || id === "explorer" || id === "reviewer")
+            agent.permissions = appendBlock(agent.permissions, hostBlock(policies[id]));
+          else if (role.permissions.length > 0)
             agent.permissions = role.permissions.map((rule) => ({ ...rule }));
-          if (id === "architect") {
-            const resource = resolve4(ctx.location.directory, "plans") + "/**";
-            const present = agent.permissions.some((rule) => rule.action === "edit" && rule.resource === resource && rule.effect === "allow");
-            if (!present)
-              agent.permissions.push({ action: "edit", resource, effect: "allow" });
-          }
         });
     });
     await ctx.command.transform((editor) => editor.add({
@@ -8929,7 +9962,9 @@ var src_default = Plugin.define({
       }
     }));
     await registerTasks(ctx, () => profiles.config().models.engineer);
+    await registerReviewGate(ctx, reviewGate);
     await registerProfileRpc(ctx, profiles);
+    await registerDisplayRpc(ctx, display);
     await registerTaskSnapshot(ctx);
   }
 });

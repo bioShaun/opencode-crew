@@ -1,0 +1,1 @@
+{ "name": "optprobe", "version": "1.0.0", "type": "module", "exports": { ".": "./server/index.js", "./tui": "./tui/index.js" } }

@@ -1,7 +1,7 @@
 /* @jsxImportSource @opentui/solid */
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import { usePlugin } from "@opencode/plugin/tui"
-import { parseCrewDisplay } from "../config"
+import { crewDisplay, resolveDisplay } from "../display-rpc"
 import { crewTasks, parseTasksOutput } from "../snapshot"
 import {
   buildSidebar,
@@ -201,7 +201,17 @@ export function Sidebar(props: { sessionID: string }) {
   createEffect(() => hydrate())
 
   const statusOf = (id: string) => attempt(() => context.data.session.status(id), "idle" as const)
-  const display = createMemo(() => parseCrewDisplay(context.options))
+  const [rpcDisplay, setRpcDisplay] = createSignal<unknown>()
+  onMount(async () => {
+    let disposed = false
+    onCleanup(() => { disposed = true })
+    try {
+      const options = context.location ? { location: context.location } : undefined
+      const view = await context.client.rpc(crewDisplay).get({}, options)
+      if (!disposed) setRpcDisplay(() => view)
+    } catch { /* Render using the local CLI options when the RPC is unavailable. */ }
+  })
+  const display = createMemo(() => resolveDisplay(rpcDisplay(), context.options))
   const view = createMemo<SidebarView>(() => {
     const rootID = rootOf(props.sessionID)
     const snapshot = live()

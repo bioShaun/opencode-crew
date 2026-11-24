@@ -39,7 +39,7 @@ A full Git URL also works:
 opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 ```
 
-After installation, find the Crew plugin entry added by the command in your existing `opencode.json(c)` and change it to the object form below to configure models. **Replace that entry; do not append a second copy.** The repository includes a prebuilt entry point; users do not need to create roles or run a build manually.
+After installation, find the Crew plugin entry added by the command in your existing `opencode.json(c)` and change it to the object form below to configure models. **Replace that entry; do not append a second copy.** The repository includes a prebuilt entry point; users do not need to create roles or run a build manually. Its `package.json` intentionally declares no npm lifecycle scripts (`build`, `prepare`, `prepack`, `install`, `postinstall`, `preinstall`) and no `workspaces` field: npm runs a git-dependency preparation step when any of them is present, and on some compiled OpenCode binaries that step re-executes the OpenCode CLI and fails with `git dep preparation failed`. `dist/` is committed, so no install-time build is needed.
 
 ```jsonc
 {
@@ -61,7 +61,8 @@ After installation, find the Crew plugin entry added by the command in your exis
           "For heavy jobs, run the project's resource preflight and submit through its scheduler."
         ],
         "modelDisplay": "inline",
-        "modelAliases": { "provider/model": "h4-lite" }
+        "modelAliases": { "provider/model": "h4-lite" },
+        "reviewGate": { "mode": "remind", "maxFiles": 5, "maxReminders": 2 }
       }
     }
   ],
@@ -69,7 +70,9 @@ After installation, find the Crew plugin entry added by the command in your exis
 }
 ```
 
-Aliases and `modelDisplay` belong to plugin options only, not profile files; they stay in effect while a profile is active. They take effect only after the plugin is reloaded; they do not hot-update. `modelAliases` accepts at most 64 entries; keys are `provider/model` (no variant), and values are 1–12 characters.
+Aliases and `modelDisplay` belong to plugin options only, not profile files; they stay in effect while a profile is active. The server part reads them and pushes them to the sidebar over RPC, because OpenCode v2.4.1 does not forward `plugins[].options` to a plugin's TUI part. If that RPC is unavailable, the sidebar falls back to the options of the same package in `cli.json`, so an entry there with `modelAliases` / `modelDisplay` also works. Either way they take effect only after the TUI is reopened; they do not hot-update. `modelAliases` accepts at most 64 entries; keys are `provider/model` (no variant), and values are 1–12 characters.
+
+`reviewGate` defaults to `{ "mode": "off" }`. `mode` is `off`, `remind` or `enforce`. It looks at the Root working directory and each active `crew_task` worktree, and hits when a change set exceeds `maxFiles` files, deletes or renames a test, touches a sensitive path (default `**/AGENTS.md`), changes several files without a `plans/*.md` reference, leaves a task's scope, or could not be listed completely. On a hit the plugin injects one `[crew-review-gate]` message into the Root session; answer it by delegating a reviewer, or reply with one line `Review-Skip: <reason>` (at least 10 characters), which is recorded and stops that reminder. `remind` sends each change set once (session total capped at 5 × `maxReminders`); `enforce` re-sends on every finished Root turn until `maxReminders` per change set, then lets it pass. Covered means a reviewer child session started at or after the newest changed file; it does not prove the review passed. The reminder never blocks a turn and does not change the stop → close order of `crew_task`. Other keys: `planMinFiles` (0 disables that rule), `testGlobs`, `sensitiveGlobs`, `ignoreGlobs`. With any mode other than `off` the plugin also registers a read-only `crew_review_gate` tool that reports what the gate currently sees; it never advances the baseline or consumes a reminder.
 
 These models are placeholders to replace. Providers, credentials and model availability come from the target machine's configuration; the package contains no keys or concrete model defaults. Roles may be omitted from `models`: omission follows native OpenCode model inheritance, not the string `inherit`. Subagents inherit the parent session model; the primary session keeps its selected model. `/crew` explicitly selects the configured Root model, or retains the current session model if none is configured. `crew_task_start` refuses with `MODEL_NOT_CONFIGURED` before any ledger write or session create when neither `models.engineer` nor the calling Root session provides a model; a same-key replay of an existing record does not need the check.
 
@@ -83,7 +86,7 @@ You can pin a branch, tag or full commit, for example `github:bioShaun/opencode-
 
 You can place the complete repository at any fixed location and set `package` to its absolute path (for example `/home/you/opencode/opencode-crew`). The plugin does not depend on a particular installation path.
 
-A tgz generated by `npm pack` can be distributed and extracted to a fixed directory on the target machine, then loaded by local path. `plugin add` does not accept a tgz target. Both the archive and Git repository include `dist/index.js` with the YAML parser bundled; no separate parser installation is required. After modifying source, run `bun install && bun run build` before distributing. Runtime still depends on the host OpenCode V2 plugin SDK. The package is not currently published to npm; do not install it from npm by bare package name.
+A tgz generated by `npm pack` can be distributed and extracted to a fixed directory on the target machine, then loaded by local path. `plugin add` does not accept a tgz target. Both the archive and Git repository include `dist/index.js` with the YAML parser bundled; no separate parser installation is required. After modifying source, run `bun install && bun run compile` before distributing. Runtime still depends on the host OpenCode V2 plugin SDK. The package is not currently published to npm; do not install it from npm by bare package name.
 
 ## Usage
 
@@ -176,6 +179,8 @@ The CLI writes exactly one machine JSON object to stdout and a short Chinese sum
 | reviewer | Independent risk-based review | No writes; shell limited to five fixed read-only Git commands |
 
 When Root's Markdown permission list is empty, Crew leaves the host-provided Root permissions unchanged; it does not add a wildcard allow or bypass existing ask/deny rules. Nonempty Root rules replace that list. Session and other host policies still apply.
+
+Only Root can dispatch the native `engineer` subagent. Other callers are denied with: `Crew：engineer 只能由 Root 派发（调用者：<agent>）。请用 /crew 切到 Root，或改派 explorer / architect / reviewer。` Root's host decision remains in force. The execution-layer Root restriction on `crew_task_*` is existing behavior.
 
 Engineer retains the host-provided rules in order and appends its Markdown denials for `subagent`, `question`, and `execute`. Architect, explorer, and reviewer retain the host prefix and append a filtered role block, not a replacement policy. Their Markdown deny-all remains the local guard policy; the host block excludes action patterns matching `external_directory`, and adds explicit denials for known actions before the role whitelist. An already present complete contiguous block is not appended again.
 

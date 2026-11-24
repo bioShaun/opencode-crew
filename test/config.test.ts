@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { defaultDisplay, parseCrewConfig, parseCrewDisplay, parseCrewOptions } from "../src/config"
+import { defaultDisplay, defaultReviewGate, parseCrewConfig, parseCrewDisplay, parseCrewOptions, parseReviewGate, profileLabel } from "../src/config"
 
 const aliases = (count: number): Record<string, string> => {
   const out: Record<string, string> = {}
@@ -86,4 +86,56 @@ test("parseCrewOptions still rejects unknown keys and non-objects", () => {
 test("parseCrewConfig still rejects display keys so profile files stay strict", () => {
   expect(() => parseCrewConfig({ modelAliases: { "provider/model": "ok" } })).toThrow("[opencode-crew] 未知 options.modelAliases")
   expect(() => parseCrewConfig({ modelDisplay: "off" })).toThrow("[opencode-crew] 未知 options.modelDisplay")
+})
+
+test("reviewGate defaults to off with generic sensitive paths only", () => {
+  expect(defaultReviewGate).toEqual({
+    mode: "off", maxFiles: 5, planMinFiles: 2, maxReminders: 2,
+    testGlobs: ["test/**", "tests/**", "**/*.test.*", "**/*.spec.*", "**/__tests__/**"],
+    sensitiveGlobs: ["**/AGENTS.md"],
+    ignoreGlobs: ["plans/**", "dist/**", "**/*.lock", "bun.lock"],
+  })
+  expect(parseCrewOptions({}).reviewGate).toEqual(defaultReviewGate)
+})
+
+test("reviewGate is stripped from baseline options and partial values extend defaults", () => {
+  const input = { reviewGate: { mode: "enforce", maxFiles: 1000, planMinFiles: 0, maxReminders: 5, testGlobs: [" **/a "], ignoreGlobs: [] }, modelDisplay: "off", steps: { reviewer: 2 } }
+  expect(() => parseCrewOptions(input)).not.toThrow()
+  const options = parseCrewOptions(input)
+  expect(options.baseline.steps).toEqual({ reviewer: 2 })
+  expect(options.display.display).toBe("off")
+  expect(options.reviewGate).toEqual({ ...defaultReviewGate, mode: "enforce", maxFiles: 1000, planMinFiles: 0, maxReminders: 5, testGlobs: ["**/a"], ignoreGlobs: [] })
+  expect(parseReviewGate({ mode: "remind" }).mode).toBe("remind")
+})
+
+test("reviewGate rejects non-objects, unknown keys and invalid mode", () => {
+  for (const value of [null, [], "off", 1]) {
+    expect(() => parseCrewOptions({ reviewGate: value })).toThrow("[opencode-crew] options.reviewGate 必须是对象")
+  }
+  expect(() => parseReviewGate({ modes: "off" })).toThrow("[opencode-crew] 未知 options.reviewGate.modes")
+  for (const mode of ["OFF", "block", null, 1]) {
+    expect(() => parseReviewGate({ mode })).toThrow("[opencode-crew] options.reviewGate.mode")
+  }
+})
+
+test("reviewGate bounds every numeric option to integer values", () => {
+  for (const [key, values] of Object.entries({ maxFiles: [0, 1001, 1.5, "5"], planMinFiles: [-1, 1001, 0.5], maxReminders: [0, 6, 1.5] })) {
+    for (const value of values) expect(() => parseReviewGate({ [key]: value })).toThrow(`[opencode-crew] options.reviewGate.${key}`)
+  }
+})
+
+test("reviewGate validates each glob with an indexed error and array cap", () => {
+  for (const key of ["testGlobs", "sensitiveGlobs", "ignoreGlobs"] as const) {
+    for (const value of [1, "", "   ", "a/../b", "../x", " .. ", "/root", "a".repeat(201), "a\x00b", "a\u0085b", "a\n"]) {
+      expect(() => parseReviewGate({ [key]: ["ok", value] })).toThrow(`[opencode-crew] options.reviewGate.${key}[1]`)
+    }
+    expect(() => parseReviewGate({ [key]: "a" })).toThrow(`[opencode-crew] options.reviewGate.${key}`)
+    expect(() => parseReviewGate({ [key]: Array(65).fill("x") })).toThrow(`[opencode-crew] options.reviewGate.${key} 最多 64 项`)
+    const limit = Array(64).fill("z".repeat(200))
+    expect(parseReviewGate({ [key]: limit })[key]).toEqual(limit)
+  }
+})
+
+test("profiles still reject reviewGate", () => {
+  expect(() => parseCrewConfig({ reviewGate: {} }, profileLabel("fast"))).toThrow('[opencode-crew] 未知 档 "fast" 的 reviewGate')
 })

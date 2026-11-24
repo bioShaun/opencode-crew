@@ -246,7 +246,7 @@ test("formal bundle isolates and automatically recovers a real slot initializati
     await symlink(join(root, name), join(stage, name), "dir")
   }
   const out = join(stage, "dist")
-  const proc = Bun.spawn(["bun", "run", "build"], { cwd: stage, env: { ...process.env, CREW_BUILD_OUTDIR: out }, stdout: "pipe", stderr: "pipe" })
+  const proc = Bun.spawn(["bun", "run", "compile"], { cwd: stage, env: { ...process.env, CREW_BUILD_OUTDIR: out }, stdout: "pipe", stderr: "pipe" })
   const output = await new Response(proc.stderr).text()
   expect({ exit: await proc.exited, output }).toMatchObject({ exit: 0 })
   expect(await Bun.file(join(out, "index.js")).exists()).toBe(true)

@@ -19,8 +19,7 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "build": "bun run scripts/build.ts",
-    "prepack": "test -f dist/index.js || bun run build >&2"
+    "compile": "bun run scripts/build.ts"
   },
   "dependencies": {
     "@opencode/plugin": "2.3.0"

@@ -124,11 +124,70 @@ export function parseCrewDisplay(input: unknown): CrewDisplayConfig {
   return { aliases: parseAliases(input.modelAliases), display: parseDisplayMode(input.modelDisplay) }
 }
 
-/** Options entry: strip display keys, then keep parseCrewConfig's strict key set. */
-export function parseCrewOptions(input: unknown): { baseline: CrewConfig; display: CrewDisplayConfig } {
+export interface ReviewGateConfig {
+  mode: "off" | "remind" | "enforce"
+  maxFiles: number
+  planMinFiles: number
+  maxReminders: number
+  testGlobs: readonly string[]
+  sensitiveGlobs: readonly string[]
+  ignoreGlobs: readonly string[]
+}
+
+export const defaultReviewGate: ReviewGateConfig = {
+  mode: "off", maxFiles: 5, planMinFiles: 2, maxReminders: 2,
+  testGlobs: ["test/**", "tests/**", "**/*.test.*", "**/*.spec.*", "**/__tests__/**"],
+  sensitiveGlobs: ["**/AGENTS.md"],
+  ignoreGlobs: ["plans/**", "dist/**", "**/*.lock", "bun.lock"],
+}
+
+function reviewGlobs(raw: unknown, key: string, defaults: readonly string[]): readonly string[] {
+  if (raw === undefined) return [...defaults]
+  const field = `options.reviewGate.${key}`
+  if (!Array.isArray(raw)) fail(`${field} 必须是字符串数组`)
+  if (raw.length > 64) fail(`${field} 最多 64 项`)
+  return Array.from(raw, (item, index) => {
+    const path = `${field}[${index}]`
+    if (typeof item !== "string") fail(`${path} 必须为字符串`)
+    if (/\p{Cc}/u.test(item)) fail(`${path} 不能包含控制字符`)
+    const glob = item.trim()
+    if (!glob) fail(`${path} 不能为空`)
+    if (glob.length > 200) fail(`${path} 最多 200 字符`)
+    if (glob.startsWith("/")) fail(`${path} 不能以 / 开头`)
+    if (glob.split("/").includes("..")) fail(`${path} 不能包含 .. 路径段`)
+    return glob
+  })
+}
+
+export function parseReviewGate(value: unknown = {}): ReviewGateConfig {
+  if (!object(value)) fail("options.reviewGate 必须是对象")
+  for (const key of Object.keys(value)) {
+    if (!Object.hasOwn(defaultReviewGate, key)) fail(`未知 options.reviewGate.${key}`)
+  }
+  const { mode = defaultReviewGate.mode } = value
+  if (mode !== "off" && mode !== "remind" && mode !== "enforce") fail("options.reviewGate.mode 必须为 off、remind 或 enforce")
+  const integer = (key: "maxFiles" | "planMinFiles" | "maxReminders", min: number, max: number) => {
+    const raw = value[key]
+    if (raw === undefined) return defaultReviewGate[key]
+    if (typeof raw !== "number" || !Number.isInteger(raw) || raw < min || raw > max) fail(`options.reviewGate.${key} 必须为 ${min}..${max} 的整数`)
+    return raw
+  }
+  return {
+    mode,
+    maxFiles: integer("maxFiles", 1, 1000),
+    planMinFiles: integer("planMinFiles", 0, 1000),
+    maxReminders: integer("maxReminders", 1, 5),
+    testGlobs: reviewGlobs(value.testGlobs, "testGlobs", defaultReviewGate.testGlobs),
+    sensitiveGlobs: reviewGlobs(value.sensitiveGlobs, "sensitiveGlobs", defaultReviewGate.sensitiveGlobs),
+    ignoreGlobs: reviewGlobs(value.ignoreGlobs, "ignoreGlobs", defaultReviewGate.ignoreGlobs),
+  }
+}
+
+/** Options entry: strip plugin-only keys, then keep parseCrewConfig's strict key set. */
+export function parseCrewOptions(input: unknown): { baseline: CrewConfig; display: CrewDisplayConfig; reviewGate: ReviewGateConfig } {
   if (!object(input)) fail("options 必须是对象")
-  const { modelAliases, modelDisplay, ...rest } = input
-  return { baseline: parseCrewConfig(rest), display: parseCrewDisplay({ modelAliases, modelDisplay }) }
+  const { modelAliases, modelDisplay, reviewGate, ...rest } = input
+  return { baseline: parseCrewConfig(rest), display: parseCrewDisplay({ modelAliases, modelDisplay }), reviewGate: parseReviewGate(reviewGate) }
 }
 
 // --- Profile names -----------------------------------------------------------
