@@ -72,7 +72,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 
 别名和 `modelDisplay` 只属于插件 options，不能写入配置档；档生效时这两项仍沿用 options 中的值。这两项由 server 部分读取后经 RPC 推给侧栏——OpenCode v2.4.1 不会把 `plugins[].options` 转发给插件的 TUI 部分。宿主没有这条 RPC 时，侧栏回落到 `cli.json` 里同一个包的 options，因此在 `cli.json` 写 `modelAliases` / `modelDisplay` 同样有效。两种方式都要重开 TUI 才生效，不会热更新。`modelAliases` 最多 64 项，键为 `provider/model`（不含 variant），值为 1–12 字符。
 
-`reviewGate` 默认 `{ "mode": "off" }`。`mode` 取 `off`、`remind`、`enforce`。它看 Root 所在目录和每个 active `crew_task` 的 worktree，命中条件是：改动文件数超过 `maxFiles`、删除或改名了测试、碰到敏感路径（默认 `**/AGENTS.md`）、多文件改动但没有 `plans/*.md` 引用、超出任务 scope，或清单无法完整采集。命中时插件往 Root 会话注入一条 `[crew-review-gate]` 消息；处理方式是派 reviewer，或在回复里写一行 `Review-Skip: <具体理由>`（至少 10 个字符），它会被记录并停止该条提醒。`remind` 每组改动只提醒一次（会话总量上限为 `maxReminders` 的 5 倍）；`enforce` 在每个 Root 回合结束时重发，直到同一组改动达到 `maxReminders` 次后放行。「已覆盖」指存在不早于最新改动文件的 reviewer 子会话，不证明审查通过。提醒不阻塞回合，也不改变 `crew_task` 的 stop → close 顺序。其余键：`planMinFiles`（设 0 关闭该规则）、`testGlobs`、`sensitiveGlobs`、`ignoreGlobs`。`mode` 不为 `off` 时还会注册只读工具 `crew_review_gate`，用于查看门禁当前的判断；它不推进基线，也不消耗提醒次数。
+`reviewGate` 默认 `{ "mode": "off" }`。`mode` 取 `off`、`remind`、`enforce`。它看 Root 所在目录和每个 active `crew_task` 的 worktree，命中条件是：改动文件数超过 `maxFiles`、删除或改名了测试、碰到敏感路径（默认 `**/AGENTS.md`）、任务引用了 `plans/*.md` 方案且改动多个文件、超出任务 scope，或清单无法完整采集。命中时插件往 Root 会话注入一条 `[crew-review-gate]` 消息；处理方式是派 reviewer，或在回复里写一行 `Review-Skip: <具体理由>`（至少 10 个字符），它会被记录并停止该条提醒。`remind` 每组改动只提醒一次（会话总量上限为 `maxReminders` 的 5 倍）；`enforce` 在每个 Root 回合结束时重发，直到同一组改动达到 `maxReminders` 次后放行。「已覆盖」指存在不早于最新改动文件的 reviewer 子会话，不证明审查通过。提醒不阻塞回合，也不改变 `crew_task` 的 stop → close 顺序。其余键：`planMinFiles`（设 0 关闭该规则）、`testGlobs`、`sensitiveGlobs`、`ignoreGlobs`。`mode` 不为 `off` 时还会注册只读工具 `crew_review_gate`，用于查看门禁当前的判断；它不推进基线，也不消耗提醒次数。
 
 以上是待替换的占位模型，provider、凭证和模型可用性由目标机配置提供，包内不包含密钥或具体模型默认值。`models` 可省略部分角色；省略表示遵循 OpenCode 原生模型继承规则，不是字符串 `inherit`。子代理继承父会话模型；主会话保持其已选模型。`/crew` 会显式选择已配置的 Root 模型，未配置则保留当前会话模型。当 `models.engineer` 和调用方 Root 会话都拿不出模型时，`crew_task_start` 在写 ledger 或创建会话之前以 `MODEL_NOT_CONFIGURED` 拒派；同 key 重放已有记录不做该检查。
 
@@ -87,6 +87,10 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 也可将完整仓库放到任意固定位置，将 `package` 改为该目录的绝对路径（例如 `/home/you/opencode/opencode-crew`）。插件不依赖特定安装路径。
 
 可分发 `npm pack` 生成的 tgz，目标机解压到固定目录后按本地路径加载。`plugin add` 不接受 tgz 目标。归档与 Git 仓库均自带 `dist/index.js`，YAML 解析器已经打包，不要求额外安装解析依赖。从源码修改后分发前执行 `bun install && bun run compile`。运行仍依赖宿主 OpenCode V2 的插件 SDK。当前没有发布 npm，不要用裸包名从 npm 安装。
+
+### 运行副本与发布
+
+不要把开发目录长期当作运行目录：宿主会在文件变化时重载，插件加载失败会让五个角色同时消失。做法是 `git clone git@github.com:bioShaun/opencode-crew.git` 到固定目录（本机用 `/project/glx/scripts/opencode-crew-live`），在该目录 `bun install --frozen-lockfile`，再把 `package` 指向它。发布流程：开发目录 `bun run compile` → commit → push → CI 通过 → live 目录 `git fetch && git merge --ff-only origin/main` → 在 TUI 执行 `/reload`（只改 `agents/*.md` 也必须重载）。`dist` 已提交，live 不需要构建。回滚：`git checkout --detach <上一提交>` + `/reload`；兜底是把 `package` 改回开发目录。完整手册见 [`docs/run-copy-release.md`](docs/run-copy-release.md)。
 
 ## 使用
 
