@@ -478,6 +478,8 @@ test("S5 Root gets native and task verdicts, fingerprint, coverage, state and co
     ? { data: [newer], cursor: {} } : { data: [{ ...reviewer(f, newer.time.created + 1, "failed"), id: "ses_failed" }], cursor: { next: "two" } }
 
   const output = await f.diagnose()
+  expect(output.native.latestChangeAtSource).toBe("mtime")
+  expect(output.tasks[0].latestChangeAtSource).toBe("mtime")
   expect(output).toMatchObject({
     mode: "remind", config: { maxFiles: 5, planMinFiles: 2, maxReminders: 2, testGlobs: f.cfg.testGlobs, sensitiveGlobs: f.cfg.sensitiveGlobs, ignoreGlobs: f.cfg.ignoreGlobs },
     sessionID: f.root.id, baseline: { present: true },
@@ -528,9 +530,12 @@ test("S5 a pure deletion does not get a first-observed timestamp until idle", as
   const first = await f.diagnose()
   expect(first.native.verdict.hit).toBe(true)
   expect(first.native.latestChangeAt).toBeUndefined()
+  expect(first.native).not.toHaveProperty("latestChangeAtSource")
   expect(await f.diagnose()).toEqual(first)
   await f.idle()
-  expect((await f.diagnose()).native.latestChangeAt).toEqual(expect.any(Number))
+  const observed = await f.diagnose()
+  expect(observed.native.latestChangeAt).toEqual(expect.any(Number))
+  expect(observed.native.latestChangeAtSource).toBe("firstSeen")
 })
 
 test("S5 unobservable native collection and truncated reviewer list still produce diagnostic output", async () => {

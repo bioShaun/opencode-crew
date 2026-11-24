@@ -78,6 +78,17 @@ test('non-root callers get FORBIDDEN_CALLER from all three tools before any side
  }
  expect(f.calls.filter(x=>['create','prompt','interrupt','assert'].includes(x[0]))).toHaveLength(0)
 })
+for (const [name,args] of [['crew_task_start',{}],['crew_task_status',{bogus:1}],['crew_task_stop',{}]] as const) {
+ for (const [agent,code] of [['engineer','FORBIDDEN_CALLER'],['build','FORBIDDEN_CALLER'],['root','INVALID_INPUT']] as const) {
+  test(`${name} with invalid input from ${agent} returns ${code}`,async()=>{
+   const f=await fixture()
+   const r=await f.run(name,args,{...f.tc,agent})
+   expect(r.ok).toBe(false)
+   expect(r.error.code).toBe(code)
+   expect(f.calls).toEqual([])
+  })
+ }
+}
 test('stop requests at most one interrupt and identity mismatch never interrupts',async()=>{
  const f=await fixture();await f.run('crew_task_start',f.input);const child=f.sessions.get('child');child.agent='other';await f.run('crew_task_stop',{taskID:'ct_one'});expect(f.calls.filter(x=>x[0]==='interrupt')).toHaveLength(0)
  child.agent='engineer';const a:any=await f.run('crew_task_stop',{taskID:'ct_one'});const b:any=await f.run('crew_task_stop',{taskID:'ct_one'});expect(a.task.state).toBe('stop_unconfirmed');expect(b.task.state).toBe('stop_unconfirmed');expect(f.calls.filter(x=>x[0]==='interrupt')).toHaveLength(1)

@@ -143,14 +143,16 @@ function describeChange(change: ChangeSet, cfg: ReviewGateConfig, state: RootSta
   const key = changeKey(change, fingerprint)
   const observation = state?.fingerprints.get(key)
   // A read-only query does not become the first observation of an unknown-mtime fingerprint.
-  const latestChangeAt = coverageTime(change) ?? observation?.firstSeenAt
+  const mtime = coverageTime(change)
+  const latestChangeAt = mtime ?? observation?.firstSeenAt
+  const latestChangeAtSource = mtime !== undefined ? "mtime" : latestChangeAt !== undefined ? "firstSeen" : undefined
   const covered = latestChangeAt !== undefined && latestReviewer !== undefined && latestReviewer >= latestChangeAt
   const reviewerCovered = covered ? true : latestChangeAt !== undefined && reviewerListComplete ? false : undefined
   const files = change.files.map(({ path, type }) => ({ path, type }))
   return {
     head: change.head, complete: change.complete, degraded: change.degraded ?? false, files,
     fileCount: new Set(files.map(file => file.path)).size,
-    verdict: evaluateGate(change, cfg), fingerprint, latestChangeAt, reviewerCovered,
+    verdict: evaluateGate(change, cfg), fingerprint, latestChangeAt, latestChangeAtSource, reviewerCovered,
     acked: state?.acked.has(key) ?? false, reminders: observation?.reminders ?? 0,
   }
 }

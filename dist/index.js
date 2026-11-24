@@ -7909,6 +7909,8 @@ async function registerTasks(ctx, configuredModel) {
     }
   }
   const start = async (raw, tc) => {
+    if (tc.agent !== "root")
+      return failure("FORBIDDEN_CALLER");
     let input;
     try {
       input = normalizeStoredInput(raw);
@@ -7980,6 +7982,8 @@ ${REPORT_STATUS_PROMPT_HINT}`;
     }
   };
   const status = async (raw, tc) => {
+    if (tc.agent !== "root")
+      return failure("FORBIDDEN_CALLER");
     if (!object2(raw) || Object.keys(raw).some((k) => k !== "taskID") || raw.taskID !== undefined && (typeof raw.taskID !== "string" || !/^ct_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(raw.taskID)))
       return failure("INVALID_INPUT");
     const id = await identity(tc);
@@ -7995,6 +7999,8 @@ ${REPORT_STATUS_PROMPT_HINT}`;
     }
   };
   const stop = async (raw, tc) => {
+    if (tc.agent !== "root")
+      return failure("FORBIDDEN_CALLER");
     if (!object2(raw) || Object.keys(raw).length !== 1 || typeof raw.taskID !== "string" || !/^ct_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(raw.taskID))
       return failure("INVALID_INPUT");
     const id = await identity(tc);
@@ -8749,7 +8755,9 @@ function describeChange(change, cfg, state, latestReviewer, reviewerListComplete
   const fingerprint = gateFingerprint(change);
   const key = changeKey(change, fingerprint);
   const observation = state?.fingerprints.get(key);
-  const latestChangeAt = coverageTime(change) ?? observation?.firstSeenAt;
+  const mtime = coverageTime(change);
+  const latestChangeAt = mtime ?? observation?.firstSeenAt;
+  const latestChangeAtSource = mtime !== undefined ? "mtime" : latestChangeAt !== undefined ? "firstSeen" : undefined;
   const covered = latestChangeAt !== undefined && latestReviewer !== undefined && latestReviewer >= latestChangeAt;
   const reviewerCovered = covered ? true : latestChangeAt !== undefined && reviewerListComplete ? false : undefined;
   const files = change.files.map(({ path, type }) => ({ path, type }));
@@ -8762,6 +8770,7 @@ function describeChange(change, cfg, state, latestReviewer, reviewerListComplete
     verdict: evaluateGate(change, cfg),
     fingerprint,
     latestChangeAt,
+    latestChangeAtSource,
     reviewerCovered,
     acked: state?.acked.has(key) ?? false,
     reminders: observation?.reminders ?? 0

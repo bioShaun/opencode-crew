@@ -137,6 +137,7 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelSource) {
   } catch { return {checkedAt,errorCode:'HOST_ERROR'} }
  }
  const start = async (raw:unknown,tc:any) => {
+  if (tc.agent !== 'root') return failure('FORBIDDEN_CALLER')
   let input:ReturnType<typeof normalizeStoredInput>
    try {
     input=normalizeStoredInput(raw)
@@ -181,6 +182,7 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelSource) {
   }
  }
  const status = async(raw:unknown,tc:any) => {
+  if (tc.agent !== 'root') return failure('FORBIDDEN_CALLER')
   if (!object(raw) || Object.keys(raw).some(k=>k!=='taskID') || (raw.taskID!==undefined && (typeof raw.taskID!=='string' || !/^ct_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(raw.taskID)))) return failure('INVALID_INPUT')
   const id=await identity(tc);if ('error' in id) return failure(id.error!)
   await authorize(tc,'crew_task_status',[id.project.primaryDirectory])
@@ -191,6 +193,7 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelSource) {
   } catch(e) { return failureFrom(e) }
  }
  const stop = async(raw:unknown,tc:any) => {
+  if (tc.agent !== 'root') return failure('FORBIDDEN_CALLER')
   if (!object(raw) || Object.keys(raw).length!==1 || typeof raw.taskID!=='string' || !/^ct_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(raw.taskID)) return failure('INVALID_INPUT')
   const id=await identity(tc);if ('error' in id) return failure(id.error!)
   await authorize(tc,'crew_task_stop',[id.project.primaryDirectory]);await authorize(tc,'subagent',['engineer'])
