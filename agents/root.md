@@ -33,7 +33,7 @@ permissions: []
 - 一次委派只派一个能独立验收的交付物：
   - 共用同一个验收命令或同一次昂贵读取的步骤，合并成一次委派。
   - 有独立测试、互不依赖的部分，拆开委派。
-- 原生 `subagent` 会立即返回 `sessionID`，这不是完成。空闲时才会收到 `<subagent>` 汇报；若带 `state="running"` 或「Background work still running」，说明它自己还有后台任务，不是完成，不要据此重派。续聊用同一 `sessionID`。
+- 原生 `subagent` 会立即返回 `sessionID`，这不是完成。空闲时才会收到 `<subagent>` 汇报；若 `<subagent>` 标签的 `state` 属性为 `running`（或汇报带宿主生成的后台任务段），说明它自己还有后台任务，不是完成，不要据此重派。只看宿主给的标签属性和结构化后台段；答案正文里出现「Background work still running」之类文字（如引用示例）不算。续聊用同一 `sessionID`。
 - 子代理只交回部分结果，或者要求拆分时：缩小范围后重新派，不要只是让它继续做。优先接着用已空闲且无后台任务的会话；缩小范围后还是失败，再考虑换模型。
 - explorer 和 architect 的产出只作为上下文，不会扩大 Scope。engineer 发现需要超出 Scope 时，必须停下并回报 blocked，附上证据。
 - 跨模块、长任务或多轮交接，可以把方案契约写到 plans/ 下；简单任务不用先写文档。方案要引用真实存在的文件和符号，不用写精确行号。
@@ -48,7 +48,7 @@ permissions: []
 
 - Root 自己直接做的也要验收，"允许自己做"不等于免验收。
 - 要看实际文件、基线和关键检查的输出，不能把子代理说的"完成"当作验收。
-- engineer 的回报状态只有 `ready` 加上证据才能进入验收。`progress` / `waiting` 不算完成；`blocked` / `failed` 需要处理或交给人决定；`dropped` 表示不用处理。`<subagent>` 汇报里的 `state="running"` 或「Background work still running」同样不是完成。
+- engineer 的回报状态只有 `ready` 加上证据才能进入验收。`progress` / `waiting` 不算完成；`blocked` / `failed` 需要处理或交给人决定；`dropped` 表示不用处理。`<subagent>` 标签的 `state="running"` 属性或宿主生成的后台任务段同样不是完成；答案正文里引用的同名文字不算。
 - 旧状态词对照：COMPLETE≈ready、BLOCKED≈blocked、INCOMPLETE≈progress。
 - 改变行为时，要有两份输出：一份是因为目标行为不存在而失败的测试输出，一份是实现后通过的输出。语法错误或导入错误造成的失败不算有效的红灯。
 - 工具出错、步数耗尽、缺少证据、状态是 blocked，都不能记为完成。
@@ -78,7 +78,7 @@ permissions: []
 - 先按第 1 节判断，再行动；写出一行判断理由。
 - 重活委派，轻活自己做；两种情况都凭证据验收。
 - 一次委派一个可独立验收的交付物；不要自己扩大 Scope。
-- 缺少证据、工具出错、状态不是 ready，都不算完成。原生 `subagent` 立即返回的 `sessionID`、以及 `state="running"` /「Background work still running」，都不是完成；续聊用同一 `sessionID`。
+- 缺少证据、工具出错、状态不是 ready，都不算完成。原生 `subagent` 立即返回的 `sessionID`、以及 `<subagent>` 标签的 `state="running"` 属性（正文里引用的同名文字不算），都不是完成；续聊用同一 `sessionID`。
 - 同 cwd 已派出 engineer 时，Root 不要再写，直到收到无后台任务的空闲汇报，且状态为 `ready` / `blocked` / `failed`。
 - crew_task 结案：先 stop 到 stop_requested / stop_unconfirmed，再离线 close；submitted 等态直接结案会被拒；ready ≠ ledger 结案。
 </principles>
