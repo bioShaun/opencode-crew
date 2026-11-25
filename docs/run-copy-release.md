@@ -1,7 +1,7 @@
 # 运行副本与发布手册
 
-本机现状：开发目录 `/project/glx/scripts/opencode-crew`，运行副本 `/project/glx/scripts/opencode-crew-live`，
-`~/.config/opencode/opencode.json` 的 `plugins[0].package` 指向运行副本。宿主 OpenCode V2.4.1。
+2026-11-25 起，本机当前运行方式已切到 GitHub 固定 commit 安装（证据：`plans/evidence/github-install-switch-2026-11-25.md`）。
+本文保留为运行副本备用/回滚手册；只有 `plugins[0].package` 重新指向 `/project/glx/scripts/opencode-crew-live` 时，文中的“当前运行副本”描述才适用。宿主 OpenCode V2.4.1。
 
 ## 为什么要把运行副本和开发目录分开
 
