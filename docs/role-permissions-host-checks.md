@@ -7,7 +7,7 @@
 - 用户已选择 external 继承、身份无法识别时非 external deny。源码实现的 guard 对 external 不介入，其他动作按资源的局部 last match 与宿主取严；显式身份优先，缺失才回退 session。hook 注册必须成功。v2.3.0 受控 setup 失败测试：hook 与 transform 注册后抛错，失败插件注册未在后续装配/reload 生效，正常 observer 继续；失败 transform 首次 registry 前未执行，不证明已执行副作用回滚或所有 setup 失败安全。证据：`/project/tmp/opencode-crew-read-policy-s3/setup-cleanup/summary.md`。后续插件可再改 effect；不走 permission hook 的路径不在保证内，plans 词法匹配不是 symlink 沙箱。
 - S1 红灯 33 pass / 60 fail，S2 同 93 项通过；全量 439 pass / 0 fail、typecheck 通过。S0 四例装配成功，最终全局尾部注入、reload 稳定，不是权限行为验证。
 - S3 隔离源码副本构建 SHA-256 `841d3bf78add12304ce3b31ac6e6dc2d4ab4dfabdd97af0274ef047c67259e61`：G0 28 条、G1–G4 120 条真实 `permission.assert` 符合预期，G1–G4 每行 initial/reload 重复。pending ask 观察到事件、list/get、reject 和清空，**不是 TUI**。assert 验证求值，不执行目标工具。证据：`/project/tmp/opencode-crew-read-policy-s1/{summary.md,red.log}`、`/project/tmp/opencode-crew-read-policy-s2/{s2-green.log,full-green.log}`、`/project/tmp/opencode-crew-read-policy-s3/{g0-assert,matrix}/summary.md`。
-- **R0 仍 blocked**：全局 external ask 和敏感 read ask 的 TUI 客户端确认未验；write/shell 等 A1/A2 真实工具覆盖不足；初轮构造失败不能算工具通过。该轮源码和隔离构建验证本身不代表部署或共享服务重启；后续发布状态不由本文断言，发布流程见 `docs/run-copy-release.md`。R1/R2 未执行。
+- **R0 仍 blocked**：全局 external ask 和敏感 read ask 的 TUI 客户端确认未验；write/shell 等 A1/A2 真实工具覆盖不足；初轮构造失败不能算工具通过。当时用隔离构建验证，不等于当时主仓库 `dist` 已部署；那次验证后主仓库 `dist` 未随其更新，共享服务也未重启。此后 main 的 `dist` 已从 `84a935c` 起更新，仍不表示共享服务已按当前 dist 重新部署，也不表示已在当前 main 重跑本清单；发布流程见 `docs/run-copy-release.md`。R1/R2 未执行。
 
 ### 最终覆盖概览
 
