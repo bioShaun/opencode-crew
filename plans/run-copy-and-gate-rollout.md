@@ -219,7 +219,7 @@
 
 - **先 `remind`**，理由：
   1. 全局生效：options 没有按项目覆盖，所有 git 项目的 Root 会话都会被评估。先用「每组改动只提醒一次、会话总量封顶」的模式测噪音。
-  2. `enforce` 的重复注入每次 idle 都会多一次模型调用，且真机从未验证（4.5）。
+  2. `enforce` 的重复注入每次 idle 都会多一次模型调用；该分支仍缺真机证据（reviewer 覆盖后停止已由 S8 验证，见 4.5）。
   3. 门禁本来就是软提醒，`remind` 与 `enforce` 的差别只是「同一组改动是否重发 ≤ `maxReminders` 次」。先证明提醒内容有用，再讨论是否要重发。
 - 观察期：**至少 7 个日历日，且累计 ≥10 次提醒**，二者都满足才下结论；最长 14 天，14 天内不足 10 次则判定为低流量，维持 `remind`、不升级。
 - 数据来源（只读）：`sqlite3 -readonly ~/.local/share/opencode/opencode.db "select session_id, count(*) from session_message where data like '%crewReviewGate%' group by 1"`（**需验证** `sqlite3` 命令可用及 `data` 为文本 JSON；S7 就是用这个表确认注入消息的）。命中规则分布可从 `metadata.crewReviewGate.rule` 取。
@@ -288,7 +288,7 @@
 
 ### 4.5 真机尚未验证的分支：最小成本验证
 
-未验证项（S7 记录与 `review-gate-spec.md` §8 S7）：`enforce` 重复注入；reviewer 覆盖后停止（两种模式共用的覆盖判断）；`enforce` 下 `Review-Skip` 停止（与 S7 已验证的 `remind` 同一代码路径，可顺带）。
+S8 后仍未验证项：`enforce` 重复注入，以及 `enforce` 下 `Review-Skip` 停止（与 S7 已验证的 `remind` 同一代码路径）。reviewer 覆盖后停止已在 `plans/evidence/review-gate-probe/s8-enforce.md` 真机确认。
 
 - **时机**：不是上线 `remind` 的前提；是**升级到 `enforce` 的前置**。`remind` 下的「reviewer 覆盖后不再提醒」则在观察期里自然出现，记录即可。
 - **做法**（沿用 S7：载体仓库 + 短时改配置 + 还原）：

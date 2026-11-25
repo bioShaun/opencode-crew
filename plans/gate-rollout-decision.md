@@ -277,7 +277,7 @@ grep -n -E 'ENOSPC|opencode-crew|Agent not found|loading plugin' ~/.local/share/
 | 提醒刷屏 | 每条提醒是一条 `queue` 的 synthetic 消息，会多触发一次 Root 回合（一次模型调用） | `remind`：同一改动集只发一次，会话总量上限 `5 × maxReminders = 10`；门禁是软提醒，不阻塞 |
 | `git status` 同步阻塞 | 每个 Root 回合结束最多 3 秒 | 见 §2.2；本机仓库小，可忽略 |
 | 门禁自身出错 | 无：`registerReviewGate` 的 idle/prompt 回调全部 fail-open（`catch {}`） | — |
-| `enforce` | 同一改动集最多再多 `maxReminders` 次模型调用，且真机未验证 | 不上 |
+| `enforce` | 同一改动集最多再多 `maxReminders` 次模型调用；重复注入分支仍无真机证据（reviewer 覆盖停止已由 S8 验证） | 不上 |
 
 ### 4.2 一行撤销
 
@@ -292,13 +292,13 @@ grep -n -E 'ENOSPC|opencode-crew|Agent not found|loading plugin' ~/.local/share/
 
 **门槛**（全部满足才考虑改 `mode`）：
 1. 观察期结论里「无响应提醒 ≥3 次且 ≥20%」（Root 确实在忽略提醒）；
-2. 下面 E1、E2 在隔离宿主上通过。
+2. 下面 E1 在隔离宿主上通过；E2 已由 `plans/evidence/review-gate-probe/s8-enforce.md` 确认真机成立。
 
 **验证全部在隔离宿主做**（沿用 §1.3 的隔离环境变量与 provider 配置；载体 `$ROOT/carrier` = `git init` + 一次提交），**不改共享配置、不重载共享服务**：
 
 - 隔离全局配置里加 `"reviewGate": {"mode":"enforce","maxReminders":2,"sensitiveGlobs":["**/AGENTS.md"]}`。
 - E1（重复注入）：`opencode run --standalone --agent root -m tcuni/gpt-6-luna#low`，提示「创建 `AGENTS.md`；之后收到 `[crew-review-gate]` 提醒时只回复 ack，不派 reviewer，也不写 `Review-Skip`」。成功标准：§3.3 的脚本（把数据库路径换成隔离 `XDG_DATA_HOME`）统计该会话**恰好 2 条**（= `maxReminders`），之后不再增加。模型若自行写了 skip/派了 reviewer，该次无效，重跑。
-- E2（reviewer 覆盖后停止）：另起会话，收到第一条提醒后指示「派 reviewer 只读 `AGENTS.md` 并回复 ok」。成功标准：提醒保持 **1 条**；随后 Root 调用 `crew_review_gate`，`native.reviewerCovered` 为 `true`。reviewer 用 `opus-5-5#high`，任务限定只读一个文件以控成本。
+- E2（reviewer 覆盖后停止）：另起会话，收到第一条提醒后指示「派 reviewer 只读 `AGENTS.md` 并回复 ok」。成功标准：提醒保持 **1 条**；随后 Root 调用 `crew_review_gate`，`native.reviewerCovered` 为 `true`。reviewer 用 `opus-5-5#high`，任务限定只读一个文件以控成本。**该分支已在 S8 真机成立，重复实验不是升级前置。**
 - E3（可选，与 E1 同会话）：第二条提醒后回复 `Review-Skip: <≥10字理由>`，成功标准：条数保持 2 且不再增加。
 - 证据写到 `plans/evidence/review-gate-probe/s8-enforce.md`。
 
