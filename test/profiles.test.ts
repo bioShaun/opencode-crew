@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test"
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { WORK } from "./workdir"
 import {
   ACTIVE_FILE,
   assertProfileName,
@@ -17,7 +17,8 @@ import {
 } from "../src/profiles"
 
 function dir(): string {
-  return mkdtempSync(join(tmpdir(), "crew-profiles-"))
+  mkdirSync(WORK, { recursive: true })
+  return mkdtempSync(join(WORK, "crew-profiles-"))
 }
 function root(path: string): ProfileRoot[] {
   return [{ dir: path, source: "user" }]

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { LiveController, mergeSession, type LiveClock, type LiveEvent, type LiveFetch, type LiveSnapshot, type LiveStore } from "../src/tui/live"
+import { LiveController, mergeSession, type LiveClock, type LiveFetch, type LiveSnapshot, type LiveStore } from "../src/tui/live"
 import type { MessageView, SessionView } from "../src/tui/view-model"
 
 const session = (id: string, extra: Partial<SessionView> = {}): SessionView => ({

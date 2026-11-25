@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test"
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { WORK } from "./workdir"
 import { createCrewProfiles, RELOAD_WARNING, type CrewProfilesInfo } from "../src/profile-state"
 import { ACTIVE_FILE, nodeProfileFs, readActive, writeActive, type ProfileFs, type ProfileRoot } from "../src/profiles"
 
@@ -12,7 +12,8 @@ const baseline = {
 }
 
 function dir(): string {
-  return mkdtempSync(join(tmpdir(), "crew-state-"))
+  mkdirSync(WORK, { recursive: true })
+  return mkdtempSync(join(WORK, "crew-state-"))
 }
 function root(path: string): ProfileRoot[] {
   return [{ dir: path, source: "user" }]

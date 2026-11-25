@@ -225,12 +225,10 @@ export async function registerTasks(ctx:Host, configuredModel?:ModelSource) {
    '边界：worktree 和 scope 不是操作系统级隔离。',
   ].join('\n'),
   status: [
-   '查询当前 Root 会话发起的任务，不能查询其他 Root 的任务；不传 taskID 只列出当前 Root 的未结案任务；传 taskID 时任务不存在或不属于当前 Root 则成功返回，但不含 task 字段。',
-   '不传 taskID：只列出当前 Root 的未结案任务。传 taskID：可返回当前 Root 发起的对应未结案或已结案记录；任务不存在或不属于当前 Root 时成功返回，但不含 task 字段。',
+   '查询当前 Root 会话发起的任务，不能查询其他 Root 的任务；不传 taskID 只列出当前 Root 的未结案任务；传 taskID 可返回当前 Root 发起的对应未结案或已结案记录；任务不存在或不属于当前 Root 时成功返回，但不含 task 字段。',
   ].join('\n'),
   stop: [
-   '对当前 Root 的未结案任务最多发送一次中断请求；重复调用不会再次中断。已结案记录直接返回，不发送中断。返回不能证明会话或进程树已经停止，processSafety 仍为 unconfirmed，也不会释放预留。',
-   '返回只说明请求结果，不能证明会话或进程树已经停止，processSafety 仍为 unconfirmed，也不会释放预留。任务不存在或不属于当前 Root 时拒绝，不要重试。',
+   '对当前 Root 的未结案任务最多发送一次中断请求；重复调用不会再次中断。已结案记录直接返回，不发送中断。返回只说明请求结果，不能证明会话或进程树已经停止，processSafety 仍为 unconfirmed，也不会释放预留。任务不存在或不属于当前 Root 时拒绝，不要重试。',
   ].join('\n'),
  }
  await ctx.tool.transform(editor=>{

@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test"
-import { readFileSync, existsSync, mkdtempSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { WORK } from "./workdir"
 import { fileURLToPath } from "node:url"
 import { splitRoleBody } from "../src/model-family"
 
@@ -243,7 +243,8 @@ test("architect ready means an implementable plan with verification assigned to 
 // These cases point this process at a temporary profile directory for their
 // duration; the preloaded test/setup.ts keeps every other case isolated.
 function profileDir(files: Record<string, unknown>, active?: string) {
-  const dir = mkdtempSync(join(tmpdir(), "crew-profile-case-"))
+  mkdirSync(WORK, { recursive: true })
+  const dir = mkdtempSync(join(WORK, "crew-profile-case-"))
   for (const [name, body] of Object.entries(files)) {
     writeFileSync(join(dir, `${name}.json`), typeof body === "string" ? body : JSON.stringify(body))
   }

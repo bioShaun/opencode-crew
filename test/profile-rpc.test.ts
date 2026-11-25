@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test"
-import { mkdtempSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { WORK } from "./workdir"
 import { createCrewProfiles } from "../src/profile-state"
 import {
   crewProfiles,
@@ -16,7 +16,8 @@ import { writeActive } from "../src/profiles"
 const baseline = { models: {}, steps: {}, engineerInstructions: [] }
 
 function fixture(body: unknown = { models: { root: "p/root#high", engineer: "p/eng" }, steps: { engineer: 12 }, engineerInstructions: ["a rule"] }) {
-  const path = mkdtempSync(join(tmpdir(), "crew-rpc-"))
+  mkdirSync(WORK, { recursive: true })
+  const path = mkdtempSync(join(WORK, "crew-rpc-"))
   writeFileSync(join(path, "fast.json"), JSON.stringify(body))
   writeFileSync(join(path, "broken.json"), "{oops")
   const dirs = [{ dir: path, source: "user" as const }]

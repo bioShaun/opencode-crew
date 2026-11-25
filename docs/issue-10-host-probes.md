@@ -33,7 +33,7 @@
 
 三条全过才进入 R1/R2。任何一条失败即停止本清单，回 `docs/role-permissions-review.md` 重新评审；归因需区分 crew 规则/契约、宿主行为、构造或环境问题，不要靠加规则修绿。
 
-2026-11-17 初轮 R0 reject；后续源码修复的隔离构建已完成 G0 28 条和 G1–G4 120 条真实 `permission.assert`，均符合预期，后者每行 initial/reload 重复。pending ask 的事件、list/get、reject 和清空已验证，但不是 TUI；assert 也不证明真实工具调用。六格外部 read 端到端通过（G0 无全局 external 规则但有其他动作 deny；G1 全局 external deny），证据为 `/project/tmp/opencode-crew-read-policy-s3/tool-smoke/sol-attempt/summary.md`。全局 external ask 与敏感 read ask 的 TUI 客户端确认未验，write/shell 等 A1/A2 实际工具覆盖不足。v2.3.0 受控 setup 失败测试中 hook 与 transform 注册后抛错，注册未在后续装配/reload 生效；失败 transform 首次 registry 前未执行，不证明已执行副作用回滚或所有 setup 失败安全，见 `/project/tmp/opencode-crew-read-policy-s3/setup-cleanup/summary.md`。**R0 仍 blocked，不能解锁 R1/R2；二者未执行，issue #10 未实现。** 源码与隔离构建已验不等于部署：主仓库 dist 未更新，共享服务未重启。证据与补测步骤见[权限宿主清单](role-permissions-host-checks.md)及[权限复审](role-permissions-review.md)。
+2026-11-17 初轮 R0 reject；后续源码修复的隔离构建已完成 G0 28 条和 G1–G4 120 条真实 `permission.assert`，均符合预期，后者每行 initial/reload 重复。pending ask 的事件、list/get、reject 和清空已验证，但不是 TUI；assert 也不证明真实工具调用。六格外部 read 端到端通过（G0 无全局 external 规则但有其他动作 deny；G1 全局 external deny），证据为 `/project/tmp/opencode-crew-read-policy-s3/tool-smoke/sol-attempt/summary.md`。全局 external ask 与敏感 read ask 的 TUI 客户端确认未验，write/shell 等 A1/A2 实际工具覆盖不足。v2.3.0 受控 setup 失败测试中 hook 与 transform 注册后抛错，注册未在后续装配/reload 生效；失败 transform 首次 registry 前未执行，不证明已执行副作用回滚或所有 setup 失败安全，见 `/project/tmp/opencode-crew-read-policy-s3/setup-cleanup/summary.md`。**R0 仍 blocked，不能解锁 R1/R2；二者未执行，issue #10 未实现。** 该轮源码与隔离构建验证本身不代表部署或共享服务重启；后续发布状态不由本文断言，发布流程见 `docs/run-copy-release.md`。证据与补测步骤见[权限宿主清单](role-permissions-host-checks.md)及[权限复审](role-permissions-review.md)。
 
 ## 3. R1 · session.fork（台账混淆边角）
 

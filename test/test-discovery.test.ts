@@ -1,9 +1,11 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 test("default discovery excludes tests outside test directory", () => {
-  const directory = mkdtempSync(join(process.cwd(), "discovery-sentinel-"));
+  const scratch = join(process.cwd(), ".scratch");
+  mkdirSync(scratch, { recursive: true });
+  const directory = mkdtempSync(join(scratch, "discovery-sentinel-"));
   const marker = "crew-discovery-sentinel-unique";
   const name = "crew-discovery-probe-name";
   try {
