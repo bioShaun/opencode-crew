@@ -190,7 +190,7 @@ Engineer 按原顺序保留宿主规则，并追加 Markdown 中对 `subagent`�
 
 `external_directory` 完全由宿主裁决：已测默认允许，并尊重用户全局 ask/deny。其他动作并非无条件继承所有全局规则：guard 对每个资源按局部策略最后匹配求值，再与宿主结果取更严；显式角色身份优先，缺失时回退会话身份，无法识别时非 external 动作 deny。三个角色允许 skill；局部策略对 `.env`、`.env.*` 读取为 ask，对 `.env.example` 为 allow，宿主仍可更严。architect 与 explorer 仍开放不加限制的 `webfetch`/`websearch`（已知风险）。权限 hook 必须注册成功；v2.3.0 受控测试中 hook 与 transform 注册后主动失败，二者未在后续装配和 reload 生效，但不证明已执行副作用的回滚或所有 setup 失败均安全（证据：`/project/tmp/opencode-crew-read-policy-s3/setup-cleanup/summary.md`）。后续插件可再次修改 effect，不经过 permission hook 的路径不在保证范围内；`plans/` 是词法匹配而非防符号链接沙箱，不应用于隔离不可信文件系统布局。
 
-源码实现的自动权限求值与六格外部 read 工具端到端已通过，但 **R0 仍 blocked**：真实 write/shell 等 A1/A2 工具覆盖不足，TUI external 和敏感 read ask 确认未完成。验收仅使用隔离构建，主仓库 `dist` 故意未更新、未部署，也未重启共享服务；证据与后续步骤见[宿主清单](docs/role-permissions-host-checks.md)。
+源码实现的自动权限求值与六格外部 read 工具端到端已通过，但 **R0 仍 blocked**：真实 write/shell 等 A1/A2 工具覆盖不足，TUI external 和敏感 read ask 确认未完成。当时验收用的是隔离构建，主仓库 `dist` 有意未随那次验证更新，也未重启共享服务。此后 main 的 `dist` 已从 `84a935c` 起更新（含审查门禁与 display RPC 等），这不表示 R0 已完成，也不表示共享服务已按当前 dist 重新部署或宿主清单已在当前 main 重跑。证据与后续步骤见[宿主清单](docs/role-permissions-host-checks.md)。
 
 不是固定流水线。Root 已掌握上下文，剩余修改和必要验证明确、局部，且无需进一步调查、设计测试或独立复核时可直做；否则优先委派。长任务才按需使用 `plans/`。同一 cwd 一次只能有一个写入者；直做不免验收。
 
