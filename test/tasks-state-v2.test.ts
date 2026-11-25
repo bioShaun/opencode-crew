@@ -183,12 +183,12 @@ test('v2 rejects malformed versions, migration, and periods', () => {
 
 test('v2 rejects malformed active records and identity collisions', () => {
   const cases: ((s: ReturnType<typeof setup>, reg: any) => void)[] = [
-    (s, reg) => { reg.active = [reg.active[0], { periodID: 'pd_1', record: reg.active[0].record }] },
-    (s, reg) => { reg.active[0].periodID = 'pd_2' },
+    (_, reg) => { reg.active = [reg.active[0], { periodID: 'pd_1', record: reg.active[0].record }] },
+    (_, reg) => { reg.active[0].periodID = 'pd_2' },
     (s, reg) => { reg.active[0].record = record(s.dirs[0], 'one', 'owner', 'b'.repeat(40)) },
     (s, reg) => { reg.active.push({ periodID: 'pd_1', record: record(s.dirs[1], 'one') }) },
     (s, reg) => { reg.active.push({ periodID: 'pd_1', record: record(s.dirs[0], 'alias') }) },
-    (s, reg) => { reg.active[0].record.requestDigest = dg('9') },
+    (_, reg) => { reg.active[0].record.requestDigest = dg('9') },
     (s, reg) => { reg.active = [reg.active[0], { periodID: 'pd_1', record: record(s.dirs[1], 'two') }, { periodID: 'pd_1', record: record(s.dirs[2], 'three') }] },
   ]
   for (const mutate of cases) { const s = migrated(); reject(s, reg => mutate(s, reg)) }
@@ -196,24 +196,24 @@ test('v2 rejects malformed active records and identity collisions', () => {
 
 test('v2 rejects malformed closed history and closeout evidence', () => {
   const cases: ((s: ReturnType<typeof setup>, reg: any) => void)[] = [
-    (s, reg) => { reg.closed[0].periodID = 'pd_9' },
+    (_, reg) => { reg.closed[0].periodID = 'pd_9' },
     (s, reg) => { reg.closed[0].record = record(s.dirs[0], 'one', 'owner', 'b'.repeat(40)) },
-    (s, reg) => { delete reg.closed[0].closeout.archiveDigest },
-    (s, reg) => { reg.closed[0].closeout.extra = true },
-    (s, reg) => { reg.closed[0].closeout.operationID = OP },
-    (s, reg) => { reg.closed[0].closeout.operationID = 'op_bad' },
-    (s, reg) => { reg.closed[0].closeout.paramsDigest = 'bad' },
-    (s, reg) => { reg.closed[0].closeout.stopEvidenceRef = '/absolute/stop.json' },
-    (s, reg) => { reg.closed[0].closeout.stopEvidenceRef = '../escape.json' },
-    (s, reg) => { reg.closed[0].closeout.reviewEvidenceRef = 'evidence/../escape.json' },
-    (s, reg) => { reg.closed[0].closeout.operatorRef = '' },
-    (s, reg) => { reg.closed[0].closeout.authorizationRef = 'bad\u0001label' },
-    (s, reg) => { reg.closed[0].closeout.disposition = 'released' },
-    (s, reg) => { reg.closed[0].closeout.disposition = 'integrated' },
-    (s, reg) => { reg.closed[0].closeout.disposition = 'integrated'; reg.closed[0].closeout.integrationCommit = 'bad' },
-    (s, reg) => { reg.closed[0].closeout.integrationCommit = 'a'.repeat(40) },
-    (s, reg) => { reg.closed[0].closeout.evidenceDigest = 'bad' },
-    (s, reg) => { reg.closed[0].closeout.archiveDigest = 'bad' },
+    (_, reg) => { delete reg.closed[0].closeout.archiveDigest },
+    (_, reg) => { reg.closed[0].closeout.extra = true },
+    (_, reg) => { reg.closed[0].closeout.operationID = OP },
+    (_, reg) => { reg.closed[0].closeout.operationID = 'op_bad' },
+    (_, reg) => { reg.closed[0].closeout.paramsDigest = 'bad' },
+    (_, reg) => { reg.closed[0].closeout.stopEvidenceRef = '/absolute/stop.json' },
+    (_, reg) => { reg.closed[0].closeout.stopEvidenceRef = '../escape.json' },
+    (_, reg) => { reg.closed[0].closeout.reviewEvidenceRef = 'evidence/../escape.json' },
+    (_, reg) => { reg.closed[0].closeout.operatorRef = '' },
+    (_, reg) => { reg.closed[0].closeout.authorizationRef = 'bad\u0001label' },
+    (_, reg) => { reg.closed[0].closeout.disposition = 'released' },
+    (_, reg) => { reg.closed[0].closeout.disposition = 'integrated' },
+    (_, reg) => { reg.closed[0].closeout.disposition = 'integrated'; reg.closed[0].closeout.integrationCommit = 'bad' },
+    (_, reg) => { reg.closed[0].closeout.integrationCommit = 'a'.repeat(40) },
+    (_, reg) => { reg.closed[0].closeout.evidenceDigest = 'bad' },
+    (_, reg) => { reg.closed[0].closeout.archiveDigest = 'bad' },
   ]
   for (const mutate of cases) { const s = migrated(); closeFixture(s, 'ct_one'); reject(s, reg => mutate(s, reg)) }
 })

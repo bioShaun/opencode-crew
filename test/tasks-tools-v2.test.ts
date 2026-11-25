@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import plugin from '../src/index'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { resolve, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -54,7 +54,7 @@ function migrate(f: Awaited<ReturnType<typeof fixture>>) {
   expect(new Ledger(project).migrate(OP, DG).replayed).toBe(false)
   return project
 }
-function close(f: Awaited<ReturnType<typeof fixture>>, project: any, taskID: string) {
+function close(project: any, taskID: string) {
   const atomic = new AtomicRegistry(project.commonDir, project)
   atomic.withLock(store => {
     const reg: any = store.read(), index = reg.active.findIndex((x: any) => x.record.taskID === taskID)
@@ -80,7 +80,7 @@ test('v2 active views expose lifecycle and period', async () => {
 })
 
 test('closed key replay has zero create, prompt, or interrupt', async () => {
-  const f = await fixture(); await f.run('crew_task_start', f.input); const project = migrate(f); close(f, project, 'ct_one')
+  const f = await fixture(); await f.run('crew_task_start', f.input); const project = migrate(f); close(project, 'ct_one')
   const creates = count(f, 'create'), prompts = count(f, 'prompt'), interrupts = count(f, 'interrupt')
   const replay: any = await f.run('crew_task_start', f.input)
   expect(replay.ok).toBe(true)
@@ -96,7 +96,7 @@ test('closed key replay has zero create, prompt, or interrupt', async () => {
 })
 
 test('status hides closed history unless a taskID is explicit', async () => {
-  const f = await fixture(); await f.run('crew_task_start', f.input); const project = migrate(f); close(f, project, 'ct_one')
+  const f = await fixture(); await f.run('crew_task_start', f.input); const project = migrate(f); close(project, 'ct_one')
   const listing: any = await f.run('crew_task_status', {})
   expect(listing.ok).toBe(true)
   expect(listing.tasks).toEqual([])
@@ -112,7 +112,7 @@ test('status hides closed history unless a taskID is explicit', async () => {
 })
 
 test('stop on closed history returns the record without interrupting', async () => {
-  const f = await fixture(); await f.run('crew_task_start', f.input); const project = migrate(f); close(f, project, 'ct_one')
+  const f = await fixture(); await f.run('crew_task_start', f.input); const project = migrate(f); close(project, 'ct_one')
   const interrupts = count(f, 'interrupt')
   const stopped: any = await f.run('crew_task_stop', { taskID: 'ct_one' })
   expect(stopped.ok).toBe(true)
@@ -122,14 +122,14 @@ test('stop on closed history returns the record without interrupting', async () 
 })
 
 test('retry hook still disables retry for closed bindings', async () => {
-  const f = await fixture(); await f.run('crew_task_start', f.input); const project = migrate(f); close(f, project, 'ct_one')
+  const f = await fixture(); await f.run('crew_task_start', f.input); const project = migrate(f); close(project, 'ct_one')
   const event: any = { sessionID: 'child', decision: { retry: true, delay: 1 } }
   await f.hooks.get('retry')(event)
   expect(event.decision.retry).toBe(false)
 })
 
 test('closed history is not exposed across owners', async () => {
-  const f = await fixture(); await f.run('crew_task_start', f.input); const project = migrate(f); close(f, project, 'ct_one')
+  const f = await fixture(); await f.run('crew_task_start', f.input); const project = migrate(f); close(project, 'ct_one')
   const other: any = { id: 'other', agent: 'root', location: { directory: f.dir }, model: { providerID: 'other', id: 'model' } }
   f.sessions.set('other', other)
   const tc: any = { ...f.tc, sessionID: 'other' }
