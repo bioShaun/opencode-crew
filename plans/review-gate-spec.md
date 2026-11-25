@@ -209,7 +209,7 @@ glob 语义：自写小型 `globToRegExp`（纯函数）：`**` 匹配任意层�
 - 成功：全套通过；`git diff --stat` 只含 §7 列出的文件。
 
 **S7 真机验收（依赖 S4，由 Root 派 engineer）**
-- 隔离仓库，`mode:"remind"` 和 `"enforce"` 各一轮：6 文件改动、删除一个测试、改 `agents/` 下文件、`planMultiFile`、crew_task 超 scope；各验证提醒文本、reviewer 覆盖后不再提醒、`Review-Skip:` 后停止、`maxReminders` 封顶。结果写 `plans/evidence/review-gate-acceptance/summary.md`。
+- 隔离仓库，`mode:"remind"` 和 `"enforce"` 各一轮：6 文件改动、删除一个测试、改 `agents/` 下文件、`planMultiFile`、crew_task 超 scope；各验证提醒文本、reviewer 覆盖后不再提醒、`Review-Skip:` 后停止、`maxReminders` 封顶。实际结果见 `plans/evidence/review-gate-probe/s7-real-machine.md`。
 
 ## 9. 风险与未决事项
 
@@ -360,7 +360,7 @@ glob 语义：自写小型 `globToRegExp`（纯函数）：`**` 匹配任意层�
 
 **R4 真机验收（依赖 R2、R0；由 Root 另派 engineer）**
 - 使用隔离源码副本构建（沿用 `docs/role-permissions-host-checks.md` 的方式），**不更新主仓库 `dist`、不重启共享服务**。与 S7 共用同一次隔离构建与同一台测试宿主。
-- 场景：`build` 派 engineer → deny 且无子会话；`build` 派 reviewer/explorer/architect → 正常；Root 直接和经 Code Mode 派 engineer 正常；Root 的 `crew_task_start`（含内部 `subagent`/`engineer` assert）与 `crew_task_stop` 照常通过，状态和结案路径不变；`build` 调 `crew_task_*` 仍得到既有的 `FORBIDDEN_CALLER`（证明执行层限制未被改动）；`/crew` 切到 Root 后可用。结果写 `plans/evidence/root-only-acceptance/summary.md`。
+- 场景：`build` 派 engineer → deny 且无子会话；`build` 派 reviewer/explorer/architect → 正常；Root 直接和经 Code Mode 派 engineer 正常；Root 的 `crew_task_start`（含内部 `subagent`/`engineer` assert）与 `crew_task_stop` 照常通过，状态和结案路径不变；`build` 调 `crew_task_*` 仍得到既有的 `FORBIDDEN_CALLER`（证明执行层限制未被改动）；`/crew` 切到 Root 后可用。实际结果见 `plans/evidence/root-only-probe/r4-real-machine.md`。
 
 ### 11.7 成功标准
 

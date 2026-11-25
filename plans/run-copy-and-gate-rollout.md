@@ -158,7 +158,7 @@
 - 账本位于 `<项目 git common dir>/opencode-crew-stage1`（`src/tasks-ledger.ts`），项目身份来自 `inspectProject(ctx.location.directory)`，即**会话的工作目录所在仓库**。插件从哪个目录加载与此无关。
 - 因此：在开发目录里开 Root 会话 → 账本仍是 `/project/glx/scripts/opencode-crew/.git/opencode-crew-stage1`，历史任务不动；在其他项目里开会话 → 各自仓库的账本。live 只在被当作会话 cwd 时才会有自己的（空）账本，而第 2 节决定 4 要求 live 不开会话，所以不会出现。
 - `architect` 的 `plans/**` 写权限（`src/index.ts`）同样用 `ctx.location.directory`，不受影响。
-- 证据文件（`plans/evidence/**`）是普通仓库文件，随开发目录。
+- 已提交的精选证据（`plans/evidence/**`）随开发目录；被 ignore 的原始现场仍只留在本机，不做迁移。索引与边界见 `plans/evidence/README.md`。
 - 验证（切换前后各一次）：
   - `ls -la /project/glx/scripts/opencode-crew/.git/opencode-crew-stage1` 内容（`registry.json` 的 mtime/大小）不变；
   - Root 调 `crew_task_status` 返回的 active 列表与切换前一致。

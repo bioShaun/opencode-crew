@@ -119,7 +119,7 @@ jq -r 'select(.type=="text") | .part.text // .text' $ROOT/run-proj-on.ndjson $RO
 ```
 成功标准：`proj-on` 返回 `remind`，`proj-off` 返回 `NO_TOOL`。（`jq` 的取值路径**需验证**；`/usr/bin/jq` 存在。）
 
-结束后：不把 `$ROOT` 里任何东西带回仓库；证据摘要（命令、A/B/C 结论、日志片段）写到 `plans/evidence/review-gate-probe/s9-scope.md`。
+结束后：不把 `$ROOT` 里任何东西带回仓库；证据摘要（命令、A/B/C 结论、日志片段）写到 `plans/evidence/review-gate-probe/s9-scope.md`（计划输出，当前尚未生成）。
 
 ### 1.4 项目层配置文件本身会制造噪音，必须本地忽略
 
@@ -262,7 +262,7 @@ grep -n -E 'ENOSPC|opencode-crew|Agent not found|loading plugin' ~/.local/share/
 
 ### 3.4 节奏
 
-第 0 天（开启当天）、第 3 天、第 7 天、到期日各跑一次 §3.3 的脚本，把输出追加到 `/project/tmp/gate-rollout/observation-*.txt`；到期日在 `plans/evidence/review-gate-probe/s10-observation.md` 写结论（提醒数、规则分布、处置分布、漏报抽查、是否改配置）。
+第 0 天（开启当天）、第 3 天、第 7 天、到期日各跑一次 §3.3 的脚本，把输出追加到 `/project/tmp/gate-rollout/observation-*.txt`；到期日在 `plans/evidence/review-gate-probe/s10-observation.md` 写结论（提醒数、规则分布、处置分布、漏报抽查、是否改配置）。该文件是计划输出，当前尚未生成。
 
 ---
 
