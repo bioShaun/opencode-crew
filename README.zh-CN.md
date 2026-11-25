@@ -25,7 +25,7 @@ Ticket/Session/Assignment 映射与结构化 `Report` 六态（对照 dsh、不�
 
 ## 安装与配置
 
-角色与插件依赖基线为 OpenCode **2.3.0**。阶段 1 私有宿主验收使用 **2.2.5**；阶段 2 的 S1–S3 有本地测试，S4 已在私有 2.2.5 夹具完成周转并留有 CLI 证据，S5 已在私有夹具完成双行为任务与串行整合试运行；均未接触真实 ledger。无需手工复制角色或运行安装脚本。
+插件 SDK 依赖基线为 `@opencode/plugin` **2.3.0**。插件 SDK 依赖、实际运行宿主版本与历史验收版本的区别见 [`docs/host-versions.md`](docs/host-versions.md)。阶段 1 私有宿主验收使用 **2.2.5**；阶段 2 的 S1–S3 有本地测试，S4 已在私有 2.2.5 夹具完成周转并留有 CLI 证据，S5 已在私有夹具完成双行为任务与串行整合试运行；均未接触真实 ledger。无需手工复制角色或运行安装脚本。
 
 ### 从 GitHub 安装（推荐）
 
@@ -72,7 +72,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 
 别名和 `modelDisplay` 只属于插件 options，不能写入配置档；档生效时这两项仍沿用 options 中的值。这两项由 server 部分读取后经 RPC 推给侧栏——OpenCode v2.4.1 不会把 `plugins[].options` 转发给插件的 TUI 部分。宿主没有这条 RPC 时，侧栏回落到 `cli.json` 里同一个包的 options，因此在 `cli.json` 写 `modelAliases` / `modelDisplay` 同样有效。两种方式都要重开 TUI 才生效，不会热更新。`modelAliases` 最多 64 项，键为 `provider/model`（不含 variant），值为 1–12 字符。
 
-`reviewGate` 默认 `{ "mode": "off" }`。`mode` 取 `off`、`remind`、`enforce`。它看 Root 所在目录和每个 active `crew_task` 的 worktree，命中条件是：改动文件数超过 `maxFiles`、删除或改名了测试、碰到敏感路径（默认 `**/AGENTS.md`）、任务引用了 `plans/*.md` 方案且改动多个文件、超出任务 scope，或清单无法完整采集。命中时插件往 Root 会话注入一条 `[crew-review-gate]` 消息；处理方式是派 reviewer，或在回复里写一行 `Review-Skip: <具体理由>`（至少 10 个字符），它会被记录并停止该条提醒。`remind` 每组改动只提醒一次（会话总量上限为 `maxReminders` 的 5 倍）；`enforce` 在每个 Root 回合结束时重发，直到同一组改动达到 `maxReminders` 次后放行。「已覆盖」指存在不早于最新改动文件的 reviewer 子会话，不证明审查通过。提醒不阻塞回合，也不改变 `crew_task` 的 stop → close 顺序。其余键：`planMinFiles`（设 0 关闭该规则）、`testGlobs`、`sensitiveGlobs`、`ignoreGlobs`。`mode` 不为 `off` 时还会注册只读工具 `crew_review_gate`，用于查看门禁当前的判断；它不推进基线，也不消耗提醒次数。
+`reviewGate` 默认 `{ "mode": "off" }`。`mode` 取 `off`、`remind`、`enforce`。它看 Root 所在目录和每个 active `crew_task` 的 worktree，命中条件是：改动文件数超过 `maxFiles`、删除或改名了测试、碰到敏感路径（默认 `**/AGENTS.md`）、任务引用了 `plans/*.md` 方案且改动多个文件、超出任务 scope，或清单无法完整采集。命中时插件往 Root 会话注入一条 `[crew-review-gate]` 消息；处理方式是派 reviewer，或在回复里写一行 `Review-Skip: <具体理由>`（至少 10 个字符），它会被记录并停止该条提醒。`remind` 每组改动只提醒一次（会话总量上限为 `maxReminders` 的 5 倍）；`enforce` 在每个 Root 回合结束时重发，直到同一组改动达到 `maxReminders` 次后放行。「已覆盖」指存在不早于最新改动文件的 reviewer 子会话，不证明审查通过。提醒不阻塞回合，也不改变 `crew_task` 的 stop → close 顺序。其余键：`planMinFiles`（设 0 关闭该规则）、`testGlobs`、`sensitiveGlobs`、`ignoreGlobs`。`mode` 不为 `off` 时还会注册只读工具 `crew_review_gate`，用于查看门禁当前的判断；它不推进基线，也不消耗提醒次数。当前 living 语义、限制、上线状态与 `enforce` 证据缺口见 [`docs/review-gate.md`](docs/review-gate.md)。
 
 以上是待替换的占位模型，provider、凭证和模型可用性由目标机配置提供，包内不包含密钥或具体模型默认值。`models` 可省略部分角色；省略表示遵循 OpenCode 原生模型继承规则，不是字符串 `inherit`。子代理继承父会话模型；主会话保持其已选模型。`/crew` 会显式选择已配置的 Root 模型，未配置则保留当前会话模型。当 `models.engineer` 和调用方 Root 会话都拿不出模型时，`crew_task_start` 在写 ledger 或创建会话之前以 `MODEL_NOT_CONFIGURED` 拒派；同 key 重放已有记录不做该检查。
 
