@@ -90,7 +90,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 
 ### 运行副本与发布
 
-不要把开发目录长期当作运行目录：宿主会在文件变化时重载，插件加载失败会让五个角色同时消失。做法是 `git clone git@github.com:bioShaun/opencode-crew.git` 到固定目录（本机用 `/project/glx/scripts/opencode-crew-live`），在该目录 `bun install --frozen-lockfile`，再把 `package` 指向它。发布流程：开发目录 `bun run compile` → commit → push → CI 通过 → live 目录 `git fetch && git merge --ff-only origin/main` → 在 TUI 执行 `/reload`（只改 `agents/*.md` 也必须重载）。`dist` 已提交，live 不需要构建。回滚：`git checkout --detach <上一提交>` + `/reload`；兜底是把 `package` 改回开发目录。完整手册见 [`docs/run-copy-release.md`](docs/run-copy-release.md)。
+不要把开发目录长期当作运行目录：宿主会在文件变化时重载，插件加载失败会让五个角色同时消失。当前运行安装跟踪 `github:bioShaun/opencode-crew#main`（2026-11-25 已验证：推送 main 后宿主先报告 update available，数分钟内自动切到新缓存入口，五角色仍在）。生产使用可改为固定经过验证的完整 commit；完整 commit 固定的插件不随分支更新。从本地路径改指 GitHub 包时，若未预热插件缓存，可能出现短暂的角色缺失空窗。原先的运行副本做法（`git clone` 到固定目录，本机曾用 `/project/glx/scripts/opencode-crew-live`，把 `package` 指向它，再 ff-only 合并 + `/reload`）仅保留为回滚/备用路径。完整手册与证据见 [`docs/run-copy-release.md`](docs/run-copy-release.md)、[`plans/evidence/github-install-switch-2026-11-25.md`](plans/evidence/github-install-switch-2026-11-25.md)。
 
 ## 使用
 
