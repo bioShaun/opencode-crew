@@ -12,6 +12,8 @@ OpenCode V2 插件：文件化角色、按需委派，Root 保持正常执行能
 
 简单明确的任务由 Root 直接完成并验证；复杂任务按需委派给专家，由 Root 核查结果后交付。四类专家不是固定流水线，也不要求每次全部参与。
 
+任务包里写了 Approach，不等于要派 architect。architect 只在需要可引用的 plans/ 契约时上场；不要每条用户消息都先走规划阶段。问答/解释由 Root 直接回答，步骤已定的小后续用短 Approach 派 engineer。写入 plans/ 的方案须写明何时重规划，供 Root 判断，不自动开 architect。
+
 ### 并行现状
 
 Root 策略规定同一 cwd 同时只有一个写入者，Root 与 engineer 不同时修改；写入结束后再独立审查。仅不同目录的独立任务才考虑并行。

@@ -12,6 +12,8 @@ Editable source: [`docs/role-collaboration.en.svg`](docs/role-collaboration.en.s
 
 Root completes and verifies simple, clear tasks directly. For complex tasks, it delegates to specialists as needed, checks the results and delivers the outcome. The four specialists are not a fixed pipeline and do not all need to participate in every task.
 
+Writing an Approach in an engineer task is not a reason to dispatch architect. Architect is only used when a citable `plans/` contract is needed; do not start every user message with a planning stage. Root can answer questions directly, and small follow-ups with the steps already decided get a short Approach and go to engineer. Plans written to `plans/` should say when to replan, as material for Root; they do not automatically reopen architect.
+
 ### Parallel execution
 
 Root's policy allows only one writer in the same cwd at a time; Root and engineer must not modify it simultaneously, and independent review follows completion of writes. Parallelism is considered only for independent tasks in different directories.
