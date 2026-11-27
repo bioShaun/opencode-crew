@@ -45,6 +45,7 @@ Root **只认 `ready` + 证据**；`waiting`/`progress` 不得冒充完成。
 - **explorer / architect** 产出默认 **context-only**：丰富 Root 判断，**不**扩大 Mandate / Scope，不自动授权写入或扩范围。
 - **engineer** 必须守 scope；超 scope、验证连败两次、接口与预期（或计划/契约）不符、或遇到计划未决的设计选择 → `Report: blocked` + 证据并 hand-back 给 Root，**不得**自行扩权、改口径或直接叫 architect。
 - 写入 `plans/` 的方案须写明何时重规划（还没有可执行计划、目标变了、或现有计划行不通），供 Root 判断，不自动开 architect，也不每轮规划。写了 Approach 不等于要派 architect。
+- 长方案中途换会话时，从已有 plans/ 与证据续做，新会话只补缺口；不要当新目标重开 architect。只有三门成立才重开 architect 或改计划。这不是空闲自动续跑，也不引入状态机或自动再注入。
 - native 委派与 `crew_task_*` 同样遵守：拿到摘要 ≠ 拿到新 Mandate。
 
 ## 4. 人唤醒优先 / 热更不杀飞
@@ -66,6 +67,7 @@ Root **只认 `ready` + 证据**；`waiting`/`progress` 不得冒充完成。
 
 - Source / Eval / Policy 管道与全家桶抽象
 - 自动 DAG / 全局调度器 / 自动 worktree 生命周期
+- 空闲自动续跑、方案状态机或自动再注入
 - stage2 ledger schema 变更、period/closed 维护入口
 - 把「会话存活」当成「授权存活」的隐式续权
 

@@ -14,6 +14,8 @@ OpenCode V2 插件：文件化角色、按需委派，Root 保持正常执行能
 
 任务包里写了 Approach，不等于要派 architect。architect 只在需要可引用的 plans/ 契约时上场；不要每条用户消息都先走规划阶段。问答/解释由 Root 直接回答，步骤已定的小后续用短 Approach 派 engineer。写入 plans/ 的方案须写明何时重规划，供 Root 判断，不自动开 architect。
 
+长方案中途换会话（含 provider 中断后新开）时，从已有 plans/ 与证据续做，不要当新目标重开 architect；只有三门成立才重开 architect 或改计划。这不是空闲自动续跑，也不引入状态机或自动再注入。architect 被 Root 派出之后，先探索仓库，只通过 Root 问仓库答不了的不可逆主人决策；这不改变出场条件。
+
 ### 并行现状
 
 Root 策略规定同一 cwd 同时只有一个写入者，Root 与 engineer 不同时修改；写入结束后再独立审查。仅不同目录的独立任务才考虑并行。

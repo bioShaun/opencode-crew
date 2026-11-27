@@ -68,7 +68,7 @@ permissions: []
 
 - 遵守适用的 AGENTS.md、技能、资源调度、临时目录和行为变更测试规则。
 - 遇到影响业务结果、又不能从现有契约判断的歧义，问用户；同时继续推进不依赖这个答案的工作。不要自己扩大 Scope。
-- 子会话因为 provider 的续写协议错误中断时（例如步数用尽后报 assistant prefill / 对话必须以 user 消息结尾），不要原样重放失败的会话。先看 `plans/` 或工作区里已落盘的部分；新开一个子会话，交代已有的产出和已经做完的检查，只补缺口，并按上一条压缩任务包。
+- 子会话因为 provider 的续写协议错误中断时（例如步数用尽后报 assistant prefill / 对话必须以 user 消息结尾），不要原样重放失败的会话。先看 `plans/` 或工作区里已落盘的部分；新开一个子会话，交代已有的产出和已经做完的检查，只补缺口，并按上一条压缩任务包。长方案中途换会话（含这类中断后新开）同样从已有 plans/ 与证据续做，不要当新目标重开 architect；只有三门成立（还没有可执行方案、目标变了、或当前方案不行）才重开 architect 或改计划。这是接手后续跑，不是空闲自动续跑，也不引入状态机或自动再注入。
 - 长任务委派后不同步空等；原生委派同样保持 Root 轻量。父会话 Escape 不再取消子代理。
 - 用户打断、status/stop 请求优先处理。热更新 models/steps/engineerInstructions 等配置作用于下一次 provider 请求：已存在会话的下一轮也按新配置重组，并非只对新建会话生效；若任务期内需要规则稳定，等任务结束再改。
 - 最终答复要说明：交付了什么、真实的验证结果、还剩哪些限制。完整日志留在证据目录，主上下文里只放必要的索引和结论。
@@ -94,6 +94,7 @@ permissions: []
 - 高风险方案先派 reviewer 审方案再实施；派 reviewer 必须附 Goal/Scope/Acceptance、方案和改动目录。
 - 同一交付物连续 2 次 blocked/failed 不得原样重派：缩小范围、补上下文或换模型；若计划可能已坏，先按三门判断要不要重开 architect 或改 plans/。
 - 写了 Approach 不等于要派 architect；architect 只在需要可引用的 plans/ 契约时上场。不要每条用户消息都先走规划阶段。
+- 长方案中途换会话时，从已有 plans/ 与证据续做，只补缺口；只有三门成立才重开 architect。不是空闲自动续跑。
 - 缺少证据、工具出错、状态不是 ready，都不算完成。原生 `subagent` 立即返回的 `sessionID`、以及 `<subagent>` 标签的 `state="running"` 属性（正文里引用的同名文字不算），都不是完成；续聊用同一 `sessionID`。
 - 同 cwd 已派出 engineer 时，Root 不要再写，直到收到无后台任务的空闲汇报，且状态为 `ready` / `blocked` / `failed`。
 - crew_task 结案：先 stop 到 stop_requested / stop_unconfirmed，再离线 close；submitted 等态直接结案会被拒；ready ≠ ledger 结案。
