@@ -86,6 +86,8 @@ S1 红灯 33 pass / 60 fail，S2 同 93 项全通过；全量 439 pass / 0 fail�
 
    **决定：暂不收紧（已知风险，接受）。** 理由：architect/explorer 需要能读任意链接，固定白名单会持续碍事；可配置白名单则多一份需维护的配置面。**残余风险明确记录**：这两个角色会读到不可信内容，且 webfetch 是权限模型里唯一能把数据带出本机的动作，恶意文件可诱导它把源码细节拼进 URL。`.env` 的 ask 只挡密钥文件，不挡源码里的秘密。若日后要收紧，先确认宿主对重定向的处理，再考虑白名单。
 
+补充（宿主 2.4.2 行为说明，非策略变更）：Web fetch 的 Always allow 现在只对该站点生效（旧审批不变）。architect/explorer 已是 `webfetch: * allow`，通常走不到 Always allow；Root 权限为空、继承宿主，用户若在 Root 上点 Always allow，范围会变窄。此项不改变「暂不给 webfetch 加白名单」的既有决定。
+
 ### 值得补：不改权限，补验证和口径
 
 3. **把第 3 条的语义纳入真机回归清单**：读角色「能 read、不能 shell、architect 只能写 plans/」三条断言加进现有 host-verify 流程，防宿主升级后语义变化。

@@ -25,7 +25,7 @@ Ticket/Session/Assignment 映射与结构化 `Report` 六态（对照 dsh、不�
 
 ## 安装与配置
 
-插件 SDK 依赖基线为 `@opencode/plugin` **2.3.0**。插件 SDK 依赖、实际运行宿主版本与历史验收版本的区别见 [`docs/host-versions.md`](docs/host-versions.md)。阶段 1 私有宿主验收使用 **2.2.5**；阶段 2 的 S1–S3 有本地测试，S4 已在私有 2.2.5 夹具完成周转并留有 CLI 证据，S5 已在私有夹具完成双行为任务与串行整合试运行；均未接触真实 ledger。无需手工复制角色或运行安装脚本。
+插件 SDK 依赖基线为 `@opencode/plugin` **2.3.0**。本机对照基线为 OpenCode **v2.4.2**（2026-11-27）；尚未按 [`docs/role-permissions-host-checks.md`](docs/role-permissions-host-checks.md) 在 2.4.2 上重跑。插件 SDK 依赖、实际运行宿主版本与历史验收版本的区别见 [`docs/host-versions.md`](docs/host-versions.md)。阶段 1 私有宿主验收使用 **2.2.5**；阶段 2 的 S1–S3 有本地测试，S4 已在私有 2.2.5 夹具完成周转并留有 CLI 证据，S5 已在私有夹具完成双行为任务与串行整合试运行；均未接触真实 ledger。无需手工复制角色或运行安装脚本。
 
 ### 从 GitHub 安装（推荐）
 
@@ -70,7 +70,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 }
 ```
 
-别名和 `modelDisplay` 只属于插件 options，不能写入配置档；档生效时这两项仍沿用 options 中的值。这两项由 server 部分读取后经 RPC 推给侧栏——OpenCode v2.4.1 不会把 `plugins[].options` 转发给插件的 TUI 部分。宿主没有这条 RPC 时，侧栏回落到 `cli.json` 里同一个包的 options，因此在 `cli.json` 写 `modelAliases` / `modelDisplay` 同样有效。两种方式都要重开 TUI 才生效，不会热更新。`modelAliases` 最多 64 项，键为 `provider/model`（不含 variant），值为 1–12 字符。
+别名和 `modelDisplay` 只属于插件 options，不能写入配置档；档生效时这两项仍沿用 options 中的值。这两项由 server 部分读取后经 RPC（`opencode-crew-display`）推给侧栏——在 OpenCode v2.4.1 上观察到宿主不会把 `plugins[].options` 转发给插件的 TUI 部分；v2.4.2 发行说明未宣布改变，该 RPC 仍保留。宿主没有这条 RPC 时，侧栏回落到 `cli.json` 里同一个包的 options，因此在 `cli.json` 写 `modelAliases` / `modelDisplay` 同样有效。两种方式都要重开 TUI 才生效，不会热更新。`modelAliases` 最多 64 项，键为 `provider/model`（不含 variant），值为 1–12 字符。
 
 `reviewGate` 默认 `{ "mode": "off" }`。`mode` 取 `off`、`remind`、`enforce`。它看 Root 所在目录和每个 active `crew_task` 的 worktree，命中条件是：改动文件数超过 `maxFiles`、删除或改名了测试、碰到敏感路径（默认 `**/AGENTS.md`）、任务引用了 `plans/*.md` 方案且改动多个文件、超出任务 scope，或清单无法完整采集。命中时插件往 Root 会话注入一条 `[crew-review-gate]` 消息；处理方式是派 reviewer，或在回复里写一行 `Review-Skip: <具体理由>`（至少 10 个字符），它会被记录并停止该条提醒。`remind` 每组改动只提醒一次（会话总量上限为 `maxReminders` 的 5 倍）；`enforce` 在每个 Root 回合结束时重发，直到同一组改动达到 `maxReminders` 次后放行。「已覆盖」指存在不早于最新改动文件的 reviewer 子会话，不证明审查通过。提醒不阻塞回合，也不改变 `crew_task` 的 stop → close 顺序。其余键：`planMinFiles`（设 0 关闭该规则）、`testGlobs`、`sensitiveGlobs`、`ignoreGlobs`。`mode` 不为 `off` 时还会注册只读工具 `crew_review_gate`，用于查看门禁当前的判断；它不推进基线，也不消耗提醒次数。当前 living 语义、限制、上线状态与 `enforce` 证据缺口见 [`docs/review-gate.md`](docs/review-gate.md)。
 
@@ -98,6 +98,7 @@ opencode plugin add git+https://github.com/bioShaun/opencode-crew.git
 - `/crew <任务>`：切换并提交任务；保留附件、技能和投递方式。
 - `default_agent: root` 用于未选角色的新会话，不强行改变已有会话；已有会话使用 `/crew`。
 - 模型/步数/engineerInstructions 在插件 options 修改，按 OpenCode 配置热加载机制生效，无需重启服务。热更新作用于下一次 provider 请求：会话 system 并非创建时快照，运行中 engineer 的下一轮同样按新配置重组；若要求规则在任务期内稳定，等任务结束再改。
+- 向已归档会话发消息（crew 侧会触发的是 `session.prompt` / `session.synthetic`，例如 `/crew`、审查门禁提醒、`crew_task` 跟进）可能被宿主自动解档。`session.interrupt` 是否也解档，未在 2.4.2 typings / 发行说明中确认，不要写成已证实。
 
 ### Crew 配置档（profiles）
 
@@ -188,7 +189,7 @@ Root 的 Markdown 权限列表为空时，Crew 保留宿主提供的 Root 权限
 
 Engineer 按原顺序保留宿主规则，并追加 Markdown 中对 `subagent`、`question`、`execute` 的 deny。Architect、explorer 和 reviewer 保留宿主前缀并追加过滤后的角色块，不再整档替换。Markdown 的 deny-all 仍是 guard 的局部策略；宿主块过滤会匹配 `external_directory` 的 action 模式，在角色白名单之前为已知动作显式 deny；完整连续块已存在时不重复追加。
 
-`external_directory` 完全由宿主裁决：已测默认允许，并尊重用户全局 ask/deny。其他动作并非无条件继承所有全局规则：guard 对每个资源按局部策略最后匹配求值，再与宿主结果取更严；显式角色身份优先，缺失时回退会话身份，无法识别时非 external 动作 deny。三个角色允许 skill；局部策略对 `.env`、`.env.*` 读取为 ask，对 `.env.example` 为 allow，宿主仍可更严。architect 与 explorer 仍开放不加限制的 `webfetch`/`websearch`（已知风险）。权限 hook 必须注册成功；v2.3.0 受控测试中 hook 与 transform 注册后主动失败，二者未在后续装配和 reload 生效，但不证明已执行副作用的回滚或所有 setup 失败均安全（证据：`/project/tmp/opencode-crew-read-policy-s3/setup-cleanup/summary.md`）。后续插件可再次修改 effect，不经过 permission hook 的路径不在保证范围内；`plans/` 是词法匹配而非防符号链接沙箱，不应用于隔离不可信文件系统布局。
+`external_directory` 完全由宿主裁决：已测默认允许，并尊重用户全局 ask/deny。其他动作并非无条件继承所有全局规则：guard 对每个资源按局部策略最后匹配求值，再与宿主结果取更严；显式角色身份优先，缺失时回退会话身份，无法识别时非 external 动作 deny。三个角色允许 skill；局部策略对 `.env`、`.env.*` 读取为 ask，对 `.env.example` 为 allow，宿主仍可更严。architect 与 explorer 仍开放不加限制的 `webfetch`/`websearch`（已知风险）。Web fetch 的 Always allow 现在只对该站点生效（旧审批不变）：architect/explorer 已是 `webfetch: * allow`，通常走不到 Always allow；Root 权限为空、继承宿主，用户若在 Root 上点 Always allow，范围会变窄。这不改变「暂不给 webfetch 加白名单」的既有决定。权限 hook 必须注册成功；v2.3.0 受控测试中 hook 与 transform 注册后主动失败，二者未在后续装配和 reload 生效，但不证明已执行副作用的回滚或所有 setup 失败均安全（证据：`/project/tmp/opencode-crew-read-policy-s3/setup-cleanup/summary.md`）。后续插件可再次修改 effect，不经过 permission hook 的路径不在保证范围内；`plans/` 是词法匹配而非防符号链接沙箱，不应用于隔离不可信文件系统布局。
 
 源码实现的自动权限求值与六格外部 read 工具端到端已通过，但 **R0 仍 blocked**：真实 write/shell 等 A1/A2 工具覆盖不足，TUI external 和敏感 read ask 确认未完成。当时验收用的是隔离构建，主仓库 `dist` 有意未随那次验证更新，也未重启共享服务。此后 main 的 `dist` 已从 `84a935c` 起更新（含审查门禁与 display RPC 等），这不表示 R0 已完成，也不表示共享服务已按当前 dist 重新部署或宿主清单已在当前 main 重跑。发布是独立流程，见[运行副本手册](docs/run-copy-release.md)。证据与后续步骤见[宿主清单](docs/role-permissions-host-checks.md)。
 
