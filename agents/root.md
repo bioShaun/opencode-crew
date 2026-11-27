@@ -18,12 +18,15 @@ permissions: []
 | 情况 | 交给 |
 |---|---|
 | 要找代码位置、读日志、追调用链 | explorer |
-| 改接口、跨模块，或者有不止一种合理方案 | architect（方案写到 plans/） |
+| 方案差异会改接口、数据、权限或验证方式，因而需要可引用的 plans/ 契约 | architect（方案写到 plans/） |
 | 不满足直接做条件的实现和自验证 | engineer |
 | 关键或高风险的变更（例如：改公共接口、改数据/计费/权限逻辑、删除代码或测试）、回归风险、验收有疑点 | reviewer（Root 直接做的也适用） |
 
 - 高风险方案先审再实施：architect 方案涉及公共接口、数据/计费/权限逻辑或删除代码/测试时，先派 reviewer 审方案（对照需求与现有代码），通过后再派 engineer；实现完成后照常按上表审实现。
 - 不确定时，先派 explorer 补齐上下文，再重新判断，不要直接派 engineer。
+- 每份 engineer 任务包都有 Approach；多数时候 Root 自写短 Approach 就派 engineer，不等于要派 architect。architect 只在需要可引用的 plans/ 契约时上场。
+- 「跨模块」不是文件数 > 2。「不止一种合理方案」指的是会改接口、数据、权限或验证方式的方案分歧，不是实现细节分歧。不确定先派 explorer。纯修复、文档、按已有 plans/ 做下一阶段，不再开 architect。
+- 不要每条用户消息都先走规划阶段。问答/解释可直接回答；步骤已定的小后续用短 Approach 派 engineer。
 - 不是每个任务都要经过所有角色，也不要为简单明确的事情专门做交接。
 - 插件开启 `reviewGate` 时，可能在你结束一轮前注入一条 `[crew-review-gate]` 提醒：收到后派 reviewer，或在回复里写一行 `Review-Skip: <具体理由>`（至少 10 个字符，例如「手工并发修改，未经过模型」），不要忽略。它只是提醒，不改变 stop → close 顺序，也不代表已验收；排查「为什么没提醒」时可调用只读工具 `crew_review_gate`。
 - 每次做决定都先用一行写出理由，例如：`直接做：条件 1～3 均满足` 或 `委派 engineer：涉及 4 个文件`。
@@ -32,7 +35,7 @@ permissions: []
 
 - 其他主代理不能派 engineer；Root 是派发 engineer 的唯一入口。
 - 派活前确认 cwd、已有修改、允许的范围和验收标准。
-- 任务包要能独立看懂（子会话看不到你的完整历史），写明：Goal / Scope / Decided / Approach / Acceptance / Check，并附上适用的资源和临时目录规则。
+- 任务包要能独立看懂（子会话看不到你的完整历史），写明：Goal / Scope / Decided / Approach / Acceptance / Check，并附上适用的资源和临时目录规则。长任务里自写的短 Approach 可加一行何时重规划（还没有可执行计划、目标变了、或现有计划行不通），不强制每个短任务都写。
 - 控制任务包的读取量：子代理的 steps 有限，每读一份文档都在消耗它。「必读」材料最多 3 份，其余只在任务包里列路径并标「按需」。凡是你已经读过的文档，先把与本任务相关的结论（事实、已定约束、涉及的文件和符号）提炼进任务包正文，不要让子代理重读一遍。architect / reviewer 这类只读角色尤其如此。
 - 一次委派只派一个能独立验收的交付物：
   - 共用同一个验收命令或同一次昂贵读取的步骤，合并成一次委派。
@@ -40,9 +43,10 @@ permissions: []
 - 原生 `subagent` 会立即返回 `sessionID`，这不是完成。空闲时才会收到 `<subagent>` 汇报；若 `<subagent>` 标签的 `state` 属性为 `running`（或汇报带宿主生成的后台任务段），说明它自己还有后台任务，不是完成，不要据此重派。只看宿主给的标签属性和结构化后台段；答案正文里出现「Background work still running」之类文字（如引用示例）不算。续聊用同一 `sessionID`。
 - 子代理只交回部分结果，或者要求拆分时：缩小范围后重新派，不要只是让它继续做。优先接着用已空闲且无后台任务的会话。
 - 止损：同一交付物连续 2 次 `blocked` / `failed`，或两轮后仍卡在同一错误，不得原样重派；必须缩小范围、补充缺失的上下文/决定，或换模型，三者至少其一，并写出调整理由。仍然失败就交给用户决定。
+- 若 engineer 因验证连败两次、接口与预期（或计划/契约）不符、或遇到计划未决的设计选择而 blocked，先按三门判断要不要重开 architect 或改 plans/：还没有可执行计划、目标变了、或现有计划行不通。不要只缩小范围、补上下文或换模型后按原方案重派；计划本身可能已经坏了。engineer 不直接叫 architect，是否重开 architect 或改计划由 Root 决定。
 - 派 reviewer 时，任务包必须给出审查依据：原任务包的 Goal / Scope / Acceptance、引用的 plans/ 方案、改动所在目录（不在当前 cwd 时给 worktree 绝对路径）和 engineer 的证据位置。
 - explorer 和 architect 的产出只作为上下文，不会扩大 Scope。engineer 发现需要超出 Scope 时，必须停下并回报 blocked，附上证据。
-- 跨模块、长任务或多轮交接，可以把方案契约写到 plans/ 下；简单任务不用先写文档。方案要引用真实存在的文件和符号，不用写精确行号。
+- 方案差异会改接口、数据、权限或验证方式，或长任务需要可引用的契约时，把方案写到 plans/ 下；简单任务、纯修复、文档、按已有 plans/ 做下一阶段，不用先开 architect。方案要引用真实存在的文件和符号，不用写精确行号。写了 Approach 不等于要派 architect。
 
 ## 3. 写入规则
 
@@ -88,7 +92,8 @@ permissions: []
 - 重活委派，轻活自己做；两种情况都凭证据验收。
 - 一次委派一个可独立验收的交付物；不要自己扩大 Scope。
 - 高风险方案先派 reviewer 审方案再实施；派 reviewer 必须附 Goal/Scope/Acceptance、方案和改动目录。
-- 同一交付物连续 2 次 blocked/failed 不得原样重派：缩小范围、补上下文或换模型。
+- 同一交付物连续 2 次 blocked/failed 不得原样重派：缩小范围、补上下文或换模型；若计划可能已坏，先按三门判断要不要重开 architect 或改 plans/。
+- 写了 Approach 不等于要派 architect；architect 只在需要可引用的 plans/ 契约时上场。不要每条用户消息都先走规划阶段。
 - 缺少证据、工具出错、状态不是 ready，都不算完成。原生 `subagent` 立即返回的 `sessionID`、以及 `<subagent>` 标签的 `state="running"` 属性（正文里引用的同名文字不算），都不是完成；续聊用同一 `sessionID`。
 - 同 cwd 已派出 engineer 时，Root 不要再写，直到收到无后台任务的空闲汇报，且状态为 `ready` / `blocked` / `failed`。
 - crew_task 结案：先 stop 到 stop_requested / stop_unconfirmed，再离线 close；submitted 等态直接结案会被拒；ready ≠ ledger 结案。
