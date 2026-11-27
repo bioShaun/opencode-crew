@@ -14,6 +14,8 @@ Root completes and verifies simple, clear tasks directly. For complex tasks, it 
 
 Writing an Approach in an engineer task is not a reason to dispatch architect. Architect is only used when a citable `plans/` contract is needed; do not start every user message with a planning stage. Root can answer questions directly, and small follow-ups with the steps already decided get a short Approach and go to engineer. Plans written to `plans/` should say when to replan, as material for Root; they do not automatically reopen architect.
 
+When a long plan continues in a new session (including after a provider interruption), resume from existing `plans/` and evidence; do not treat it as a new goal and reopen architect. Only the three replan gates reopen architect or change the plan. This is not idle auto-resume and does not add a state machine or automatic re-injection. After Root has already dispatched architect, architect explores the repo first and only asks, through Root, for irreversible owner decisions the repo cannot answer; this does not change when architect is dispatched.
+
 ### Parallel execution
 
 Root's policy allows only one writer in the same cwd at a time; Root and engineer must not modify it simultaneously, and independent review follows completion of writes. Parallelism is considered only for independent tasks in different directories.
